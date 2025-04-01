@@ -1,0 +1,1 @@
+from chatbone import chatbone_configs

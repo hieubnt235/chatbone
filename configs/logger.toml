@@ -1,0 +1,37 @@
+[logger]
+
+[[logger.handlers]]
+sink="stdout"
+level="WARNING"
+
+#[[logger.handlers]]
+#sink="stdout"
+#level="INFO"
+
+[[logger.handlers]]
+sink="stdout"
+level="DEBUG"
+
+[[logger.handlers]]
+sink="stdout"
+level="ERROR"
+
+[[logger.handlers]]
+sink="logs.txt"
+level="DEBUG"
+add_kwargs={rotation="1 day",retention=100 }
+
+[[logger.handlers]]
+sink="logs.txt"
+level="WARNING"
+add_kwargs={rotation="1 day",retention=100}
+
+[[logger.handlers]]
+sink="logs.txt"
+level="ERROR"
+add_kwargs={rotation="1 day",retention=100}
+#
+#[[logger.handlers]]
+#sink="logs.txt"
+#level="INFO"
+#add_kwargs={rotation="1 day",retention=100}

@@ -1,0 +1,10 @@
+[auth]
+file="auth.toml"
+
+[logger]
+file="logger.toml"
+
+[chat]
+max_messages_per_session=100
+max_sessions_per_user=10
+max_message_length=100
