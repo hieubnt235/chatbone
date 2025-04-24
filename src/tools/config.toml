@@ -1,0 +1,15 @@
+mcp_path = '/mcp'
+
+[search]
+path = '/search'
+
+[search.web]
+max_results = 5
+max_length=5000 #Maximum number of char length of results. The remain results is drop.
+include_answer= false
+
+[search.docs]
+
+
+[math]
+path = '/math'

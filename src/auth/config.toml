@@ -1,0 +1,12 @@
+token_duration_seconds = 300
+max_valid_tokens= 1
+
+jwt_encode_algorithm = 'HS256'
+auth_secret_key = "abcxyz"
+
+[datastore_request_timeout] # all in second
+create = 3
+verify = 3
+get = 3
+delete = 3
+delete_tokens = 3

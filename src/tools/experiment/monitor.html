@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Monitor</title>
+    <style>
+        body { font-family: sans-serif; padding: 15px; background-color: #f4f4f4; }
+        #output {
+            white-space: pre-wrap; /* Allows text wrapping */
+            word-wrap: break-word; /* Breaks long words */
+            background-color: #e9e9e9;
+            border: 1px solid #ccc;
+            padding: 10px;
+            min-height: 300px;
+            font-family: monospace; /* Good for viewing JSON */
+            margin-top: 10px;
+        }
+        #status { font-style: italic; color: #555; }
+    </style>
+</head>
+<body>
+
+    <h1>WebSocket Monitor Data</h1>
+    <div id="status">Connecting...</div>
+    <pre id="output">Waiting for data...</pre>
+
+    <script>
+        const outputDiv = document.getElementById('output');
+        const statusDiv = document.getElementById('status');
+        // Adjust hostname if your server is not running on localhost
+        const wsUrl = `ws://${window.location.hostname}:8000/_monitor/current`;
+        let socket;
+
+        function connect() {
+            console.log(`Attempting to connect to ${wsUrl}`);
+            statusDiv.textContent = `Connecting to ${wsUrl}...`;
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = (event) => {
+                console.log("WebSocket Connected!");
+                statusDiv.textContent = "Connected";
+                outputDiv.textContent = "Waiting for data...";
+            };
+
+            socket.onmessage = (event) => {
+                console.log("Message received");
+                statusDiv.textContent = `Connected (Last update: ${new Date().toLocaleTimeString()})`;
+                try {
+                    // Parse the JSON data received from the server
+                    const data = JSON.parse(event.data);
+                    // Display the formatted JSON string in the <pre> tag
+                    outputDiv.textContent = JSON.stringify(data, null, 2); // null, 2 for pretty printing
+                } catch (e) {
+                    console.error("Failed to parse JSON:", e);
+                    outputDiv.textContent = "Error receiving data:\n" + event.data;
+                }
+            };
+
+            socket.onclose = (event) => {
+                console.log("WebSocket Disconnected:", event.code, event.reason);
+                statusDiv.textContent = `Disconnected (Code: ${event.code}). Retrying in 5s...`;
+                outputDiv.textContent = "Disconnected.";
+                // Simple reconnect logic
+                setTimeout(connect, 5000);
+            };
+
+            socket.onerror = (error) => {
+                console.error("WebSocket Error:", error);
+                statusDiv.textContent = "Connection Error.";
+                // onclose will likely be called next, triggering reconnect attempt
+            };
+        }
+
+        // Start the connection attempt
+        connect();
+
+    </script>
+
+</body>
+</html>
