@@ -1,4 +1,9 @@
-agents
+admin
 ai_models
+auth
 chatbone
+chatbone_logging
+chatbone_utils
+datastore
+tools
 web

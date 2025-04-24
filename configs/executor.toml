@@ -1,6 +1,0 @@
-[executor]
-type='dramatiq'
-n_threads=8
-n_processes=10
-
-#[executor.default_executor_param]

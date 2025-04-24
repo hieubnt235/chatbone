@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from chatbone.settings import chatbone_settings
+from chatbone_utils.settings import chatbone_settings
 async def load_chat():
     users: list[User] = []
     with open(Path('./chat.json').resolve()) as f:

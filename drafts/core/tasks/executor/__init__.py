@@ -1,5 +1,5 @@
 from .executor import ExecutorConfig,executor_init
-from chatbone import logger
+from chatbone_utils import logger
 
 cfg = ExecutorConfig.load('executor.toml')
 

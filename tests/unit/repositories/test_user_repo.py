@@ -1,7 +1,6 @@
 import pytest
-import pytest_asyncio
 
-from chatbone.repositories import UserRepo, TokenInfoAuthSuccess
+from datastore.repo import UserRepo, TokenInfoAuthSuccess
 
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")

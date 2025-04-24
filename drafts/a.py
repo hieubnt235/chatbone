@@ -1,1 +1,1 @@
-from chatbone import chatbone_configs
+from chatbone_utils import chatbone_configs

@@ -1,6 +1,6 @@
 
 
-from chatbone import logger
+from chatbone_utils import logger
 
 marker = "workflows"
 def pytest_collection_modifyitems(config, items) -> None:

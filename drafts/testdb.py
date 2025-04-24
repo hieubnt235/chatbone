@@ -3,14 +3,14 @@ from uuid import UUID
 
 from sqlalchemy import select,  delete
 
-from chatbone.chat import AccessToken, User
-from chatbone.settings import chatbone_settings
+from chatbone import AccessToken, User
+from chatbone_utils.settings import chatbone_settings
 chat_db = chatbone_settings.chat_db
 
 
-from chatbone.repositories.user import UserRepo
-from chatbone.chat import ChatRepo
-from chatbone.utils import get_expire_date
+from datastore.repo import UserRepo
+from chatbone import ChatRepo
+from chatbone_utils.utils import get_expire_date
 from uuid_extensions import uuid7
 
 

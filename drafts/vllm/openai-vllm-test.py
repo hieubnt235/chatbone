@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 openai_api_key = "EMPTY"
 openai_api_base = "http://localhost:9999/v1"
 
-llm = ChatOpenAI(model="Qwen/Qwen2.5-3B-Instruct", openai_api_key=openai_api_key, openai_api_base=openai_api_base,
+llm = ChatOpenAI(model="qwen-0.5b", openai_api_key=openai_api_key, openai_api_base=openai_api_base,
                  max_tokens=1000, temperature=0, )
 
 def add(x:float,y:float):

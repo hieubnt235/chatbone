@@ -1,3 +1,0 @@
-[auth]
-token_duration_seconds = 86400
-jwt_encode_algorithm= "HS256"

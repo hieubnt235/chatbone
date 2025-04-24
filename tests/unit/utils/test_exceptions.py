@@ -3,10 +3,10 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from chatbone import (handle_http_exception,
-                      ServerError,
-                      AlreadyRegisterError)
-from chatbone.utils import handle_exception, BaseMethodException
+from chatbone_utils import (handle_http_exception,
+                            ServerError,
+                            AlreadyRegisterError)
+from chatbone_utils.utils import handle_exception, BaseMethodException
 
 PreHTTPException = HTTPException(status_code=500,detail="pre http test.")
 

@@ -2,7 +2,7 @@ from uuid import UUID
 
 from uuid_extensions import uuid7
 
-from chatbone.repositories import UserRepo, ChatRepo, TokenInfoAuthSuccess
+from datastore.repo import UserRepo, ChatRepo, TokenInfoAuthSuccess
 
 import pytest
 import random

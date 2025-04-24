@@ -1,8 +1,8 @@
-from chatbone import logger
+from chatbone_utils import logger
 import pytest
 import uvloop
 from uuid_extensions import uuid7
-from chatbone.auth.schemas import UserIn
+from auth import UserIn
 
 @pytest.fixture(scope="session")
 def event_loop_policy():

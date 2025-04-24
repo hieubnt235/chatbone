@@ -4,9 +4,8 @@ from langgraph.graph import START, END
 from langgraph.graph.state import CompiledStateGraph
 from uuid_extensions import uuid7
 
-from chatbone import logger
-from assistants.workflows import (WorkflowSetup, Node, Edge, WorkflowSetupException, WfMessagesState,
-                                  Workflow)
+from chatbone.assistants.workflows import (WorkflowSetup, Node, Edge, WorkflowSetupException, WfMessagesState,
+                                           Workflow)
 ##TODO Serve graph with ray
 
 async def anode(state: WfMessagesState)->WfMessagesState:

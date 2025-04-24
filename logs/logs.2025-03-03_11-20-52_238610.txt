@@ -1,9 +1,0 @@
-2025-03-03 11:20:52.246 | INFO     | __main__:<module>:52 - abc
-2025-03-03 11:21:14.044 | INFO     | __main__:<module>:52 - abc
-2025-03-03 11:21:26.347 | INFO     | __main__:<module>:52 - abc
-2025-03-03 11:21:28.950 | INFO     | __main__:<module>:52 - abc
-2025-03-03 13:22:31.734 | INFO     | __main__:init_logger:44 - Logger initialized with shinks:
-2025-03-03 13:22:31.734 | INFO     | __main__:init_logger:44 - Logger initialized with shinks:
-2025-03-03 13:24:53.834 | INFO     | __main__:init_logger:44 - Logger initialized with shinks:
-2025-03-03 13:24:53.834 | INFO     | __main__:init_logger:44 - Logger initialized with shinks:
-2025-03-04 17:58:48.605 | INFO     | chatbone.logger:init_logger:44 - Logger initialized with shinks:

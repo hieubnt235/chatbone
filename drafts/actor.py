@@ -1,4 +1,4 @@
-# from chatbone.tasks import repeat_n_times
+# from chatbone_utils.tasks import repeat_n_times
 #
 # repeat_n_times.run(7)
 import time

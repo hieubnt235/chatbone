@@ -2,10 +2,10 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 
-from chatbone.auth.dependencies import make_user_credentials_register
-from chatbone.auth.schemas import  UserCredentials
-from chatbone.auth.service import AuthenticationService
-from chatbone import UsernameNotFoundError, AuthenticationError, AlreadyRegisterError, TokenError
+from auth import make_user_credentials_register
+from auth import  UserCredentials
+from auth import AuthenticationService
+from chatbone_utils import UsernameNotFoundError, AuthenticationError, AlreadyRegisterError, TokenError
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
