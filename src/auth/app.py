@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
 from auth.auth_svc import auth_svc, UserRegister, TokenJWT
-from chatbone_utils.datastore import UserInfoReturn
+from utilities.settings.clients.datastore import UserInfoReturn
 
 app = FastAPI()
 

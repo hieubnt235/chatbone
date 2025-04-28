@@ -3,8 +3,8 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chatbone_utils.datastore.schemas.chat_svc import *
-from chatbone_utils.exception import handle_http_exception
+from utilities.settings.clients.datastore.schemas.chat_svc import *
+from utilities.exception import handle_http_exception
 from datastore.entities import Message, ChatSession, ChatSummary
 from datastore.repo import ChatRepo
 from .base import BaseSVC, InvalidRequestError, ServerError

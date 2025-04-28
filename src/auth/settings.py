@@ -2,8 +2,8 @@ from dotenv import find_dotenv
 from pydantic import BaseModel, PositiveInt
 from pydantic_settings import SettingsConfigDict
 
-from chatbone_utils.datastore.client import DatastoreClient
-from chatbone_utils.settings import Settings, Config
+from utilities.settings.clients.datastore import DatastoreClient
+from utilities.settings import Settings, Config
 
 
 class DatastoreRequestTimeout(BaseModel):

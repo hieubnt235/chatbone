@@ -4,7 +4,7 @@ from dotenv import find_dotenv
 from pydantic import field_serializer, BaseModel, PositiveInt, Field
 from pydantic_settings import SettingsConfigDict
 
-from chatbone_utils.settings import Settings, Config
+from utilities.settings import Settings, Config
 
 
 class SearchWebConfig(BaseModel):

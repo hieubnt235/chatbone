@@ -3,8 +3,8 @@ from uuid import UUID
 
 from sqlalchemy import delete, select, and_
 
-from chatbone_utils.exception import BaseMethodException, handle_exception
-from chatbone_utils.mixin import RepoMixin
+from utilities.exception import BaseMethodException, handle_exception
+from utilities.mixin import RepoMixin
 from datastore.entities import ChatSession, Message, User, ChatSummary
 
 

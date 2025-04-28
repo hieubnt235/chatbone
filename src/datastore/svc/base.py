@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chatbone_utils.func import check_is_subset
+from utilities.func import check_is_subset
 from datastore.entities import AccessToken
 from datastore.repo import TokenRepo
 

@@ -2,8 +2,8 @@ from typing import Any, Sequence
 
 from sqlalchemy import select, and_, exists
 
-from chatbone_utils.exception import handle_exception, BaseMethodException
-from chatbone_utils.mixin import RepoMixin
+from utilities.exception import handle_exception, BaseMethodException
+from utilities.mixin import RepoMixin
 
 from datastore.entities import User, UserSummary
 

@@ -1,7 +1,7 @@
 from dotenv import find_dotenv
 from pydantic_settings import SettingsConfigDict
 
-from chatbone_utils.settings import AsyncSQLDBSettings, Settings, Config
+from utilities.settings import AsyncSQLDBSettings, Settings, Config
 
 
 class DatastoreConfig(Config):

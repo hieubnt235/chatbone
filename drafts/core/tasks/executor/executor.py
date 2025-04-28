@@ -3,7 +3,7 @@ from typing import Type
 
 from pydantic import Field
 
-from src.chatbone_utils import BaseConfig
+from src.utilities import BaseConfig
 
 
 class BaseExecutor(ABC):

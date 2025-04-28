@@ -23,8 +23,3 @@ class DatastoreApp:
 
 datastore_app = DatastoreApp.bind()
 serve.run(datastore_app,blocking=True)
-
-
-# if __name__=="__main__":
-#     import uvicorn
-#     uvicorn.run("app:app", reload=True)

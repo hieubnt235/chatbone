@@ -1,4 +1,4 @@
-from chatbone_utils.typing import SESSION_CONTEXTMANAGER
+from utilities.typing import SESSION_CONTEXTMANAGER
 from .settings import datastore_settings
 
 

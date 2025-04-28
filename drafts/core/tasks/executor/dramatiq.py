@@ -5,7 +5,7 @@ from dramatiq.brokers.rabbitmq import RabbitmqBroker
 from dramatiq.brokers.redis import RedisBroker
 
 from .executor import BaseExecutor, BaseExecutorFactory
-from chatbone_utils.settings import settings
+from utilities.settings import settings
 
 
 # from  dramatiq.middleware import default_middleware

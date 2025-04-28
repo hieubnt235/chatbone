@@ -3,10 +3,9 @@ import asyncio
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from chatbone_utils.logger import logger
-from chatbone_utils.datastore.schemas.user_svc import *
-from chatbone_utils.exception import handle_http_exception, find_root_pre_exp
-from chatbone_utils.func import utc_now
+from utilities.settings.clients.datastore.schemas.user_svc import *
+from utilities.exception import handle_http_exception, find_root_pre_exp
+from utilities.func import utc_now
 from datastore.entities import User, AccessToken, UserSummary
 from datastore.repo import UserRepo, UserRepoException
 from .base import BaseSVC, ServerError

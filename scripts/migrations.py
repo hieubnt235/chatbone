@@ -1,13 +1,13 @@
 import argparse
 from pathlib import Path
 
-from chatbone_utils.logger import logger
+from utilities.logger import logger
 from alembic.config import Config
 from alembic import command
 from dotenv import load_dotenv, find_dotenv
 import os
 
-from chatbone_utils.func import utc_now
+from utilities.func import utc_now
 
 
 load_dotenv(find_dotenv(".env.chatbone"))

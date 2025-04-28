@@ -4,9 +4,9 @@ from uuid import UUID
 
 from sqlalchemy import select, and_, delete
 
-from chatbone_utils.exception import handle_exception, BaseMethodException
-from chatbone_utils.mixin import RepoMixin
-from chatbone_utils.func import utc_now
+from utilities.exception import handle_exception, BaseMethodException
+from utilities.mixin import RepoMixin
+from utilities.func import utc_now
 from datastore.entities import AccessToken, User
 
 

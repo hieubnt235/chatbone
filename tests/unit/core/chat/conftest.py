@@ -1,6 +1,6 @@
 
 
-from chatbone_utils import logger
+from utilities import logger
 
 marker = "chat"
 def pytest_collection_modifyitems(config, items) -> None:

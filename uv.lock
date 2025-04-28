@@ -444,6 +444,7 @@ dependencies = [
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pydevd-pycharm" },
     { name = "pyjwt" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -491,6 +492,7 @@ requires-dist = [
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.2.1" },
     { name = "pydantic", specifier = "==2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.8.1" },
+    { name = "pydevd-pycharm", specifier = "~=243.26053.29" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = ">=0.25.3" },
@@ -3129,6 +3131,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/67/1d/42628a2c33e93f8e9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/5f/d6d641b490fd3ec2c4c13b4244d68deea3a1b970a97be64f34fb5504ff72/pydantic_settings-2.9.1-py3-none-any.whl", hash = "sha256:59b4f431b1defb26fe620c71a7d3968a710d719f5f4cdbbdb7926edeb770f6ef", size = 44356 },
 ]
+
+[[package]]
+name = "pydevd-pycharm"
+version = "243.26053.29"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/f2/58cac65b9eef7899532921321510396582b3d3faa40b324aef03df2eb978/pydevd_pycharm-243.26053.29.tar.gz", hash = "sha256:d63403d249e6121121ed9236fd24a7631b1e5659a74c02954949e4f5e136211f", size = 8022536 }
 
 [[package]]
 name = "pygments"

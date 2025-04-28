@@ -1,6 +1,6 @@
 
 
-from chatbone_utils import logger
+from utilities import logger
 
 marker = "auth"
 def pytest_collection_modifyitems(config, items) -> None:

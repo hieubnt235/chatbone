@@ -1,9 +1,10 @@
 admin
 ai_models
+assistants
 auth
-chatbone
-chatbone_logging
-chatbone_utils
+chat
 datastore
+sidecar
 tools
+utilities
 web

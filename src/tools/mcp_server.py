@@ -12,12 +12,11 @@ from fastapi import FastAPI, HTTPException, status
 from fastmcp import FastMCP
 from loguru import logger
 from mcp import types
-from mcp.types import AnyFunction
 from pydantic import ValidationError
 from starlette.websockets import WebSocket, WebSocketDisconnect
 from uuid_extensions import uuid7
 
-from chatbone_utils.func import get_process_stats
+from utilities.func import get_process_stats
 
 MemObjSS = MemoryObjectSendStream
 MemObjRS = MemoryObjectReceiveStream
@@ -37,7 +36,11 @@ def _async_wrapper(fn)->Callable[...,Coroutine]:
 
 class MCPServer(FastMCP):
     """
-    Stateless tools executor server, leverage MCP. Intentionally be used for create scalable tool executor server.
+    Stateless tools executor server, leverage MCP. Intentionally be used to create a scalable tool executor server.
+
+    Notes:
+        Tool philosophy : Operation should only be considered as a tool when it's optional for workflow, that means it can
+        be called or not. Operations that must be called (such as retrieve chat history) should not be considered as tool.
 
     Examples:
         from fastapi import FastAPI
@@ -75,7 +78,7 @@ class MCPServer(FastMCP):
         self._name=name
 
         self.id: UUID = uuid7()
-        # append and remove is thread safe. So don't need to lock.
+        # append and remove are thread safe. So don't need to lock.
         self._servers: list[UUID] = []
         self._raw_tools = [] # will be updated by _init_tools() and @tool()
         self._init_tools(tools)
@@ -103,7 +106,7 @@ class MCPServer(FastMCP):
     def check_factory(self, raise_when_no_factory=True):
         """
         Args:
-            raise_when_no_factory: False mean that raise when factory.
+            raise_when_no_factory: False mean that raise exception when it's a factory.
         """
         if raise_when_no_factory:
             if not self.__is_factory__:
@@ -113,7 +116,7 @@ class MCPServer(FastMCP):
 
     def add_tool(
         self,
-        fn: AnyFunction,
+        fn: types.AnyFunction,
         name: str | None = None,
         description: str | None = None,
         tags: set[str] | None = None,
@@ -145,7 +148,7 @@ class MCPServer(FastMCP):
 
     def app(self,mcp_path:str) -> FastAPI:
         """
-        Create FastAPI app with mcp websocket endpoint at prefix. Come along with monitor and get_state endpoints for debug.
+        Create FastAPI app with mcp websocket endpoint at the prefix. Come along with the monitor and get_state endpoints for debug.
         Returns:
             FastAPI app with 3 endpoints.
         """
@@ -160,12 +163,12 @@ class MCPServer(FastMCP):
                 await websocket.accept(subprotocol="mcp")
                 self._websockets.append(websocket)
 
-                logger.info(f"MCPServer App \'{self.app_name}\': Websocket endpoint connected.")
+                logger.info(f"MCPServer App \'{self.app_name}\': Websocket endpoint connected.{"="*10}")
                 async with self._create_new_mcp(websocket) as mcp:
                     await mcp._run()
 
                 self._websockets.remove(websocket)
-                logger.info(f"MCPServer App \'{self.app_name}\': Websocket endpoint disconnected.")
+                logger.info(f"MCPServer App \'{self.app_name}\': Websocket endpoint disconnected.{"~"*10}")
             except Exception as e:
                 logger.exception(e)
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -249,8 +252,9 @@ class MCPServer(FastMCP):
                         continue
                     await self.read_stream_writer.send(client_message)
         except anyio.ClosedResourceError:
+            logger.debug("_read_websocket except.")
             await self.websocket.close()
-            logger.info("_read_websocket except.")
+        # logger.debug(f"_read_socket: ws_state-{self.websocket.application_state}, stream-close-{self.read_stream_writer._closed}")
 
     async def _write_websocket(self):
         """
@@ -264,8 +268,9 @@ class MCPServer(FastMCP):
                     obj = message.model_dump_json(by_alias=True, exclude_none=True)
                     await self.websocket.send_text(obj)
         except anyio.ClosedResourceError:
+            logger.debug("_write_websocket except.")
             await self.websocket.close()
-            logger.info("_write_websocket except.")
+        # logger.debug(f"_write_socket: ws_state-{self.websocket.application_state}, stream-close-{self.write_stream_reader._closed}")
 
     async def _run_server(self):
         await self._mcp_server.run(self.read_stream, self.write_stream,
@@ -273,8 +278,8 @@ class MCPServer(FastMCP):
 
     async def _run(self):
         """
-        Run MCP server and stream handle tasks.
-        If one of those is done, cancel all remain tasks.
+        Run MCP server and stream handles tasks.
+        If one of those is done, cancel all remaining tasks.
         """
         self.check_factory(raise_when_no_factory=False)
 
@@ -282,16 +287,17 @@ class MCPServer(FastMCP):
             raise AttributeError("This server does not have websocket.")
 
         logger.debug("Websocket accepted.")
+
         tasks = [asyncio.create_task(self._read_websocket(), name='read_websocket'),
                  asyncio.create_task(self._write_websocket(), name='write_websocket'),
                  asyncio.create_task(self._run_server(), name='run_server'), ]
 
-        # Cancel all remain task except debug.
+        # Cancels all remain a task except debug.
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            logger.debug(f"Task {task.get_coro().__qualname__} is DONE.")
+            logger.debug(f"Task {task.get_coro().__qualname__} is DONE. Exception={task.exception()}")
         for task in pending:
             task.cancel()
             logger.debug(f"Task {task.get_coro().__qualname__} is CANCELED.")
-
+        # logger.debug(f"{self.websocket.application_state}")
 

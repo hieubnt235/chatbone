@@ -1,4 +1,4 @@
-from chatbone_utils import logger
+from utilities import logger
 import pytest
 import uvloop
 from uuid_extensions import uuid7

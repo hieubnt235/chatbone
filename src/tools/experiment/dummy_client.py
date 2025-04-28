@@ -7,9 +7,9 @@ from contextlib import AsyncExitStack
 from langchain_core.tools import StructuredTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from chatbone_utils.logger import logger
+from utilities.logger import logger
 
-from chatbone_utils.tools.client import ToolsClient
+from utilities.settings.clients.tools.client import ToolsClient
 
 # RUN DUMMY APP FIRST
 

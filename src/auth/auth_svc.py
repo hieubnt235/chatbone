@@ -4,11 +4,11 @@ from typing import Sequence
 import jwt
 from fastapi import HTTPException, status
 
-from chatbone_utils.auth import *
-from chatbone_utils.datastore import DatastoreClient, UserCreate, ClientRequestSchema, UserInfoReturn, \
+from utilities.settings.clients.auth import *
+from utilities.settings.clients.datastore import DatastoreClient, UserCreate, ClientRequestSchema, UserInfoReturn, \
 	ClientResponseSchema, Token, TokenInfoReturn, UserVerify
-from chatbone_utils.exception import handle_http_exception
-from chatbone_utils.func import hash_password, get_expire_date
+from utilities.exception import handle_http_exception
+from utilities.func import hash_password, get_expire_date
 from .settings import auth_settings
 
 ServerError = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

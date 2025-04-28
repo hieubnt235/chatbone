@@ -6,7 +6,7 @@ import time
 from fastapi import FastAPI
 from starlette.routing import Mount
 
-from chatbone_utils.logger import logger
+from utilities.logger import logger
 from tools.mcp_server import MCPServer, MCP_APP_SUFFIX
 
 """

@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from auth import make_user_credentials_register
 from auth import  UserCredentials
 from auth import AuthenticationService
-from chatbone_utils import UsernameNotFoundError, AuthenticationError, AlreadyRegisterError, TokenError
+from utilities import UsernameNotFoundError, AuthenticationError, AlreadyRegisterError, TokenError
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 

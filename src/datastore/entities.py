@@ -6,8 +6,8 @@ from sqlalchemy import ForeignKey, String, Text, DateTime
 from sqlalchemy.orm import (DeclarativeBase, Mapped, mapped_column, relationship, WriteOnlyMapped)
 from uuid_extensions.uuid7 import uuid7
 
-from chatbone_utils.mixin import ModelMixin
-from chatbone_utils.func import utc_now
+from utilities.mixin import ModelMixin
+from utilities.func import utc_now
 
 class Base(ModelMixin, DeclarativeBase):
 	created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=utc_now, index=True)

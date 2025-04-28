@@ -6,7 +6,7 @@ math_mcp = MCPServer(name='math')
 @math_mcp.tool()
 def add(a: float, b: float) -> float:
 	"""
-	Add twos number and return the result.
+	Add two numbers and return the result.
 	Args:
 		a:
 		b:

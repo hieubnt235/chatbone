@@ -1,9 +1,9 @@
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chatbone_utils.logger import logger
+from utilities.logger import logger
 import pytest
-from chatbone_utils.settings import chatbone_settings
+from utilities.settings import chatbone_settings
 
 def pytest_collection_modifyitems(config, items) -> None:
     assert isinstance(config,type(config)) #dump used

@@ -1,7 +1,7 @@
 from langchain_tavily.tavily_search import TavilySearch, TavilySearchInput
 
-from chatbone_utils.exception import handle_tools_exception
-from chatbone_utils.logger import logger
+from utilities.exception import handle_tools_exception
+from utilities.logger import logger
 from tools.mcp_server import MCPServer
 from .settings import tools_settings
 
