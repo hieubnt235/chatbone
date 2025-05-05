@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from utilities.logger import logger
 import psutil
 from pwdlib import PasswordHash
+from pathlib import Path
 
 # Password utils
 password_hash = PasswordHash.recommended()
@@ -87,6 +88,14 @@ def get_process_stats(pid: int | None = None, recursive=False):
 		return {"Error": f"Access denied to process with PID {pid}. Try running as administrator/root."}
 	except Exception as e:
 		return {"Error": f"An unexpected error occurred for PID {pid}: {e}"}
+
+
+def solve_relative_paths_recursively(data:dict, abs_path:Path):
+	for k,v in data.items():
+		if isinstance(v,dict):
+			solve_relative_paths_recursively(v,abs_path)
+		if isinstance(v,str) and k.endswith(("file","path","dir")):
+			data[k] = (abs_path/Path(v)).resolve().as_posix()
 
 # async def get_tasks(pid:int|None=None):
 # 	ts = [t.get_coro().__qualname__ for t in asyncio.all_tasks()]

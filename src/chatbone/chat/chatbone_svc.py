@@ -1,21 +1,12 @@
-import asyncio
-import time
-from contextlib import asynccontextmanager
-from datetime import datetime
-from functools import lru_cache
-from typing import Literal, Any, Self
-from uuid import UUID
+from typing import Any, Self
 
-import uvloop
-from fastapi import HTTPException, status, WebSocketException,WebSocket
-from pydantic import BaseModel, Field, AnyUrl
+from fastapi import HTTPException, status, WebSocket
+
+from chatbone.chat.settings import DATASTORE, CONFIG, REDIS
+from chatbone.chat.lua import LUA
 from utilities.exception import handle_http_exception
 from utilities.func import utc_now
-from utilities.schemas.auth import UserAuthenticate
 from utilities.settings.clients.datastore import *
-from uuid_extensions import uuid7
-
-from .settings import DATASTORE, CONFIG,REDIS
 
 ServerError = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="Something went wrong with server.")
@@ -29,6 +20,18 @@ class ChatSessionData(BaseModel):
 	summaries: ChatSummariesReturn
 	urls: list[AnyUrl]|None = Field(None,description="Addition data should be store in object storage and provide url.")
 
+username = {
+	"tokens": [
+		{"id":1, "expired_at": get_expire_date(100000)},
+		{"id":1, "expired_at": get_expire_date(100000)}# get expire date return expire at string.
+	],
+	"info": {
+		# some info
+	},
+	"data": {
+		# user data
+	}
+}
 
 def _filter_valid_token(obj:Any)->Any:
 	# TODO, make the valid atomic using lua
@@ -80,6 +83,8 @@ class ChatBoneSVC:
 	"""
 	@handle_http_exception(ServerError)
 	async def create_connection(self, user_info: UserInfoReturn)->str:
+		LUA['create_connection']
+
 		if (await REDIS.exists(user_info.username))==0:
 			await REDIS.hset()
 

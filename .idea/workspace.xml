@@ -11,61 +11,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/drafts/notebooks/chatbot.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/drafts/notebooks/chatbot.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/drafts/test_db.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/drafts/test_db.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/drafts/testdb.py" beforeDir="false" afterPath="$PROJECT_DIR$/drafts/testdb.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/alembic.ini" beforeDir="false" afterPath="$PROJECT_DIR$/migrations/alembic.ini" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/datastore_db_versions/5683eac29eb8_upgrade_at_2025_04_10_14_31_29_768347.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/assistant.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/seller.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/utils.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/extract_user_facts.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/mgs_summarization/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/mgs_summarization/node.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/mgs_summarization/state.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/mgs_summarization/workflow.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/assistants/workflows/workflow.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/.env.auth" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/.env.auth" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/auth_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/auth_svc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/config.toml" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/config.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/auth/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/auth/settings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/.env.chat" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/app.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/chat_assistants_svc.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/config.toml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chat/settings.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/.env.datastore" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/.env.datastore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/repo/user_repo.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/repo/user_repo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/settings/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/settings/cm.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/settings/settings.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/svc/chat_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/svc/chat_svc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/svc/cm.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/svc/cm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/datastore/svc/user_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/datastore/svc/user_svc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/exception.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/exception.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/.env.chatbone" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/.env.chatbone" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/cache_svc.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/chatbone_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/chatbone_svc.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/lua.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/lua.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/settings.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/func.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/func.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/_base.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/clients/_base.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/auth/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/auth/client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/auth/schemas.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/datastore/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/datastore/client.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/datastore/schemas/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/datastore/schemas/chat_svc.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/datastore/schemas/user_svc.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/config.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/settings/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/settings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/uv.lock" beforeDir="false" afterPath="$PROJECT_DIR$/uv.lock" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,6 +103,7 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "DefaultHtmlFileTemplate": "HTML File",
+    "Docker.compose/docker-compose.yaml.redis-stack: Compose Deployment.executor": "Run",
     "Docker.compose/docker-compose.yaml: Compose Deployment.executor": "Run",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "Python Debug Server.RemoteServer.executor": "Debug",
@@ -188,6 +144,7 @@
     "Python.load_chat.executor": "Run",
     "Python.logger.executor": "Run",
     "Python.loop.executor": "Run",
+    "Python.lua.executor": "Debug",
     "Python.main.executor": "Run",
     "Python.migrations.executor": "Run",
     "Python.models.executor": "Run",
@@ -269,7 +226,7 @@
       <recent name="$PROJECT_DIR$/deployments" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.settings">
+  <component name="RunManager" selected="Python.lua">
     <configuration name="RemoteServer" type="PyRemoteDebugConfigurationType" factoryName="Python Remote Debug">
       <module name="chatbone" />
       <option name="PORT" value="7779" />
@@ -285,7 +242,7 @@
       <option name="SUSPEND_AFTER_CONNECT" value="true" />
       <method v="2" />
     </configuration>
-    <configuration name="ng" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="lua" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="chatbone" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -294,12 +251,12 @@
         <env name="PYTHONUNBUFFERED" value="1" />
       </envs>
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/drafts" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone/chat" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/drafts/ng.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/lua.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -485,9 +442,14 @@
       </deployment>
       <method v="2" />
     </configuration>
-    <configuration name="compose/docker-compose.yaml: Compose Deployment" type="docker-deploy" factoryName="docker-compose.yml" temporary="true" server-name="Docker">
+    <configuration name="compose/docker-compose.yaml.redis-stack: Compose Deployment" type="docker-deploy" factoryName="docker-compose.yml" temporary="true" server-name="Docker">
       <deployment type="docker-compose.yml">
         <settings>
+          <option name="services">
+            <list>
+              <option value="redis-stack" />
+            </list>
+          </option>
           <option name="sourceFilePath" value="deployments/compose/docker-compose.yaml" />
         </settings>
       </deployment>
@@ -550,10 +512,10 @@
       <method v="2" />
     </configuration>
     <list>
-      <item itemvalue="Docker.compose/docker-compose.yaml: Compose Deployment" />
+      <item itemvalue="Docker.compose/docker-compose.yaml.redis-stack: Compose Deployment" />
       <item itemvalue="Python.test_settings" />
       <item itemvalue="Python.tools_client" />
-      <item itemvalue="Python.ng" />
+      <item itemvalue="Python.lua" />
       <item itemvalue="Python.redis_wrapper" />
       <item itemvalue="Python.settings (1)" />
       <item itemvalue="Python.settings" />
@@ -562,11 +524,11 @@
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.lua" />
         <item itemvalue="Python.settings" />
         <item itemvalue="Python.redis_wrapper" />
+        <item itemvalue="Docker.compose/docker-compose.yaml.redis-stack: Compose Deployment" />
         <item itemvalue="Python.settings (1)" />
-        <item itemvalue="Docker.compose/docker-compose.yaml: Compose Deployment" />
-        <item itemvalue="Python.ng" />
       </list>
     </recent_temporary>
   </component>
@@ -777,7 +739,7 @@
       <workItem from="1746425049647" duration="1102000" />
       <workItem from="1746426195486" duration="273000" />
       <workItem from="1746426474563" duration="24000" />
-      <workItem from="1746426549448" duration="5908000" />
+      <workItem from="1746426549448" duration="19972000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />
@@ -957,9 +919,10 @@
     <SUITE FILE_PATH="coverage/chatbone$tools_client.coverage" NAME="tools_client Coverage Results" MODIFIED="1745510999602" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
     <SUITE FILE_PATH="coverage/chatbone$td.coverage" NAME="td Coverage Results" MODIFIED="1744456152115" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
     <SUITE FILE_PATH="coverage/chatbone$def_aa.coverage" NAME="def aa Coverage Results" MODIFIED="1742642271679" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$lua.coverage" NAME="lua Coverage Results" MODIFIED="1746446160772" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/chat" />
     <SUITE FILE_PATH="coverage/chatbone$actor.coverage" NAME="actor Coverage Results" MODIFIED="1741244424179" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$test_settings.coverage" NAME="test_settings Coverage Results" MODIFIED="1740996193100" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
-    <SUITE FILE_PATH="coverage/chatbone$redis_wrapper.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746351998016" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
+    <SUITE FILE_PATH="coverage/chatbone$redis_wrapper.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746445843535" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
     <SUITE FILE_PATH="coverage/chatbone$client__1_.coverage" NAME="client (1) Coverage Results" MODIFIED="1744458453122" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils" />
     <SUITE FILE_PATH="coverage/chatbone$db.coverage" NAME="db Coverage Results" MODIFIED="1741941116790" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/chatbone/user_db" />
     <SUITE FILE_PATH="coverage/chatbone$dummy_app.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745773900499" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
@@ -981,7 +944,7 @@
     <SUITE FILE_PATH="coverage/chatbone$configs.coverage" NAME="configs Coverage Results" MODIFIED="1743082668234" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/configs" />
     <SUITE FILE_PATH="coverage/chatbone$a.coverage" NAME="a Coverage Results" MODIFIED="1745772350791" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$test.coverage" NAME="test Coverage Results" MODIFIED="1742751693974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src" />
-    <SUITE FILE_PATH="coverage/chatbone$settings.coverage" NAME="settings Coverage Results" MODIFIED="1746433330221" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
+    <SUITE FILE_PATH="coverage/chatbone$settings.coverage" NAME="settings Coverage Results" MODIFIED="1746445868962" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$redis.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746206419650" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
     <SUITE FILE_PATH="coverage/chatbone$user_access.coverage" NAME="user_access Coverage Results" MODIFIED="1744349724641" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore/api" />
     <SUITE FILE_PATH="coverage/chatbone$fatest.coverage" NAME="fatest Coverage Results" MODIFIED="1742979882429" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

@@ -52,7 +52,7 @@ class ChatboneConfig(Config):
 
 class ChatboneSettings(Settings):
 	model_config = SettingsConfigDict(env_prefix='chat_', env_file=find_dotenv('../.env.chatbone'))
-	service_name = 'chatbone'
+	service_name = 'chatbone.chat'
 
 	config: ChatboneConfig
 	datastore: DatastoreClient

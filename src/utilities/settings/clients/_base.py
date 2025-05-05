@@ -16,6 +16,7 @@ from utilities.settings.clients.redis_wrapper import RedisWrapperClient
 
 # noinspection PyNestedDecorators
 class BaseClient(BaseModel):
+	model_config = ConfigDict(extra="ignore")
 	path: ClassVar[str] = ""
 	"""Base path (endpoint) of the service api that client class point to. 
 	Use for the composition class to create complete url.path must start and NOT end with / . Or blank string if it's a highest client. 
@@ -36,13 +37,21 @@ class BaseClient(BaseModel):
 
 		data['url'] = data['url']+cls.path
 
+		subclients = {}
 		# Init sub clients.
 		for k,v in cls.model_fields.items():
 			args =typing.get_args(v.annotation)
 			cls_t = args[0] if len(args)>0 else v.annotation
 
 			if issubclass(cls_t, BaseClient):
-				data[k] = cls_t(**data) # all sub clients have the same init data.
+				subclients[k] = cls_t
+
+			# Prevalidate data to pass to all subclients, so that subclients doesn't need to validate anymore.
+			elif issubclass(cls_t,BaseModel) and isinstance(data[k],dict):
+				data[k] = cls_t(**data[k])
+		for k,v in subclients.items():
+			data[k] = v(**data)
+		# all sub clients have the same init data.
 		return data
 
 import redis
