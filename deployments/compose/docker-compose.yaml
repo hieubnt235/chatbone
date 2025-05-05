@@ -1,0 +1,47 @@
+# docker-compose.yml
+# A simple Docker Compose file to run Redis Stack and PostgreSQL
+
+
+services:
+    # Service definition for Redis Stack
+    redis-stack:
+        image: redis/redis-stack:latest # Use the official Redis Stack image
+        container_name: chat_redis # Optional: Assign a specific name to the container
+        environment:
+            REDIS_ARGS: "--requirepass 2352001"
+        ports:
+            - "3333:6379" # Map host port 6379 to container port 6379 (standard Redis)
+            - "8001:8001" # Map host port 8001 to container port 8001 (RedisInsight UI)
+        volumes:
+            - redis_stack_data:/data # Mount a named volume to persist Redis data
+        networks:
+            - chatbone-network # Connect to the custom network
+
+    # Service definition for PostgreSQL
+    postgres:
+        image: postgres:latest # Use the official PostgreSQL image
+        container_name: chatbone_db # Optional: Assign a specific name to the container
+        environment:
+            # Set environment variables required by the Postgres image
+            POSTGRES_USER: hieu # Define the default username
+            POSTGRES_PASSWORD: 2352001 # Define the default password (change this in production!)
+            POSTGRES_DB: datastore_db # Define the default database name to create
+        ports:
+            - "5432:5432" # Map host port 5432 to container port 5432 (standard PostgreSQL)
+        volumes:
+            - postgres_data:/var/lib/postgresql/data # Mount a named volume to persist PostgreSQL data
+        networks:
+            - chatbone-network # Connect to the custom network
+
+# Define named volumes for data persistence
+volumes:
+    redis_stack_data:
+        driver: local # Use the local driver (default)
+    postgres_data:
+        driver: local # Use the local driver (default)
+
+# Define a custom network for the services to communicate
+networks:
+    chatbone-network:
+        driver: bridge # Use the bridge driver (default)
+

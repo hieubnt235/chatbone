@@ -1,0 +1,943 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AnalysisUIOptions">
+    <option name="SPLITTER_PROPORTION" value="0.44511527" />
+    <option name="ANALYZE_INJECTED_CODE" value="false" />
+    <option name="SCOPE_TYPE" value="8" />
+    <option name="CUSTOM_SCOPE_NAME" value="Project Files Excluding Git-ignored" />
+  </component>
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+    </option>
+  </component>
+  <component name="CoverageOptionsProvider">
+    <option name="myActivateViewOnRun" value="false" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Jupyter Notebook" />
+        <option value="Dockerfile" />
+        <option value="HTML File" />
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Merge.Settings">
+    <option name="BRANCH" value="origin/master" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;hieubnt235&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/hieubnt235/chatbone.git&quot;,
+    &quot;accountId&quot;: &quot;680db644-4fee-441f-a3af-91ad08d65aa5&quot;
+  }
+}</component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/asyncio.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/broker.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/brokers/redis.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/cli.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/middleware/prometheus.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/dramatiq/worker.py" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/.venv/lib/python3.12/site-packages/loguru/__init__.pyi" root0="SKIP_INSPECTION" />
+    <setting file="file://$PROJECT_DIR$/src/chatbone/settings/settings.py" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file:///usr/lib/python3.12/importlib/__init__.py" root0="SKIP_INSPECTION" />
+  </component>
+  <component name="KubernetesApiPersistence">{}</component>
+  <component name="KubernetesApiProvider">{
+  &quot;isMigrated&quot;: true
+}</component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="2tWR1ynxQ0BntTgrBXpboFS6JOX" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="1" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="autoscrollFromSource" value="true" />
+    <option name="autoscrollToSource" value="true" />
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="openDirectoriesWithSingleClick" value="true" />
+    <option name="showExcludedFiles" value="false" />
+    <option name="showLibraryContents" value="true" />
+    <option name="showScratchesAndConsoles" value="false" />
+    <option name="sortByType" value="true" />
+    <option name="sortKey" value="BY_TYPE" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "DefaultHtmlFileTemplate": "HTML File",
+    "Docker.compose/docker-compose.yaml: Compose Deployment.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python Debug Server.RemoteServer.executor": "Debug",
+    "Python tests.Python tests in pyproject.toml.executor": "Run",
+    "Python tests.Python tests in test_chat.py.executor": "Run",
+    "Python tests.Python tests in test_settings.py.executor": "Coverage",
+    "Python tests.Python tests in testdb.py.executor": "Run",
+    "Python tests.Python tests in tests.executor": "Run",
+    "Python tests.Python tests in tools_client.py.executor": "Run",
+    "Python tests.pytest in chat_repo.executor": "Run",
+    "Python tests.pytest in chatbone.executor": "Run",
+    "Python tests.test chatbone.executor": "Run",
+    "Python tests.test_settings.py.executor": "Run",
+    "Python.__init__.executor": "Run",
+    "Python.a.executor": "Run",
+    "Python.actor.executor": "Run",
+    "Python.admin_svc.executor": "Run",
+    "Python.app (1).executor": "Run",
+    "Python.app (2).executor": "Run",
+    "Python.app.executor": "Run",
+    "Python.async_highload.executor": "Run",
+    "Python.cache.executor": "Run",
+    "Python.client (1).executor": "Run",
+    "Python.client.executor": "Run",
+    "Python.client_reqrep.executor": "Debug",
+    "Python.clients.executor": "Run",
+    "Python.config.executor": "Run",
+    "Python.configs.executor": "Run",
+    "Python.db.executor": "Run",
+    "Python.def aa.executor": "Run",
+    "Python.dummy.executor": "Run",
+    "Python.dummy_app.executor": "Run",
+    "Python.dummy_client.executor": "Run",
+    "Python.exception.executor": "Run",
+    "Python.fa-ray.executor": "Run",
+    "Python.fatest.executor": "Run",
+    "Python.graph_stream.executor": "Run",
+    "Python.load_chat.executor": "Run",
+    "Python.logger.executor": "Run",
+    "Python.loop.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.migrations.executor": "Run",
+    "Python.models.executor": "Run",
+    "Python.ng.executor": "Run",
+    "Python.openai-vllm-test.executor": "Run",
+    "Python.pass_ray_obj.executor": "Debug",
+    "Python.ray_pass.executor": "Run",
+    "Python.redis.executor": "Run",
+    "Python.redis_wrapper.executor": "Run",
+    "Python.repo_test.executor": "Run",
+    "Python.rpcsv.executor": "Run",
+    "Python.s.executor": "Run",
+    "Python.search.executor": "Run",
+    "Python.server2.executor": "Run",
+    "Python.settings (1).executor": "Run",
+    "Python.settings.executor": "Run",
+    "Python.sql_db.executor": "Run",
+    "Python.t.executor": "Run",
+    "Python.tasks.executor": "Run",
+    "Python.td (1).executor": "Run",
+    "Python.td.executor": "Run",
+    "Python.te.executor": "Debug",
+    "Python.test.executor": "Run",
+    "Python.test_settings.executor": "Run",
+    "Python.testdb.executor": "Run",
+    "Python.tool_client.executor": "Run",
+    "Python.tools_client.executor": "Run",
+    "Python.try_tool.executor": "Run",
+    "Python.user_access.executor": "Run",
+    "Python.user_svc.executor": "Run",
+    "Python.userdb_test.executor": "Run",
+    "Python.viztracer.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "Shell Script.reload_db.sh.executor": "Run",
+    "com.codeium.enabled": "true",
+    "deletionFromPopupRequiresConfirmation": "false",
+    "git-widget-placeholder": "master",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "/home/hieu/Workspace/recipes/StreamingApp",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "run.code.analysis.last.selected.profile": "pProject Default",
+    "settings.editor.selected.configurable": "IntelliLang.Configuration",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "redis",
+      "postgresql"
+    ]
+  }
+}]]></component>
+  <component name="PyConsoleOptionsProvider">
+    <option name="myPythonConsoleState">
+      <console-settings custom-start-script="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;import asyncio&#10;import nest_asyncio&#10;nest_asyncio.apply()" module-name="chatbone" is-module-sdk="true">
+        <option name="myCustomStartScript" value="import sys; print('Python %s on %s' % (sys.version, sys.platform))&#10;sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;import asyncio&#10;import nest_asyncio&#10;nest_asyncio.apply()" />
+        <option name="myUseModuleSdk" value="true" />
+        <option name="myModuleName" value="chatbone" />
+      </console-settings>
+    </option>
+    <option name="myIpythonEnabled" value="false" />
+  </component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/chatbone" />
+      <recent name="$PROJECT_DIR$/tests/unit/workflows" />
+      <recent name="$PROJECT_DIR$/src/utils" />
+      <recent name="$PROJECT_DIR$/drafts" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/chatbone" />
+      <recent name="$PROJECT_DIR$/src/chatbone/chat" />
+      <recent name="$PROJECT_DIR$/deployments/datastore" />
+      <recent name="$PROJECT_DIR$/deployments/serves" />
+      <recent name="$PROJECT_DIR$/deployments" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.settings">
+    <configuration name="RemoteServer" type="PyRemoteDebugConfigurationType" factoryName="Python Remote Debug">
+      <module name="chatbone" />
+      <option name="PORT" value="7779" />
+      <option name="HOST" value="192.168.60.2" />
+      <PathMappingSettings>
+        <option name="pathMappings">
+          <list>
+            <mapping local-root="$PROJECT_DIR$" remote-root="/home/hieu/Workspace/projects/chatbone" />
+          </list>
+        </option>
+      </PathMappingSettings>
+      <option name="REDIRECT_OUTPUT" value="true" />
+      <option name="SUSPEND_AFTER_CONNECT" value="true" />
+      <method v="2" />
+    </configuration>
+    <configuration name="ng" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/drafts" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/drafts/ng.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="redis_wrapper" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/utilities/settings/clients" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="settings (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/auth" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/auth/settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="settings" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="test_settings" type="PythonConfigurationType" factoryName="Python">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="uv (chatbone)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bin/test_scripts/test_settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="test_settings" type="PythonConfigurationType" factoryName="Python">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="uv (chatbone)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bin/test_scripts/test_settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="tools_client" type="PythonConfigurationType" factoryName="Python">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="uv (chatbone)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/tools/experiment/tools_client.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
+      <deployment type="docker-compose.yml">
+        <settings />
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <configuration name="compose/docker-compose.yaml: Compose Deployment" type="docker-deploy" factoryName="docker-compose.yml" temporary="true" server-name="Docker">
+      <deployment type="docker-compose.yml">
+        <settings>
+          <option name="sourceFilePath" value="deployments/compose/docker-compose.yaml" />
+        </settings>
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest in chat_repo" type="tests" factoryName="py.test">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;-m chat_repo&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest in chat_repo" type="tests" factoryName="py.test">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;-m chat_repo&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Docker.compose/docker-compose.yaml: Compose Deployment" />
+      <item itemvalue="Python.test_settings" />
+      <item itemvalue="Python.tools_client" />
+      <item itemvalue="Python.ng" />
+      <item itemvalue="Python.redis_wrapper" />
+      <item itemvalue="Python.settings (1)" />
+      <item itemvalue="Python.settings" />
+      <item itemvalue="Python Debug Server.RemoteServer" />
+      <item itemvalue="Python tests.pytest in chat_repo" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.settings" />
+        <item itemvalue="Python.redis_wrapper" />
+        <item itemvalue="Python.settings (1)" />
+        <item itemvalue="Docker.compose/docker-compose.yaml: Compose Deployment" />
+        <item itemvalue="Python.ng" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-f27c65a3e318-JavaScript-PY-251.23774.444" />
+        <option value="bundled-python-sdk-890ed5b35930-d9c5bdb153f4-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.23774.444" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="SvnConfiguration">
+    <configuration>$USER_HOME$/.subversion</configuration>
+  </component>
+  <component name="TamaCatBrowser">
+    <tabPlacements>
+      <tabPlacement position="RIGHT_BOTTOM" url="tamacat://home" />
+      <tabPlacement position="RIGHT_BOTTOM" url="file:///jbcefbrowser/1243854509#url=about:blank" />
+    </tabPlacements>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="" />
+      <created>1740465633227</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1740465633227</updated>
+      <workItem from="1740465634212" duration="2298000" />
+      <workItem from="1740553411287" duration="117000" />
+      <workItem from="1740814587608" duration="7337000" />
+      <workItem from="1740888871479" duration="21479000" />
+      <workItem from="1740955623235" duration="1289000" />
+      <workItem from="1740956922390" duration="62000" />
+      <workItem from="1740956997060" duration="35801000" />
+      <workItem from="1740998712355" duration="5265000" />
+      <workItem from="1741059203331" duration="22054000" />
+      <workItem from="1741087291048" duration="844000" />
+      <workItem from="1741088145727" duration="15752000" />
+      <workItem from="1741162100076" duration="1687000" />
+      <workItem from="1741163797179" duration="12870000" />
+      <workItem from="1741189339871" duration="3495000" />
+      <workItem from="1741194747648" duration="1903000" />
+      <workItem from="1741240998913" duration="16351000" />
+      <workItem from="1741260069208" duration="3749000" />
+      <workItem from="1741317288385" duration="12387000" />
+      <workItem from="1741504482486" duration="1946000" />
+      <workItem from="1741589974388" duration="1216000" />
+      <workItem from="1741591197698" duration="88000" />
+      <workItem from="1741591294055" duration="137000" />
+      <workItem from="1741591439413" duration="170000" />
+      <workItem from="1741591618122" duration="313000" />
+      <workItem from="1741591939100" duration="209000" />
+      <workItem from="1741592155703" duration="567000" />
+      <workItem from="1741592732559" duration="38000" />
+      <workItem from="1741592779806" duration="155000" />
+      <workItem from="1741592943765" duration="145000" />
+      <workItem from="1741593097862" duration="397000" />
+      <workItem from="1741593503268" duration="187000" />
+      <workItem from="1741593700698" duration="145000" />
+      <workItem from="1741593853712" duration="25000" />
+      <workItem from="1741593887230" duration="25000" />
+      <workItem from="1741593921362" duration="15000" />
+      <workItem from="1741593945521" duration="188000" />
+      <workItem from="1741594143019" duration="1578000" />
+      <workItem from="1741766571396" duration="8394000" />
+      <workItem from="1741775033787" duration="4105000" />
+      <workItem from="1741781850969" duration="6134000" />
+      <workItem from="1741831726973" duration="1920000" />
+      <workItem from="1741858537192" duration="1122000" />
+      <workItem from="1741920764899" duration="3509000" />
+      <workItem from="1741926880294" duration="641000" />
+      <workItem from="1741932181179" duration="762000" />
+      <workItem from="1741936684007" duration="22821000" />
+      <workItem from="1742029034042" duration="6956000" />
+      <workItem from="1742096027908" duration="19381000" />
+      <workItem from="1742181184441" duration="12000" />
+      <workItem from="1742191282735" duration="12000" />
+      <workItem from="1742204714469" duration="12188000" />
+      <workItem from="1742221676456" duration="12843000" />
+      <workItem from="1742267337201" duration="2610000" />
+      <workItem from="1742280526939" duration="7186000" />
+      <workItem from="1742365923824" duration="34338000" />
+      <workItem from="1742406053563" duration="4102000" />
+      <workItem from="1742449406668" duration="1238000" />
+      <workItem from="1742450657256" duration="12867000" />
+      <workItem from="1742464207412" duration="50000" />
+      <workItem from="1742464269457" duration="322000" />
+      <workItem from="1742464609669" duration="1208000" />
+      <workItem from="1742465831305" duration="235000" />
+      <workItem from="1742466075678" duration="150000" />
+      <workItem from="1742466235084" duration="22777000" />
+      <workItem from="1742530607640" duration="181000" />
+      <workItem from="1742530804987" duration="121000" />
+      <workItem from="1742530940148" duration="24524000" />
+      <workItem from="1742563088563" duration="11266000" />
+      <workItem from="1742624168626" duration="33908000" />
+      <workItem from="1742713128909" duration="3958000" />
+      <workItem from="1742736530133" duration="1250000" />
+      <workItem from="1742737815977" duration="6057000" />
+      <workItem from="1742744625932" duration="175000" />
+      <workItem from="1742744809899" duration="7811000" />
+      <workItem from="1742784669522" duration="21404000" />
+      <workItem from="1742876567672" duration="813000" />
+      <workItem from="1742877444496" duration="4907000" />
+      <workItem from="1742882508264" duration="16352000" />
+      <workItem from="1742914436189" duration="876000" />
+      <workItem from="1742915323115" duration="1245000" />
+      <workItem from="1742972570330" duration="1107000" />
+      <workItem from="1742973685654" duration="29530000" />
+      <workItem from="1743011455554" duration="7396000" />
+      <workItem from="1743052904514" duration="2409000" />
+      <workItem from="1743055515036" duration="24769000" />
+      <workItem from="1743089291657" duration="4789000" />
+      <workItem from="1743133949769" duration="457000" />
+      <workItem from="1743134470926" duration="301000" />
+      <workItem from="1743134783248" duration="151000" />
+      <workItem from="1743134946278" duration="322000" />
+      <workItem from="1743135279551" duration="261000" />
+      <workItem from="1743135554581" duration="201000" />
+      <workItem from="1743135777861" duration="559000" />
+      <workItem from="1743136351112" duration="1783000" />
+      <workItem from="1743138156814" duration="232000" />
+      <workItem from="1743138402148" duration="122000" />
+      <workItem from="1743138533007" duration="27501000" />
+      <workItem from="1743219806504" duration="13004000" />
+      <workItem from="1743247311222" duration="315000" />
+      <workItem from="1743306573502" duration="354000" />
+      <workItem from="1743321254918" duration="1819000" />
+      <workItem from="1743326123905" duration="2245000" />
+      <workItem from="1743328413856" duration="7480000" />
+      <workItem from="1743337015051" duration="7463000" />
+      <workItem from="1743370900841" duration="1414000" />
+      <workItem from="1743384007542" duration="14000" />
+      <workItem from="1743384153034" duration="3000" />
+      <workItem from="1743384379646" duration="5000" />
+      <workItem from="1743411268534" duration="1425000" />
+      <workItem from="1743412764256" duration="8232000" />
+      <workItem from="1743475431530" duration="9797000" />
+      <workItem from="1743487006044" duration="78000" />
+      <workItem from="1743487093707" duration="8121000" />
+      <workItem from="1743495228837" duration="270000" />
+      <workItem from="1743495507334" duration="4446000" />
+      <workItem from="1743567213222" duration="7571000" />
+      <workItem from="1743578751103" duration="9999000" />
+      <workItem from="1743655178970" duration="3339000" />
+      <workItem from="1744087589692" duration="53231000" />
+      <workItem from="1744187267616" duration="601000" />
+      <workItem from="1744200243416" duration="6714000" />
+      <workItem from="1744206969474" duration="12840000" />
+      <workItem from="1744267892541" duration="432000" />
+      <workItem from="1744270577864" duration="9488000" />
+      <workItem from="1744280390346" duration="22405000" />
+      <workItem from="1744338558548" duration="9371000" />
+      <workItem from="1744348590978" duration="21371000" />
+      <workItem from="1744384536257" duration="8034000" />
+      <workItem from="1744439563394" duration="32031000" />
+      <workItem from="1744474921306" duration="944000" />
+      <workItem from="1744518683574" duration="1954000" />
+      <workItem from="1744526946886" duration="27628000" />
+      <workItem from="1744608273523" duration="30757000" />
+      <workItem from="1744782435387" duration="1667000" />
+      <workItem from="1744793890508" duration="22775000" />
+      <workItem from="1744856361527" duration="7044000" />
+      <workItem from="1744878877535" duration="608000" />
+      <workItem from="1744887192653" duration="10000" />
+      <workItem from="1744960591905" duration="79000" />
+      <workItem from="1744982584187" duration="1680000" />
+      <workItem from="1745064388046" duration="145000" />
+      <workItem from="1745231010931" duration="2828000" />
+      <workItem from="1745233865199" duration="155000" />
+      <workItem from="1745234036464" duration="30848000" />
+      <workItem from="1745295638295" duration="32029000" />
+      <workItem from="1745389424671" duration="24132000" />
+      <workItem from="1745413581034" duration="38115000" />
+      <workItem from="1745502015680" duration="5546000" />
+      <workItem from="1745507574270" duration="6617000" />
+      <workItem from="1745577615693" duration="13000" />
+      <workItem from="1745649928951" duration="6623000" />
+      <workItem from="1745656571875" duration="353000" />
+      <workItem from="1745656932339" duration="113000" />
+      <workItem from="1745657055734" duration="14851000" />
+      <workItem from="1745673854091" duration="2937000" />
+      <workItem from="1745677229384" duration="15000" />
+      <workItem from="1745677256185" duration="27000" />
+      <workItem from="1745677549199" duration="33000" />
+      <workItem from="1745677584635" duration="25000" />
+      <workItem from="1745677649588" duration="58000" />
+      <workItem from="1745677732416" duration="258000" />
+      <workItem from="1745678011086" duration="239000" />
+      <workItem from="1745678297338" duration="50000" />
+      <workItem from="1745678399779" duration="240000" />
+      <workItem from="1745678670659" duration="1598000" />
+      <workItem from="1745680385098" duration="902000" />
+      <workItem from="1745745449347" duration="17193000" />
+      <workItem from="1745822584608" duration="29155000" />
+      <workItem from="1745968850616" duration="21688000" />
+      <workItem from="1746020189868" duration="23000" />
+      <workItem from="1746076028072" duration="64000" />
+      <workItem from="1746076107970" duration="24362000" />
+      <workItem from="1746117742601" duration="7280000" />
+      <workItem from="1746163753888" duration="8241000" />
+      <workItem from="1746178865440" duration="21170000" />
+      <workItem from="1746245115940" duration="5541000" />
+      <workItem from="1746319384827" duration="25880000" />
+      <workItem from="1746366651503" duration="2950000" />
+      <workItem from="1746371747020" duration="2836000" />
+      <workItem from="1746425049647" duration="1102000" />
+      <workItem from="1746426195486" duration="273000" />
+      <workItem from="1746426474563" duration="24000" />
+      <workItem from="1746426549448" duration="4913000" />
+    </task>
+    <task id="LOCAL-00001" summary="general architecture">
+      <option name="closed" value="true" />
+      <created>1743494907226</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1743494907226</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Implement full architecture exception assistant">
+      <option name="closed" value="true" />
+      <created>1745511492905</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1745511492905</updated>
+    </task>
+    <task id="LOCAL-00003" summary="tools server">
+      <option name="closed" value="true" />
+      <created>1745511839214</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1745511839214</updated>
+    </task>
+    <task id="LOCAL-00004" summary="tools server">
+      <option name="closed" value="true" />
+      <created>1745512178507</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1745512178507</updated>
+    </task>
+    <task id="LOCAL-00005" summary="tools server">
+      <option name="closed" value="true" />
+      <created>1745512363492</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1745512363492</updated>
+    </task>
+    <task id="LOCAL-00006" summary="tools server">
+      <option name="closed" value="true" />
+      <created>1745512412025</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1745512412025</updated>
+    </task>
+    <task id="LOCAL-00007" summary="assistant architect decision">
+      <option name="closed" value="true" />
+      <created>1745850907254</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1745850907254</updated>
+    </task>
+    <task id="LOCAL-00008" summary="Make the __all__ list">
+      <option name="closed" value="true" />
+      <created>1745980007824</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1745980007824</updated>
+    </task>
+    <task id="LOCAL-00009" summary="cache strategy">
+      <option name="closed" value="true" />
+      <created>1746359507594</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1746359507594</updated>
+    </task>
+    <task id="LOCAL-00010" summary="cache strategy">
+      <option name="closed" value="true" />
+      <created>1746359665539</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1746359665539</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="RECENT_FILTERS">
+      <map>
+        <entry key="User">
+          <value>
+            <list>
+              <RecentGroup>
+                <option name="FILTER_VALUES">
+                  <option value="*" />
+                </option>
+              </RecentGroup>
+            </list>
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="master" />
+                      </list>
+                    </value>
+                  </entry>
+                  <entry key="user">
+                    <value>
+                      <list>
+                        <option value="*" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="general architecture" />
+    <MESSAGE value="Implement full architecture exception assistant" />
+    <MESSAGE value="tools server" />
+    <MESSAGE value="assistant architect decision" />
+    <MESSAGE value="Make the __all__ list" />
+    <MESSAGE value="cache strategy" />
+    <option name="LAST_COMMIT_MESSAGE" value="cache strategy" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <default-breakpoints>
+        <breakpoint type="python-exception">
+          <properties notifyOnTerminate="true" exception="BaseException">
+            <option name="notifyOnTerminate" value="true" />
+          </properties>
+        </breakpoint>
+      </default-breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/chatbone$models.coverage" NAME="models Coverage Results" MODIFIED="1742377347895" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/repositories/chat" />
+    <SUITE FILE_PATH="coverage/chatbone$main.coverage" NAME="main Coverage Results" MODIFIED="1745502848282" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
+    <SUITE FILE_PATH="coverage/chatbone$td__1_.coverage" NAME="td (1) Coverage Results" MODIFIED="1744288877204" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$tasks.coverage" NAME="tasks Coverage Results" MODIFIED="1741085673920" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/tasks" />
+    <SUITE FILE_PATH="coverage/chatbone$config.coverage" NAME="config Coverage Results" MODIFIED="1744545980067" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/settings" />
+    <SUITE FILE_PATH="coverage/chatbone$fa_ray.coverage" NAME="fa-ray Coverage Results" MODIFIED="1744985693889" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$ng.coverage" NAME="ng Coverage Results" MODIFIED="1746247782577" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$rpcsv.coverage" NAME="rpcsv Coverage Results" MODIFIED="1745977716376" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$dummy.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745496474512" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
+    <SUITE FILE_PATH="coverage/chatbone$clients.coverage" NAME="clients Coverage Results" MODIFIED="1744391711511" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$tool_client.coverage" NAME="tool_client Coverage Results" MODIFIED="1745505869733" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/settings_py$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1745652846399" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$migrations.coverage" NAME="migrations Coverage Results" MODIFIED="1744295489228" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/scripts" />
+    <SUITE FILE_PATH="coverage/chatbone$user_svc.coverage" NAME="user_svc Coverage Results" MODIFIED="1744167903389" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore/svc" />
+    <SUITE FILE_PATH="coverage/chatbone$exception.coverage" NAME="exception Coverage Results" MODIFIED="1742456065338" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/utils" />
+    <SUITE FILE_PATH="coverage/chatbone$te.coverage" NAME="te Coverage Results" MODIFIED="1744614338544" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/auth" />
+    <SUITE FILE_PATH="coverage/chatbone$viztracer.coverage" NAME="viztracer Coverage Results" MODIFIED="1741251240769" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$t.coverage" NAME="t Coverage Results" MODIFIED="1744857543647" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$server2.coverage" NAME="server2 Coverage Results" MODIFIED="1745487285680" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$app.coverage" NAME="app Coverage Results" MODIFIED="1746112313625" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/auth" />
+    <SUITE FILE_PATH="coverage/chatbone$pytest_in_chatbone.coverage" NAME="pytest in chat_repo Coverage Results" MODIFIED="1742667400063" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/chatbone$app__2_.coverage" NAME="app (2) Coverage Results" MODIFIED="1744860679591" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
+    <SUITE FILE_PATH="coverage/chatbone$cache.coverage" NAME="cache Coverage Results" MODIFIED="1746206066871" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$tools_client.coverage" NAME="tools_client Coverage Results" MODIFIED="1745510999602" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/chatbone$td.coverage" NAME="td Coverage Results" MODIFIED="1744456152115" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$def_aa.coverage" NAME="def aa Coverage Results" MODIFIED="1742642271679" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$actor.coverage" NAME="actor Coverage Results" MODIFIED="1741244424179" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$test_settings.coverage" NAME="test_settings Coverage Results" MODIFIED="1740996193100" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/chatbone$redis_wrapper.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746351998016" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
+    <SUITE FILE_PATH="coverage/chatbone$client__1_.coverage" NAME="client (1) Coverage Results" MODIFIED="1744458453122" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils" />
+    <SUITE FILE_PATH="coverage/chatbone$db.coverage" NAME="db Coverage Results" MODIFIED="1741941116790" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/chatbone/user_db" />
+    <SUITE FILE_PATH="coverage/chatbone$dummy_app.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745773900499" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
+    <SUITE FILE_PATH="coverage/chatbone$search.coverage" NAME="search Coverage Results" MODIFIED="1745390637865" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1746124492144" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$async_highload.coverage" NAME="async_highload Coverage Results" MODIFIED="1741322716840" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/settings_py$app.coverage" NAME="app Coverage Results" MODIFIED="1745652831334" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$test_chatbone.coverage" NAME="test chatbone Coverage Results" MODIFIED="1742648958017" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/chatbone$client_reqrep.coverage" NAME="client_reqrep Coverage Results" MODIFIED="1744449891861" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/.venv/lib/python3.12/site-packages/aiohttp" />
+    <SUITE FILE_PATH="coverage/chatbone$testdb.coverage" NAME="testdb Coverage Results" MODIFIED="1742572565693" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$openai_vllm_test.coverage" NAME="openai-vllm-test Coverage Results" MODIFIED="1743664175118" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts/vllm" />
+    <SUITE FILE_PATH="coverage/chatbone$loop.coverage" NAME="loop Coverage Results" MODIFIED="1740903467397" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/agents" />
+    <SUITE FILE_PATH="coverage/settings_py$user_svc.coverage" NAME="user_svc Coverage Results" MODIFIED="1745652826096" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/settings/clients/datastore/schemas" />
+    <SUITE FILE_PATH="coverage/chatbone$userdb_test.coverage" NAME="userdb_test Coverage Results" MODIFIED="1742216807101" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$client.coverage" NAME="client Coverage Results" MODIFIED="1744633609887" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$graph_stream.coverage" NAME="graph_stream Coverage Results" MODIFIED="1745777063708" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/settings_py$pass_ray_obj.coverage" NAME="pass_ray_obj Coverage Results" MODIFIED="1745676826762" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$try_tool.coverage" NAME="try_tool Coverage Results" MODIFIED="1745325676916" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$configs.coverage" NAME="configs Coverage Results" MODIFIED="1743082668234" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/configs" />
+    <SUITE FILE_PATH="coverage/chatbone$a.coverage" NAME="a Coverage Results" MODIFIED="1745772350791" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$test.coverage" NAME="test Coverage Results" MODIFIED="1742751693974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src" />
+    <SUITE FILE_PATH="coverage/chatbone$settings.coverage" NAME="settings Coverage Results" MODIFIED="1746374260615" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
+    <SUITE FILE_PATH="coverage/chatbone$redis.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746206419650" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
+    <SUITE FILE_PATH="coverage/chatbone$user_access.coverage" NAME="user_access Coverage Results" MODIFIED="1744349724641" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore/api" />
+    <SUITE FILE_PATH="coverage/chatbone$fatest.coverage" NAME="fatest Coverage Results" MODIFIED="1742979882429" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/chatbone$__init__.coverage" NAME="__init__ Coverage Results" MODIFIED="1745502331627" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$dummy_client.coverage" NAME="dummy_client Coverage Results" MODIFIED="1745773909150" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
+    <SUITE FILE_PATH="coverage/chatbone$logger.coverage" NAME="logger Coverage Results" MODIFIED="1743060626154" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
+    <SUITE FILE_PATH="coverage/chatbone$repo_test.coverage" NAME="repo_test Coverage Results" MODIFIED="1742233246703" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$ray_pass.coverage" NAME="ray_pass Coverage Results" MODIFIED="1745840872432" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$admin_svc.coverage" NAME="admin_svc Coverage Results" MODIFIED="1744210802496" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore/svc" />
+    <SUITE FILE_PATH="coverage/chatbone$.coverage" NAME=" Coverage Results" MODIFIED="1745505929178" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
+    <SUITE FILE_PATH="coverage/chatbone$s.coverage" NAME="s Coverage Results" MODIFIED="1745233529392" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
+    <SUITE FILE_PATH="coverage/chatbone$load_chat.coverage" NAME="load_chat Coverage Results" MODIFIED="1742380311541" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/scripts" />
+    <SUITE FILE_PATH="coverage/chatbone$settings__1_.coverage" NAME="settings (1) Coverage Results" MODIFIED="1746349265430" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/auth" />
+  </component>
+</project>
