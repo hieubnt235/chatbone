@@ -2,7 +2,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
-
+from utilities.logger import logger
 import psutil
 from pwdlib import PasswordHash
 
@@ -11,10 +11,11 @@ password_hash = PasswordHash.recommended()
 
 
 def hash_password(password: str):
-	return password_hash.hash(password)
+	hp  = password_hash.hash(password)
+	return hp
 
 
-def verify_password(password: str, hashed_password):
+def verify_password(password: str, hashed_password)->bool:
 	return password_hash.verify(password, hashed_password)
 
 

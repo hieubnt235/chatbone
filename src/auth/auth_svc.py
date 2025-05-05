@@ -30,7 +30,7 @@ class AuthenticationSVC:
 	@handle_http_exception(ServerError)
 	async def register(self, schema: UserRegister)->str:
 		"""
-		Create user and first token.
+		Create a user and first token.
 		Intent to be used to sign up.
 
 		Returns:
@@ -46,7 +46,7 @@ class AuthenticationSVC:
 		)
 		res:ClientResponseSchema[UserInfoReturn] =  await self.datastore.user.access.create(req)
 		# self.datastore.check_ok(res)
-		return await asyncio.to_thread(self._encode_jwt,self,res.content)
+		return await asyncio.to_thread(self._encode_jwt,res.content)
 
 	@handle_http_exception(ServerError)
 	async def authenticate(self,schema: UserRegister) -> str:
@@ -60,7 +60,7 @@ class AuthenticationSVC:
 		req = ClientRequestSchema[UserVerify](
 			body=UserVerify(
 				username=schema.username,
-				hashed_password=await asyncio.to_thread(hash_password, schema.password),
+				password=schema.password,
 				expires_at=get_expire_date(self.token_duration_seconds),
 				create_token_flag='if_all_expired'
 			),
@@ -68,7 +68,7 @@ class AuthenticationSVC:
 		)
 		res:ClientResponseSchema[UserInfoReturn] =  await self.datastore.user.access.verify(req)
 		# self.datastore.check_ok(res)
-		return await asyncio.to_thread(self._encode_jwt, self, res.content)
+		return await asyncio.to_thread(self._encode_jwt,  res.content)
 
 	@handle_http_exception(ServerError)
 	async def expire_tokens(self):
@@ -86,7 +86,7 @@ class AuthenticationSVC:
 
 		# Decode latest token and make request.
 		try:
-			token:TokenInfoReturn = await asyncio.to_thread(self._decode_jwt,self,jwt)
+			token:TokenInfoReturn = await asyncio.to_thread(self._decode_jwt,jwt)
 			req = ClientRequestSchema[Token](body=Token(token_id=token.id),
 			                                timeout=self.datastore_request_timeout.get)
 		except Exception:

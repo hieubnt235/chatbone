@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DeveloperToolsToolWindowSettingsV1" lastSelectedContentNodeId="text-statistic">
+    <developerToolsConfigurations>
+      <developerToolConfiguration developerToolId="text-statistic" id="503e3736-a423-48a9-886e-38c2a60e84fb" name="Workbench">
+        <properties>
+          <property key="text" type="INPUT" value="kotlin.String|from pydantic import BaseModel, ConfigDict&#10;&#10;&#10;class User(BaseModel):&#10;    model_config = ConfigDict(validate_assignment=True,validate_default=True)&#10;    username:str&#10;&#10;class UserIn(User):&#10;    password:str&#10;&#10;class UserCredentials(User):&#10;    hashed_password:str&#10;&#10;class AuthenticatedToken(BaseModel):&#10;    &quot;&quot;&quot;&#10;    Attributes:&#10;        access_token (str): The JWT token.&#10;        token_type (str): The type of the token.&#10;    &quot;&quot;&quot;&#10;    access_token:str&#10;    token_type:str" />
+        </properties>
+      </developerToolConfiguration>
+    </developerToolsConfigurations>
+    <expandedGroupNodeIds />
+  </component>
+</project>

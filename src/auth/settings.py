@@ -37,3 +37,4 @@ class AuthSettings(Settings):
 
 
 auth_settings = AuthSettings()
+

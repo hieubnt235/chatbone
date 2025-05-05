@@ -8,6 +8,7 @@ import inspect
 from typing import Any
 
 from fastapi import HTTPException
+from starlette.exceptions import WebSocketException
 
 from utilities.logger import logger
 from utilities.typing import FUNCTYPE
@@ -62,7 +63,7 @@ def _handle(e:Exception,exception_type:type[BaseMethodException],func,args0,mess
 def _handle_http(e, http_exception:HTTPException,*args):
     assert args==args # dump use, ignore it.
 
-    if isinstance(e,HTTPException):
+    if isinstance(e,HTTPException) or isinstance(e,WebSocketException):
         raise # If it is HTTP one, raise it.
 
     pe = e

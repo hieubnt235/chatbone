@@ -18,6 +18,8 @@ def valid_config_file(file:FilePath)->FilePath:
 
     return file.resolve()
 
+
+# noinspection PyNestedDecorators
 class Config(BaseModel):
     """Base class for configuration models. """
     model_config = ConfigDict(extra="forbid",

@@ -1,12 +1,17 @@
 from contextlib import asynccontextmanager, AbstractAsyncContextManager
 
-from datastore.settings.cm import get_session
+from utilities.typing import SESSION_CONTEXTMANAGER
 from .chat_svc import ChatSessionSVC, ChatMessageSVC, ChatSummarySVC
 from .user_svc import UserAccessSVC, UserSummarySVC
+from ..settings import datastore_settings
+
+
+def get_session() -> SESSION_CONTEXTMANAGER:
+	return datastore_settings.db.session()
 
 AnySVC = UserAccessSVC | UserSummarySVC
 
-# APIs use CM for service access, do not need about session.
+# APIs use CM for service access, do not need to know about the session.
 
 @asynccontextmanager
 async def get_svc(svc_type: type[AnySVC]) -> AbstractAsyncContextManager[AnySVC]:

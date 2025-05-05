@@ -1,13 +1,15 @@
 import asyncio
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from utilities.settings.clients.datastore.schemas.user_svc import *
-from utilities.exception import handle_http_exception, find_root_pre_exp
-from utilities.func import utc_now
+
 from datastore.entities import User, AccessToken, UserSummary
 from datastore.repo import UserRepo, UserRepoException
+from utilities.exception import handle_http_exception, find_root_pre_exp
+from utilities.func import utc_now, verify_password
+from utilities.schemas.datastore import *
 from .base import BaseSVC, ServerError
 
 
@@ -62,7 +64,7 @@ class UserSVC(BaseSVC):
 
 class UserAccessSVC(UserSVC):
 	"""
-	Service class for user access-related operations.
+	Service class for user_access-related operations.
     Methods:
         - create_user: Creates a new user and their first token.
         - verify_user: Verifies a user and optionally creates a new token.
@@ -111,9 +113,9 @@ class UserAccessSVC(UserSVC):
             UserNotExistError: If the user does not exist.
             VerifyFailError: If the username or password is incorrect.
 		"""
-		if not (await self.user_repo.is_existing(schema.username)):
+		if (user := await self.user_repo.get(schema.username)) is None:
 			raise UserNotExistError
-		if (user := await self.user_repo.get_verify(schema.username, schema.hashed_password)) is None:
+		if not (await asyncio.to_thread(verify_password,schema.password, user.hashed_password)):
 			raise VerifyFailError
 
 		if await asyncio.to_thread(_should_create_token, schema.create_token_flag, user.tokens):
@@ -123,7 +125,7 @@ class UserAccessSVC(UserSVC):
 	@handle_http_exception(ServerError)
 	async def get_user(self, schema: Token) -> UserInfoReturn:
 		"""
-		Retrieves user information based on a token. Return user info if token is valid.
+		Retrieves user information based on a token. Return user info if the token is valid.
 		Different from verify_user by input type.
 
         Args:

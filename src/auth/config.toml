@@ -1,4 +1,4 @@
-token_duration_seconds = 300
+token_duration_seconds = 3000
 max_valid_tokens= 1
 
 jwt_encode_algorithm = 'HS256'

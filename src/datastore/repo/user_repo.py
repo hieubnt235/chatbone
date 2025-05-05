@@ -29,23 +29,10 @@ class UserRepo(RepoMixin):
 		return user
 
 	@handle_exception(UserRepoException)
-	async def get_verify(self, username: str, hashed_password: str) -> User | None:
-		"""
-		For login
-		Check if a user already exists by username. Should be called before creating a new user.
-		Args:
-		 hashed_password:
-			username (str): The username to check for existence.
-		Returns:
-			bool: True if the user exists, False otherwise.
-		"""
-		q = select(User).where(and_(User.username == username, User.hashed_password == hashed_password))
+	async def get(self, username: str) ->  User| None:
+		q = select(User).where(User.username == username)
 		return await self._session.scalar(q)
 
-	@handle_exception(UserRepoException)
-	async def is_existing(self,username:str)->bool:
-		q= select(exists().where(User.username==username))
-		return await self._session.scalar(q)
 
 	@handle_exception(UserRepoException)
 	async def delete(self, user:User):

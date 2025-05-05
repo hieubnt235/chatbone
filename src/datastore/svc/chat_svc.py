@@ -3,14 +3,14 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utilities.settings.clients.datastore.schemas.chat_svc import *
-from utilities.exception import handle_http_exception
 from datastore.entities import Message, ChatSession, ChatSummary
 from datastore.repo import ChatRepo
+from utilities.exception import handle_http_exception
+from utilities.schemas.datastore import *
 from .base import BaseSVC, InvalidRequestError, ServerError
 
 
-## RETURN SCHEMAS helper for client validate and parse json.
+## RETURN SCHEMAS helper for client validate and parse JSON.
 def _make_chat_messages(messages: Sequence[Message]) -> MessagesReturn:
 	return MessagesReturn(messages=[MessageReturn.model_validate(m) for m in messages])
 
