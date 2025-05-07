@@ -1,11 +1,7 @@
-from typing import Any, Self
+from fastapi import HTTPException, status
 
-from fastapi import HTTPException, status, WebSocket
-
-from chatbone.chat.settings import DATASTORE, CONFIG, REDIS
-from chatbone.chat.lua import LUA
+from chatbone.chat.settings import DATASTORE, CONFIG
 from utilities.exception import handle_http_exception
-from utilities.func import utc_now
 from utilities.settings.clients.datastore import *
 
 ServerError = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -15,112 +11,11 @@ def TooManySessionsError(max_sessions: int):
 	return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Too many sessions exist. You have to delete"
 	                                                                     f"some to create new one. Max sessions allowed: {max_sessions}")
 
-class ChatSessionData(BaseModel):
-	messages: MessagesReturn
-	summaries: ChatSummariesReturn
-	urls: list[AnyUrl]|None = Field(None,description="Addition data should be store in object storage and provide url.")
+AuthenticationError = HTTPException(status_code=status.HTTP_407_PROXY_AUTHENTICATION_REQUIRED,
+                                    detail="Chat session authentication fail because of expiring or no authentication.")
 
-username = {
-	"tokens": [
-		{"id":1, "expired_at": get_expire_date(100000)},
-		{"id":1, "expired_at": get_expire_date(100000)}# get expire date return expire at string.
-	],
-	"info": {
-		# some info
-	},
-	"data": {
-		# user data
-	}
-}
-
-def _filter_valid_token(obj:Any)->Any:
-	# TODO, make the valid atomic using lua
-	valid_tokens = []
-	for t in obj['tokens']:
-		if datetime.strptime(t['expires_at']) > utc_now():
-			valid_tokens.append(t)
-	obj['tokens'] = valid_tokens
-
-	# TODO DELETE
-	return obj
-
-async def _heartbeat_cache(key:str):
-	while True:
-		await REDIS.expire(key,CONFIG.chatbone_timeout.cache)
-		await asyncio.sleep(CONFIG.chatbone_timeout.cache-10)
-
-class UserData(BaseModel):
-	chat_sessions:dict[UUID,ChatSessionData] = Field(description="dict with keys are chat_session_id.")
-	summaries: UserSummariesReturn
-	tokens: list[TokenInfoReturn]
-
-	@classmethod
-	def model_validate(cls,obj: Any,*,strict: bool | None = None,from_attributes: bool | None = None,context: Any | None = None,) -> Self:
-		"""
-		This method will be called each time the cache is get, use to filter, validation, ...
-		"""
-		obj = _filter_valid_token(obj)
-		return super().model_validate(obj,strict=strict, from_attributes=from_attributes, context=context)
-
-"""
-Operations:
-1. User do auth with frontend, frontend call service create_connection.
-2. Service create connection by create the hash key as username, set the expire(which are set in setting).
- Which is persist if it still have at least one connection.
- 
-3. Frontend return html which has websocket embedded in it, map with username.
-4. User connect to frontend and frontend connect to chat with valid token. Do operation. Any operation that need valid token, server will ask frontend
-for it, set timeout, if valid token not provide under timeout, chatserver disconnect. If no connection for along time, username cache is clear.
-
-"""
-
-
-
-
-class ChatBoneSVC:
-	"""
-	- Load User history, info, summary to object storage and distribute it.
-	"""
-	@handle_http_exception(ServerError)
-	async def create_connection(self, user_info: UserInfoReturn)->str:
-		LUA['create_connection']
-
-		if (await REDIS.exists(user_info.username))==0:
-			await REDIS.hset()
-
-		# Ensure one user can open one connection at a time.
-		# If existed, reset the expiry date, else create a new one
-		connection_id = await _encode_connection(user_info.username,user_info.id)
-		if await REDIS.hgetall(connection_id) != {}:
-			await REDIS.expire(connection_id,CONFIG.chatbone_timeout.cache)
-		else:
-			data = UserCacheData(connection_id=connection_id,user_info=user_info,auth=auth)
-			await REDIS.hset(connection_id,data.model_dump(mode='json'))
-			await REDIS.expire(connection_id,CONFIG.chatbone_timeout.cache)
-		return connection_id
-
-
-	@handle_http_exception(ServerError)
-	async def connect_chat(self, ws:WebSocket, connection_id:str,session_id:UUID):
-		heartbeat=None
-		try:
-			if (user_cache_data := await REDIS.hgetall(str(connection_id)) ) == {}:
-				raise HTTPException(status_code=status.HTTP_407_PROXY_AUTHENTICATION_REQUIRED) # call create_connection somehow first
-			user_cache_data = UserCacheData.model_validate(user_cache_data)
-			heartbeat = asyncio.create_task(_heartbeat_cache(connection_id))
-
-
-
-		except AuthExpiredException:
-			raise HTTPException(status_code=status.HTTP_407_PROXY_AUTHENTICATION_REQUIRED)
-
-		finally:
-			if heartbeat is not None:
-				heartbeat.cancel()
-				await REDIS.expire(connection_id,CONFIG.chatbone_timeout.cache)
-
-
-
+# defined as a class for the chance to add some cache logic in the future.
+class DataSVC:
 	@handle_http_exception(ServerError)
 	async def create_chat_session(self, schema: ChatSVCBase) -> ChatSessionReturn:
 		user_info_res = await DATASTORE.user.access.get(
@@ -254,5 +149,3 @@ class ChatBoneSVC:
 		                                                                   n=-1))
 		return summaries
 
-
-data_svc = ChatBoneSVC()

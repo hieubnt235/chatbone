@@ -11,16 +11,26 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
+      <change beforePath="$PROJECT_DIR$/.env.chatbone" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dataSources.local.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources.local.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dataSources/24ef5867-3057-4c2c-96d1-14baefb3c058/storage_v2/_src_/database/datastore_db.RmabsQ/schema/public.abK9xQ.meta" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dataSources/24ef5867-3057-4c2c-96d1-14baefb3c058/storage_v2/_src_/database/datastore_db.RmabsQ/schema/public.abK9xQ.meta" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/docx/chatbone.docx" beforeDir="false" afterPath="$PROJECT_DIR$/docs/docx/chatbone.docx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/migrations/env.py" beforeDir="false" afterPath="$PROJECT_DIR$/migrations/env.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/migrations.py" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/migrations.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/.env.chatbone" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/.env.chatbone" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/cache_svc.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/chatbone_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/chatbone_svc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/lua.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/lua.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/chatbone_svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/svc/chat_assistant_svc.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/lua.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/chat/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/settings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/func.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/func.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/_base.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/clients/_base.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utilities/settings/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/config.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/utilities/settings/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/settings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/web/__init__.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/uv.lock" beforeDir="false" afterPath="$PROJECT_DIR$/uv.lock" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,10 +48,10 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Jupyter Notebook" />
         <option value="Dockerfile" />
         <option value="HTML File" />
         <option value="Python Script" />
+        <option value="Jupyter Notebook" />
       </list>
     </option>
   </component>
@@ -160,6 +170,7 @@
     "Python.search.executor": "Run",
     "Python.server2.executor": "Run",
     "Python.settings (1).executor": "Run",
+    "Python.settings (2).executor": "Run",
     "Python.settings.executor": "Run",
     "Python.sql_db.executor": "Run",
     "Python.t.executor": "Run",
@@ -184,14 +195,14 @@
     "deletionFromPopupRequiresConfirmation": "false",
     "git-widget-placeholder": "master",
     "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "/home/hieu/Workspace/recipes/StreamingApp",
+    "last_opened_file_path": "/home/hieu/Workspace/projects/chatbone/drafts",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "run.code.analysis.last.selected.profile": "pProject Default",
-    "settings.editor.selected.configurable": "IntelliLang.Configuration",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
     "vue.rearranger.settings.migration": "true"
   },
   "keyToStringList": {
@@ -213,20 +224,42 @@
   </component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/drafts" />
+      <recent name="$PROJECT_DIR$/src/chatbone/chat" />
       <recent name="$PROJECT_DIR$/src/chatbone" />
       <recent name="$PROJECT_DIR$/tests/unit/workflows" />
       <recent name="$PROJECT_DIR$/src/utils" />
-      <recent name="$PROJECT_DIR$/drafts" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/chatbone/chat/svc" />
       <recent name="$PROJECT_DIR$/src/chatbone" />
       <recent name="$PROJECT_DIR$/src/chatbone/chat" />
       <recent name="$PROJECT_DIR$/deployments/datastore" />
       <recent name="$PROJECT_DIR$/deployments/serves" />
-      <recent name="$PROJECT_DIR$/deployments" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.lua">
+  <component name="RunManager" selected="Python.redis_wrapper">
+    <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
+      <deployment type="docker-compose.yml">
+        <settings />
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <configuration name="RemoteServer" type="PyRemoteDebugConfigurationType" factoryName="Python Remote Debug">
+      <module name="chatbone" />
+      <option name="PORT" value="7779" />
+      <option name="HOST" value="192.168.60.2" />
+      <PathMappingSettings>
+        <option name="pathMappings">
+          <list>
+            <mapping local-root="$PROJECT_DIR$" remote-root="/home/hieu/Workspace/projects/chatbone" />
+          </list>
+        </option>
+      </PathMappingSettings>
+      <option name="REDIRECT_OUTPUT" value="true" />
+      <option name="SUSPEND_AFTER_CONNECT" value="true" />
+      <method v="2" />
+    </configuration>
     <configuration name="RemoteServer" type="PyRemoteDebugConfigurationType" factoryName="Python Remote Debug">
       <module name="chatbone" />
       <option name="PORT" value="7779" />
@@ -257,6 +290,52 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/lua.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="lua" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone/chat" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/lua.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="redis_wrapper" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/utilities/settings/clients" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -311,6 +390,29 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="settings (2)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="settings" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="chatbone" />
       <option name="ENV_FILES" value="" />
@@ -326,6 +428,63 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="settings" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/chat/settings.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="test_settings" type="PythonConfigurationType" factoryName="Python">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="uv (chatbone)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bin/test_scripts/test_settings.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -436,9 +595,56 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="tools_client" type="PythonConfigurationType" factoryName="Python">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="SDK_NAME" value="uv (chatbone)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/tools/experiment/tools_client.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
       <deployment type="docker-compose.yml">
         <settings />
+      </deployment>
+      <method v="2" />
+    </configuration>
+    <configuration name="compose/docker-compose.yaml.redis-stack: Compose Deployment" type="docker-deploy" factoryName="docker-compose.yml" temporary="true" server-name="Docker">
+      <deployment type="docker-compose.yml">
+        <settings>
+          <option name="services">
+            <list>
+              <option value="redis-stack" />
+            </list>
+          </option>
+          <option name="sourceFilePath" value="deployments/compose/docker-compose.yaml" />
+        </settings>
       </deployment>
       <method v="2" />
     </configuration>
@@ -511,24 +717,53 @@
       <option name="_new_targetType" value="&quot;PATH&quot;" />
       <method v="2" />
     </configuration>
+    <configuration name="pytest in chat_repo" type="tests" factoryName="py.test">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <EXTENSION ID="net.ashald.envfile">
+        <option name="IS_ENABLED" value="false" />
+        <option name="IS_SUBST" value="false" />
+        <option name="IS_PATH_MACRO_SUPPORTED" value="false" />
+        <option name="IS_IGNORE_MISSING_FILES" value="false" />
+        <option name="IS_ENABLE_EXPERIMENTAL_INTEGRATIONS" value="false" />
+        <ENTRIES>
+          <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        </ENTRIES>
+      </EXTENSION>
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;-m chat_repo&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
     <list>
       <item itemvalue="Docker.compose/docker-compose.yaml.redis-stack: Compose Deployment" />
       <item itemvalue="Python.test_settings" />
       <item itemvalue="Python.tools_client" />
+      <item itemvalue="Python.settings (1)" />
+      <item itemvalue="Python.settings (2)" />
       <item itemvalue="Python.lua" />
       <item itemvalue="Python.redis_wrapper" />
-      <item itemvalue="Python.settings (1)" />
       <item itemvalue="Python.settings" />
       <item itemvalue="Python Debug Server.RemoteServer" />
       <item itemvalue="Python tests.pytest in chat_repo" />
     </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.lua" />
-        <item itemvalue="Python.settings" />
         <item itemvalue="Python.redis_wrapper" />
+        <item itemvalue="Python.settings (2)" />
+        <item itemvalue="Python.settings" />
         <item itemvalue="Docker.compose/docker-compose.yaml.redis-stack: Compose Deployment" />
-        <item itemvalue="Python.settings (1)" />
+        <item itemvalue="Python.lua" />
       </list>
     </recent_temporary>
   </component>
@@ -740,6 +975,9 @@
       <workItem from="1746426195486" duration="273000" />
       <workItem from="1746426474563" duration="24000" />
       <workItem from="1746426549448" duration="19972000" />
+      <workItem from="1746459866910" duration="191000" />
+      <workItem from="1746491252096" duration="23982000" />
+      <workItem from="1746582457415" duration="28888000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />
@@ -922,12 +1160,13 @@
     <SUITE FILE_PATH="coverage/chatbone$lua.coverage" NAME="lua Coverage Results" MODIFIED="1746446160772" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/chat" />
     <SUITE FILE_PATH="coverage/chatbone$actor.coverage" NAME="actor Coverage Results" MODIFIED="1741244424179" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$test_settings.coverage" NAME="test_settings Coverage Results" MODIFIED="1740996193100" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
-    <SUITE FILE_PATH="coverage/chatbone$redis_wrapper.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746445843535" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
+    <SUITE FILE_PATH="coverage/chatbone$redis_wrapper.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746603160465" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
     <SUITE FILE_PATH="coverage/chatbone$client__1_.coverage" NAME="client (1) Coverage Results" MODIFIED="1744458453122" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils" />
     <SUITE FILE_PATH="coverage/chatbone$db.coverage" NAME="db Coverage Results" MODIFIED="1741941116790" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/chatbone/user_db" />
     <SUITE FILE_PATH="coverage/chatbone$dummy_app.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745773900499" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
     <SUITE FILE_PATH="coverage/chatbone$search.coverage" NAME="search Coverage Results" MODIFIED="1745390637865" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
     <SUITE FILE_PATH="coverage/chatbone$app__1_.coverage" NAME="app (1) Coverage Results" MODIFIED="1746124492144" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
+    <SUITE FILE_PATH="coverage/chatbone$settings__2_.coverage" NAME="settings (2) Coverage Results" MODIFIED="1746583944317" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$async_highload.coverage" NAME="async_highload Coverage Results" MODIFIED="1741322716840" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/settings_py$app.coverage" NAME="app Coverage Results" MODIFIED="1745652831334" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
     <SUITE FILE_PATH="coverage/chatbone$test_chatbone.coverage" NAME="test chatbone Coverage Results" MODIFIED="1742648958017" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
@@ -944,7 +1183,7 @@
     <SUITE FILE_PATH="coverage/chatbone$configs.coverage" NAME="configs Coverage Results" MODIFIED="1743082668234" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/configs" />
     <SUITE FILE_PATH="coverage/chatbone$a.coverage" NAME="a Coverage Results" MODIFIED="1745772350791" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$test.coverage" NAME="test Coverage Results" MODIFIED="1742751693974" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src" />
-    <SUITE FILE_PATH="coverage/chatbone$settings.coverage" NAME="settings Coverage Results" MODIFIED="1746445868962" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
+    <SUITE FILE_PATH="coverage/chatbone$settings.coverage" NAME="settings Coverage Results" MODIFIED="1746583686814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$redis.coverage" NAME="redis_wrapper Coverage Results" MODIFIED="1746206419650" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/utilities/settings/clients" />
     <SUITE FILE_PATH="coverage/chatbone$user_access.coverage" NAME="user_access Coverage Results" MODIFIED="1744349724641" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore/api" />
     <SUITE FILE_PATH="coverage/chatbone$fatest.coverage" NAME="fatest Coverage Results" MODIFIED="1742979882429" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

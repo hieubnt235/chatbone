@@ -47,7 +47,7 @@ class BaseClient(BaseModel):
 				subclients[k] = cls_t
 
 			# Prevalidate data to pass to all subclients, so that subclients doesn't need to validate anymore.
-			elif issubclass(cls_t,BaseModel) and isinstance(data[k],dict):
+			elif issubclass(cls_t,BaseModel) and isinstance(data.get(k,None),dict):
 				data[k] = cls_t(**data[k])
 		for k,v in subclients.items():
 			data[k] = v(**data)

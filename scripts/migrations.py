@@ -10,7 +10,7 @@ import os
 from utilities.func import utc_now
 
 
-load_dotenv(find_dotenv(".env.chatbone"))
+load_dotenv(find_dotenv(".env"))
 
 
 def run_migrations(alembic_ini_path:str, ini_section:str, script_location:str,

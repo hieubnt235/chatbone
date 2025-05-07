@@ -2,7 +2,7 @@ import anyio
 import ray
 from fastapi import FastAPI, WebSocketDisconnect
 from ray import serve
-from chatbone.chat.chatbone_svc import *
+from chatbone.chat.svc.chat_assistant_svc import *
 from utilities.schemas.chat import JsonRPCSchema
 from .settings import chat_settings
 
@@ -17,25 +17,19 @@ class GetMessages(JsonRPCSchema):
 @serve.deployment()
 @serve.ingress(app)
 class ChatBoneApp:
-	def __init__(self):
-		self.data_svc = data_svc
 
 	@app.post('/chat_session/create')
 	async def create_chat_session(self,schema: ChatSVCBase) -> ChatSessionReturn:
-		return await self.data_svc.create_chat_session(schema)
+		return await chat_assistant_svc.create_chat_session(schema)
 
 	@app.delete('/chat_session/delete')
 	async def delete_chat_session(self,schema: ChatSessionSVCDelete) -> dict:
 		"""Make request to delete chat session and clear cache if success."""
-		res = await self.data_svc.delete_chat_session(schema)
+		res = await chat_assistant_svc.delete_chat_session(schema)
 		return res
 
-	@app.post('/connect_chat_session')
-	async def connect_chat_session(self,):
-
-	@app.websocket('/chat')
-	async def connect_chat_session(self,websocket:WebSocket, session_id:UUID, token_id:UUID):
-
+	@app.websocket('/chat/{session_id}')
+	async def connect_chat_session(self,websocket:WebSocket, ):
 		try:
 			await asyncio.wait_for(websocket.accept(),30) # Wait for accept.
 		except:

@@ -1,10 +1,12 @@
-__all__=["DATASTORE","CONFIG","REDIS"]
+__all__=["DATASTORE","CONFIG"]
 from typing import Literal
 
 from dotenv import find_dotenv
 from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict
 from pydantic_settings import SettingsConfigDict
+
 from utilities.settings import Config, Settings
+from utilities.settings.clients.auth import AuthClient
 from utilities.settings.clients.datastore import DatastoreClient
 
 
@@ -34,7 +36,7 @@ class ChatBoneTimeout(BaseModel):
 	websocket_send: PositiveInt=5
 	cache: PositiveInt=300
 
-class ChatboneConfig(Config):
+class ChatConfig(Config):
 	datastore_request_timeout: DatastoreRequestTimeout
 	chatbone_timeout: ChatBoneTimeout
 
@@ -50,16 +52,16 @@ class ChatboneConfig(Config):
 	update_after_n_chats: PositiveInt = 5
 
 
-class ChatboneSettings(Settings):
-	model_config = SettingsConfigDict(env_prefix='chat_', env_file=find_dotenv('../.env.chatbone'))
+class ChatSettings(Settings):
+	model_config = SettingsConfigDict(env_prefix='chat_', env_file=find_dotenv('.env.chat'))
 	service_name = 'chatbone.chat'
 
-	config: ChatboneConfig
+	config: ChatConfig
 	datastore: DatastoreClient
 
 # noinspection Annotator
-chat_settings = ChatboneSettings()
+chat_settings = ChatSettings()
 
 CONFIG = chat_settings.config
 DATASTORE = chat_settings.datastore
-REDIS=DATASTORE.redis
+# REDIS=DATASTORE.redis

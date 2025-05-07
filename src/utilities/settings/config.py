@@ -1,7 +1,7 @@
 import tomllib
 
 from pydantic import BaseModel, ConfigDict, FilePath, model_validator, Field
-
+from utilities.logger import logger
 from utilities.exception import handle_exception, BaseMethodException
 
 
@@ -28,17 +28,19 @@ class Config(BaseModel):
                               arbitrary_types_allowed=True,
 
                               )
-    config_file: FilePath = Field(alias='file')
+    config_file: FilePath|None = Field(None,alias='file',
+                                       description= "If config file is provide, file is first loaded, then update the input parameters.")
 
     @model_validator(mode='before')
     @classmethod
     @handle_exception(ConfigException, message="Invalid configuration.")
     def init_config(cls,data:dict)->dict:
-        file = valid_config_file(data['file'])
-
-        with open(file,'rb') as f:
-            config = tomllib.load(f)
-            data['file'] = file
-            config.update(data)
-            # logger.debug(config)
-            return config
+        config = {}
+        if data.get('file') is not None:
+            file = valid_config_file(data['file'])
+            with open(file,'rb') as f:
+                config = tomllib.load(f)
+                data['file'] = file
+        config.update(data)
+        # logger.debug(config)
+        return config

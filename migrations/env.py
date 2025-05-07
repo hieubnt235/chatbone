@@ -1,7 +1,7 @@
 import asyncio
 import json
-from admin.config import fileConfig
-import admin
+from logging.config import fileConfig
+import logging
 from sqlalchemy import pool, URL
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -18,7 +18,7 @@ config = context.config
 if config.config_file_name is not None:
 	fileConfig(config.config_file_name)
 
-logger = admin.getLogger('alembic')
+logger = logging.getLogger('alembic')
 
 #######START CUSTOM SECTION#########
 

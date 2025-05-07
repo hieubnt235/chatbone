@@ -42,6 +42,7 @@ dependencies = [
     "nicegui>=2.16.0",
     "notebook>=7.3.2",
     "numpy>=2.2.5",
+    "pottery>=3.0.1",
     "psycopg[binary]>=3.2.6",
     "pwdlib[argon2]>=0.2.1",
     "pydantic==2.10.6", # must be 2.10.6
@@ -52,6 +53,8 @@ dependencies = [
     "pytest-asyncio>=0.25.3",
     "pytest-env>=1.1.5",
     "ray[serve]>=2.44.1",
+    "redis-om>=0.3.5",
+    "redis-purse>=2.0.0",
     "redis[hiredis]==4.6.0",
     "sqlalchemy[asyncio]>=2.0.38",
     "torch>=2.6.0",
