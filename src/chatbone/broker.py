@@ -1,152 +1,199 @@
+import asyncio
 import time
-from datetime import datetime
+from contextlib import asynccontextmanager, AbstractAsyncContextManager
+from typing import Literal, Self, Optional, Awaitable
 from uuid import UUID
 
-from jsonrpcclient.id_generators import uuid
-from purse import RedisHash, RedisList, RedisKeySpace, RedisSet
-from pydantic import BaseModel, Field, AnyUrl
-from typing import Literal, ClassVar, Any
+import redis
+from aredis_om import EmbeddedJsonModel, JsonModel, Field as OMField, Migrator, RedisModel
+from redis import asyncio
 from redis.asyncio import Redis
-from uuid_extensions import uuid7
+from redis.asyncio.client import Pipeline
 
-class IndexData(BaseModel):
-	meta_key:str
-	key:str
+from chatbone.settings import REDIS
+from pydantic import Field, AnyUrl
+from utilities.logger import logger
 
-class Message(BaseModel):
+class ChatBoneJsonModel(JsonModel):
+	class Meta:
+		global_key_prefix = "chatbone"
+		module_key_prefix = ""
+		primary_key_pattern="pk@{pk}"
+		database:Redis =REDIS
+
+class ChatBoneJsonEmbeddedModel(ChatBoneJsonModel):
+	class Meta:
+		embedded=True
+
+class Message(ChatBoneJsonEmbeddedModel):
 	role: Literal['user', 'system', 'assistant']
 	content: str
 
-# Data for search directly
+class ChatSessionData(ChatBoneJsonModel):
+	id: UUID = OMField(index=True,primary_key=True)
+	username:str = Field(index=True)
 
-class UserMeta(IndexData):
-	key:str|None=None
-
-	username:str
-	password:str
-	cascade_keys:list[str] = Field(default_factory=list, description="When meta is delete, all keys in this list also deleted.")
-
-class Token(IndexData):
-	created_at: datetime
-	expires_at: datetime
-
-class ChatSessionData(IndexData):
 	messages: list[Message] = Field(default_factory=list)
-	summaries: list[str]=  Field(default_factory=list)
+	summaries: list[str] = Field(default_factory=list)
 	urls: list[AnyUrl] = Field(default_factory=list,description="Addition data should be store in object storage and provide url.")
 
-# All cache keys
-STRATEGY="""An storage should be in separated key if:
-1. Has independent expire strategy.
-2. Can search directly.
-3. Can do operations like add, remove ,... 
-Strategy is noted in docstring with <{number}>
-"""
+class Token(ChatBoneJsonModel):
+	id:UUID = OMField(index= True)
+
+class UserData(ChatBoneJsonModel):
+	id: UUID  = OMField(index=True,primary_key=True)
+	username:str = OMField(index=True)
+	password:str
+
+	token_key:str
+	chat_session_keys: set[str] = Field(default_factory=set)
+
+	async def get_hash(self)->str:
+		"""Get hash to return to user"""
+		pass
+
+	@classmethod
+	async def verify_hash(cls,hash:str)-> Self|None:
+		pass
+
+	async def add_chat_sessions(self, chat_sessions: list[ChatSessionData], redis_or_pipeline: Redis | None = None):
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			for cs in chat_sessions:
+				await cs.save(pipeline)
+			await self.expire_sync(chat_sessions, pipeline)
+
+			# For typehint
+			coro: Awaitable[list | int | None] = pipeline.json().arrappend(self.key(), ".chat_session_keys",
+			                                                               *[cs.key() for c in chat_sessions])
+			await coro
+	async def update_chat_sessions(self,chat_sessions: list[ChatSessionData] ):
+		"""Check if chat session exists, then merge attributes"""
+
+	async def expire_sync(self, models: list[RedisModel | str], redis_or_pipeline: Redis|None=None)->None:
+		"""Expire all Models sync with this object's current lifetime."""
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			num_seconds = await pipeline.ttl(self.key())
+			await self.expire_cascade(num_seconds, models.append(self), pipeline)
+
+	async def expire_cascade(self, num_seconds: int, models:list[RedisModel|str], redis_or_pipeline: Redis|None=None):
+		"""Expire all models with the same num_seconds"""
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			for m in models:
+				await self._expire_one(num_seconds, m, pipeline)
+
+	# noinspection PyMethodMayBeStatic
+	async def _expire_one(self,num_seconds:int, m:RedisModel|str, pipeline:Pipeline):
+		if isinstance(m, RedisModel):
+			await m.expire(num_seconds, pipeline)  # await db.expire(self.key(), num_seconds)
+		elif isinstance(m, str):
+			await pipeline.expire(m, num_seconds)
+		else:
+			raise ValueError
 
 
-META="{meta_key}"
-"""<1> 
+	@asynccontextmanager
+	async def _get_transaction_pipeline(self, redis_or_pipeline:Redis|None=None)->AbstractAsyncContextManager[Pipeline]:
+		# If the pipeline is passed as the argument, do not execute. Pipeline passed must be in transaction and executed by the one who passed.
+		if isinstance(redis_or_pipeline,Pipeline):
+			yield redis_or_pipeline
+			# No execute
+		else:
+			redis_or_pipeline = redis_or_pipeline or self.db()
+			async with redis_or_pipeline.pipeline(transaction=True) as pipeline:
+				yield pipeline
+				await pipeline.execute()
 
-- Entry key, set by service that do auth, then service if the key already exist, then do expire or create one.
+# async def get_chat_session(chat_session_id:UUID, username:str)->ChatSessionData
 
-- Store user information to later self verify DIRECTLY to datastore if token is not valid anymore when disconnect.
-Also for simple information (not container) that common for all chat sessions.
+MIGRATION = "migrated_flag"
+async def migration(raise_if_already_migration:bool=False):
+	if await REDIS.get(MIGRATION) is None:
+		async with REDIS.lock(MIGRATION+"lock",timeout=10):
+			if await REDIS.get(MIGRATION) is None:
+				await Migrator().run()
+				await REDIS.set(MIGRATION,"Done")
+				logger.info("Successfully migrated redis om.")
+	if raise_if_already_migration:
+		raise RuntimeError("Migration already setup.")
 
-Examples:
-	Check token valid -> Call Agent -> Get result -> Stream result ->Token expired at persisting result phase -> Do verify using meta.
+if __name__=="__main__":
+	from uuid_extensions import uuid7
+	async def main():
+		await migration()
+		userdata= UserData(id=uuid7(),username="abc",password="xyz",token_key="token_key_1")
+		await userdata.save()
 
-Notes:
-	- This key represent for ONLY ONE user, so it must be unique for each user at the time, maybe user_id or username or unique some mapping.
-	- This key is the entry point of all key space, if this key is deleted, all key MUST be deleted.
-	"""
+	asyncio.run(main())
 
-ALL_KEYS = META+":all_keys"
+# class Broker:
+# 	"""This will bind with only one Redis client and one main key, should be used for sequencial program,
+# 	 parallel program must have separated Broker with separate Redis."""
+#
+# 	def __init__(self,redis:Redis, meta_key:str):
+#
+# 		self.meta_key = META.format(meta_key=meta_key)
+#
+# 		self.all_keys_handler = RedisSet(ALL_KEYS.format(meta_key=meta_key))
+#
+# 		self.token_key = TOKEN.format(meta_key=meta_key)
+# 		self.user_summaries_key = TOKEN.format(meta_key=meta_key)
+#
+# 		self.meta_handler = RedisKeySpace(redis,self.meta_key, UserMeta)
+# 		self.all_keys
+#
+# 		self.token_handler = RedisHash(redis, self.token_key, Token)
+#
+# 		self.redis=redis
+#
+# 	async def set_meta(self, usermeta:UserMeta|None=None, expire:int|None = None, )->str:
+# 		"""
+# 		Set meta info or/and lifetime for everything.
+# 		Args:
+# 			usermeta: if is instance UserMeta, set it.
+# 			expire: <0 means persist, None mean don't do anything, 0 mean delete.
+# 		Returns:
+# 			The hash key of user meta.
+# 		"""
+# 		if expire == 0:
+# 			return await self.usermeta_handler.clear()
+#
+# 		if usermeta is not None:
+# 			await self.usermeta_handler.set(usermeta.key, usermeta)
+#
+# 		if expire <0:
+#
+#
+#
+# 		await self.usermeta_handler
+#
+# 	async def get_meta(self,hashed_key:str)->str:
+# 		"""
+# 		Args:
+# 			hashed_key:
+#
+# 		Returns: Meta key.
+# 		"""
+#
+# 	async def delete_main(self):
+#
+#
+#
+# 	async def get_token(self,timeout:float= 30, pooling_freq:float=1 )->UUID:
+# 		"""Wait until there is active_token_id.
+# 		Args:
+# 		    pooling_freq: pooling redis frequency, in second.
+# 			timeout: in second.
+# 		Raises:
+# 			TimeoutError
+# 		Returns: active token id.
+# 		"""
+# 		assert timeout >= pooling_freq > 0
+#
+# 		end = time.time()+timeout
+# 		while time.time()<end:
+# 			if (token:= await self.redis.hget(self.ticket,TOKEN_KEY)) is not None:
+# 				return UUID(token)
+# 			await asyncio.sleep(pooling_freq)
+#
+# 		raise TimeoutError
 
-TOKEN=META+":token"
-"""<1> Key for remain service (one that do not do auth). Token is the entry point to interact with datastore service, so
-if it's expire, service will set timeout and wait for exist, frontend must be pool this key to re verify user."""
-
-USER_SUMMARIES = META+":summaries"
-"""<2,3> Key store list of user summaries"""
-
-CHAT_SESSIONS = META+":{session_id}"
-"""<2>"""
-MESSAGES=CHAT_SESSIONS+":messages"
-"""<3>"""
-SUMMARIES= CHAT_SESSIONS+ ":summaries"
-"""<3>"""
-URLS=CHAT_SESSIONS+":urls"
-"""<3>"""
-
-
-class Broker:
-	"""This will bind with only one Redis client and one main key, should be used for sequencial program,
-	 parallel program must have separated Broker with separate Redis."""
-
-	def __init__(self,redis:Redis, meta_key:str):
-
-		self.meta_key = META.format(meta_key=meta_key)
-
-		self.all_keys_handler = RedisSet(ALL_KEYS.format(meta_key=meta_key))
-
-		self.token_key = TOKEN.format(meta_key=meta_key)
-		self.user_summaries_key = TOKEN.format(meta_key=meta_key)
-
-		self.meta_handler = RedisKeySpace(redis,self.meta_key, UserMeta)
-		self.all_keys
-
-		self.token_handler = RedisHash(redis, self.token_key, Token)
-
-		self.redis=redis
-
-	async def set_meta(self, usermeta:UserMeta|None=None, expire:int|None = None, )->str:
-		"""
-		Set meta info or/and lifetime for everything.
-		Args:
-			usermeta: if is instance UserMeta, set it.
-			expire: <0 means persist, None mean don't do anything, 0 mean delete.
-		Returns:
-			The hash key of user meta.
-		"""
-		if expire == 0:
-			return await self.usermeta_handler.clear()
-
-		if usermeta is not None:
-			await self.usermeta_handler.set(usermeta.key, usermeta)
-
-		if expire <0:
-
-
-
-		await self.usermeta_handler
-
-	async def get_meta(self,hashed_key:str)->str:
-		"""
-		Args:
-			hashed_key:
-
-		Returns: Meta key.
-		"""
-
-	async def delete_main(self):
-
-
-
-	async def get_token(self,timeout:float= 30, pooling_freq:float=1 )->UUID:
-		"""Wait until there is active_token_id.
-		Args:
-		    pooling_freq: pooling redis frequency, in second.
-			timeout: in second.
-		Raises:
-			TimeoutError
-		Returns: active token id.
-		"""
-		assert timeout >= pooling_freq > 0
-
-		end = time.time()+timeout
-		while time.time()<end:
-			if (token:= await self.redis.hget(self.ticket,TOKEN_KEY)) is not None:
-				return UUID(token)
-			await asyncio.sleep(pooling_freq)
-
-		raise TimeoutError

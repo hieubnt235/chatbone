@@ -142,7 +142,7 @@ class RedisWrapper(_RWrapper):
 	def new(self) -> Redis | RedisCluster:
 		return Redis(connection_pool=self._pool)
 
-class RedisWrapperClient(_RedisWrapperAbstract):
+class RedisWrapperClient(_RedisWrapperAbstract,_REDIS):
 	# noinspection PyUnresolvedReferences
 	"""Input is 'mode' and all client arguments. Data and config will merge to each other.
 		When called directly by Redis API, Create a new real Redis instance and call.
