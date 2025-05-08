@@ -2,8 +2,8 @@ from dotenv import find_dotenv
 from pydantic import BaseModel, PositiveInt
 from pydantic_settings import SettingsConfigDict
 
-from utilities.settings.clients.datastore import DatastoreClient
 from utilities.settings import Settings, Config
+from utilities.settings.clients.datastore import DatastoreClient
 
 
 class DatastoreRequestTimeout(BaseModel):
@@ -16,12 +16,12 @@ class DatastoreRequestTimeout(BaseModel):
 
 
 class AuthConfig(Config):
-	token_duration_seconds: int=86400
-	jwt_encode_algorithm: str|None=None
+	token_duration_seconds: int = 86400
+	jwt_encode_algorithm: str | None = None
 	auth_secret_key: str = 'auth_secret_key'
 	datastore_request_timeout: DatastoreRequestTimeout
 
-	max_valid_tokens: int = 1 # NO USE RIGHT NOW.
+	max_valid_tokens: int = 1  # NO USE RIGHT NOW.
 	"""Maximum number of valid tokens exist at the same time."""
 
 
@@ -37,4 +37,3 @@ class AuthSettings(Settings):
 
 
 auth_settings = AuthSettings()
-

@@ -1,11 +1,12 @@
 import asyncio
 import json
-from logging.config import fileConfig
 import logging
+from logging.config import fileConfig
+
+from alembic import context
 from sqlalchemy import pool, URL
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-from alembic import context
 
 # from chatbone_utils.settings import chatbone_settings
 from datastore.entities import Base as DatastoreBase
@@ -36,7 +37,7 @@ logger.info(f"\nLoaded section {db_name} from alembic.ini:\n"
 # Create sqlalchemy.url and set it at main option for future usage.
 try:
 	url_params = [cfg_dict.get(var) for var in ['drivername', 'username', 'password', 'host', 'port', 'database']]
-	url_params[4]= int(url_params[4])
+	url_params[4] = int(url_params[4])
 	url = URL.create(*url_params).render_as_string(hide_password=False)
 	config.set_main_option("sqlalchemy.url", url)
 	logger.info(f"\'sqlalchemy.url\' is set as \'{url}\'")
@@ -51,6 +52,8 @@ target_metadata = db_metadata[db_name]
 alembic -n chat_db revision --autogenerate -m "First migration"
 alembic -n chat_db upgrade head
 """
+
+
 #######END CUSTOM SECTION#########
 
 def do_run_migrations(connection: Connection) -> None:

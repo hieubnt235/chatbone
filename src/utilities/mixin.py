@@ -32,4 +32,3 @@ class ModelMixin:
 		mapper = inspect(self.__class__)
 		c = {c.key: getattr(self, c.key) for c in mapper.column_attrs}
 		return c
-

@@ -1,11 +1,10 @@
 from typing import Any, Sequence
 
-from sqlalchemy import select, and_, exists
-
-from utilities.exception import handle_exception, BaseMethodException
-from utilities.mixin import RepoMixin
+from sqlalchemy import select, and_
 
 from datastore.entities import User, UserSummary
+from utilities.exception import handle_exception, BaseMethodException
+from utilities.mixin import RepoMixin
 
 
 class UserRepoException(BaseMethodException):
@@ -14,7 +13,7 @@ class UserRepoException(BaseMethodException):
 
 class UserRepo(RepoMixin):
 	@handle_exception(UserRepoException)
-	async def create(self,  username: str, hashed_password: str) -> User:
+	async def create(self, username: str, hashed_password: str) -> User:
 		"""
 		For sign up
 		Create a new user with hashed password.
@@ -29,17 +28,16 @@ class UserRepo(RepoMixin):
 		return user
 
 	@handle_exception(UserRepoException)
-	async def get(self, username: str) ->  User| None:
+	async def get(self, username: str) -> User | None:
 		q = select(User).where(User.username == username)
 		return await self._session.scalar(q)
 
-
 	@handle_exception(UserRepoException)
-	async def delete(self, user:User):
+	async def delete(self, user: User):
 		await self._session.delete(user)
 
 	@handle_exception(UserRepoException)
-	async def create_summary(self, user: User,summary:str):
+	async def create_summary(self, user: User, summary: str):
 		await self.refresh(user)
 		self._session.add(user)
 		s = UserSummary(summary=summary)
@@ -47,7 +45,7 @@ class UserRepo(RepoMixin):
 		await self.flush()
 
 	@handle_exception(UserRepoException)
-	async def get_summaries(self,user:User, n:int=-1)->Sequence[UserSummary]:
+	async def get_summaries(self, user: User, n: int = -1) -> Sequence[UserSummary]:
 		"""
 		Get n latest summaries.
 		Args:
@@ -57,13 +55,13 @@ class UserRepo(RepoMixin):
 		Returns:
 		"""
 		q = user.summaries.select().order_by(UserSummary.created_at.desc())
-		if n>=0:
-			q=q.limit(n)
+		if n >= 0:
+			q = q.limit(n)
 		r = await self._session.scalars(q)
 		return r.all()
 
 	@handle_exception(UserRepoException)
-	async def delete_old_summaries(self,user:User, max_summaries:int):
+	async def delete_old_summaries(self, user: User, max_summaries: int):
 		"""
 		Delete old summaries while keeping the length of remaining summaries <= max_summaries.
 		If max_summaries==0 delete all user's summaries.
@@ -71,16 +69,13 @@ class UserRepo(RepoMixin):
 			user:
 			max_summaries:
 		"""
-		assert max_summaries>=0
-		sq = (select(UserSummary.id)
-		     .where(UserSummary.user_id==user.id)
-		     .order_by(UserSummary.created_at.desc())
-		     .offset(max_summaries)
-		     .subquery())
-		await self._session.execute(user.summaries.delete()
-		                            .where(and_(UserSummary.id.in_(sq),UserSummary.user_id==user.id) ))
+		assert max_summaries >= 0
+		sq = (
+			select(UserSummary.id).where(UserSummary.user_id == user.id).order_by(UserSummary.created_at.desc()).offset(
+				max_summaries).subquery())
+		await self._session.execute(
+			user.summaries.delete().where(and_(UserSummary.id.in_(sq), UserSummary.user_id == user.id)))
 		await self.flush()
-
 
 	@handle_exception(UserRepoException)
 	async def flush(self):

@@ -1,22 +1,22 @@
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
-from utilities.logger import logger
+
 import psutil
 from pwdlib import PasswordHash
-from pathlib import Path
 
 # Password utils
 password_hash = PasswordHash.recommended()
 
 
 def hash_password(password: str):
-	hp  = password_hash.hash(password)
+	hp = password_hash.hash(password)
 	return hp
 
 
-def verify_password(password: str, hashed_password)->bool:
+def verify_password(password: str, hashed_password) -> bool:
 	return password_hash.verify(password, hashed_password)
 
 
@@ -77,10 +77,10 @@ def get_process_stats(pid: int | None = None, recursive=False):
 		cp = p.children(recursive=recursive)
 
 		return dict(main_info=f"pid:{p.pid} - name:{p.name()} - num_threads:{p.num_threads()}.",
-			parent_info=f"pid:{pp.pid} - name:{pp.name()} - num_children:{len(pp.children(recursive))} - num_threads{pp.num_threads()}.",
-			children_info=[
-				f"pid:{c.pid} - name:{c.name()} - num_children:{len(c.children(recursive))} num_threads:{c.num_threads()}"
-				for c in cp])
+		            parent_info=f"pid:{pp.pid} - name:{pp.name()} - num_children:{len(pp.children(recursive))} - num_threads{pp.num_threads()}.",
+		            children_info=[
+			            f"pid:{c.pid} - name:{c.name()} - num_children:{len(c.children(recursive))} num_threads:{c.num_threads()}"
+			            for c in cp])
 
 	except psutil.NoSuchProcess:
 		return {"Error": f"Process with PID {pid} not found."}
@@ -90,12 +90,12 @@ def get_process_stats(pid: int | None = None, recursive=False):
 		return {"Error": f"An unexpected error occurred for PID {pid}: {e}"}
 
 
-def solve_relative_paths_recursively(data:dict, abs_path:Path):
-	for k,v in data.items():
-		if isinstance(v,dict):
-			solve_relative_paths_recursively(v,abs_path)
-		if isinstance(v,str) and k.endswith(("file","path","dir")):
-			data[k] = (abs_path/Path(v)).resolve().as_posix()
+def solve_relative_paths_recursively(data: dict, abs_path: Path):
+	for k, v in data.items():
+		if isinstance(v, dict):
+			solve_relative_paths_recursively(v, abs_path)
+		if isinstance(v, str) and k.endswith(("file", "path", "dir")):
+			data[k] = (abs_path / Path(v)).resolve().as_posix()
 
 # async def get_tasks(pid:int|None=None):
 # 	ts = [t.get_coro().__qualname__ for t in asyncio.all_tasks()]

@@ -4,10 +4,10 @@ from uuid import UUID
 
 from sqlalchemy import select, and_, delete
 
-from utilities.exception import handle_exception, BaseMethodException
-from utilities.mixin import RepoMixin
-from utilities.func import utc_now
 from datastore.entities import AccessToken, User
+from utilities.exception import handle_exception, BaseMethodException
+from utilities.func import utc_now
+from utilities.mixin import RepoMixin
 
 
 class TokenRepoException(BaseMethodException):
@@ -17,7 +17,7 @@ class TokenRepoException(BaseMethodException):
 class TokenRepo(RepoMixin):
 
 	@handle_exception(TokenRepoException)
-	async def create(self, user: User, expires_at:datetime) -> AccessToken:
+	async def create(self, user: User, expires_at: datetime) -> AccessToken:
 		"""
 		Create new access token and return. DO NOT CHECK THE expires_at. Client have to do it.
 		Args:
@@ -52,17 +52,15 @@ class TokenRepo(RepoMixin):
 		return token
 
 	@handle_exception(TokenRepoException)
-	async def delete(self,user:User, token_ids: list[UUID]):
+	async def delete(self, user: User, token_ids: list[UUID]):
 		"""Delete tokens if user own this. THIS METHOD JUST DELETE AND DON'T CHECK WHOSE TOKEN IS. SERVICE HAS TO CHECK IT.
 		Args:
 		 user:
 		 token_ids:
 		"""
-		q = delete(AccessToken).where(and_(AccessToken.id.in_(token_ids),
-		                                   AccessToken.user_id==user.id) )
+		q = delete(AccessToken).where(and_(AccessToken.id.in_(token_ids), AccessToken.user_id == user.id))
 		await self._session.execute(q)
 		await self.flush()
-
 
 	@handle_exception(TokenRepoException)
 	async def flush(self):

@@ -1,12 +1,9 @@
-import time
-
 from fastapi import WebSocket
 from purse import RedisHash
 
 from chatbone.settings import REDIS
 from utilities.exception import handle_http_exception
 from utilities.settings.clients.datastore import *
-
 
 """
 1. User do auth in frontend, frontend init ticket in redis:
@@ -29,21 +26,19 @@ Does not need to know it success or not, if data is None, it mean not any inform
 """
 
 
-
-
 class ChatAssistantSVC:
 	"""
 	- Load User history, info, summary to object storage and distribute it.
 	"""
+
 	@handle_http_exception(ServerError)
-	async def connect_chat_session(self, ws:WebSocket, user_ticket:str, chat_session_id:UUID):
+	async def connect_chat_session(self, ws: WebSocket, user_ticket: str, chat_session_id: UUID):
 		r = REDIS.new()
-		rh = RedisHash(r,user_ticket, UserData)
+		rh = RedisHash(r, user_ticket, UserData)
 		if not await rh.contains(user_ticket):
 			raise AuthenticationError
 		user_data = await rh.get(user_ticket)
-		assert isinstance(user_data,UserData)
-
+		assert isinstance(user_data, UserData)
 
 
 chat_assistant_svc = ChatAssistantSVC()

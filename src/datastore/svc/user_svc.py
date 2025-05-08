@@ -16,8 +16,7 @@ from .base import BaseSVC, ServerError
 ##### HELPER SCHEMAS CONVERTERS
 
 def _make_user_info(user: User) -> UserInfoReturn:
-	return UserInfoReturn(**user.as_dict(),
-	                      chat_ids=[s.id for s in user.chat_sessions],
+	return UserInfoReturn(**user.as_dict(), chat_ids=[s.id for s in user.chat_sessions],
 	                      tokens=[TokenInfoReturn.model_validate(token, from_attributes=True) for token in
 	                              user.tokens], )
 
@@ -72,6 +71,7 @@ class UserAccessSVC(UserSVC):
         - delete_user: Deletes a user based on a token.
         - delete_tokens: Deletes specific tokens owned by a user.
 	"""
+
 	@handle_http_exception(ServerError)
 	async def create_user(self, schema: UserCreate) -> UserInfoReturn:
 		"""
@@ -93,7 +93,7 @@ class UserAccessSVC(UserSVC):
 			return await asyncio.to_thread(_make_user_info, user)
 		# User already exist error will be caught inside user_repo.create (IntegrityError).
 		except UserRepoException as e:
-			if isinstance(find_root_pre_exp(e),IntegrityError):
+			if isinstance(find_root_pre_exp(e), IntegrityError):
 				raise AlreadyRegisterError
 			else:
 				raise
@@ -115,7 +115,7 @@ class UserAccessSVC(UserSVC):
 		"""
 		if (user := await self.user_repo.get(schema.username)) is None:
 			raise UserNotExistError
-		if not (await asyncio.to_thread(verify_password,schema.password, user.hashed_password)):
+		if not (await asyncio.to_thread(verify_password, schema.password, user.hashed_password)):
 			raise VerifyFailError
 
 		if await asyncio.to_thread(_should_create_token, schema.create_token_flag, user.tokens):

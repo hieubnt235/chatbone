@@ -1,6 +1,6 @@
 __all__ = ['MessageCreate', 'ChatSessionRequest', 'ChatSVCBase', 'ChatSessionGet', 'ChatSessionSVCDelete',
-	'ChatMessageSVCCreate', 'ChatSummarySVCCreate', 'ChatSVCGetLatest', 'ChatSVCDeleteOld', 'MessageReturn',
-	'MessagesReturn', 'ChatSessionReturn', 'ChatSummaryReturn', 'ChatSummariesReturn']
+           'ChatMessageSVCCreate', 'ChatSummarySVCCreate', 'ChatSVCGetLatest', 'ChatSVCDeleteOld', 'MessageReturn',
+           'MessagesReturn', 'ChatSessionReturn', 'ChatSummaryReturn', 'ChatSummariesReturn']
 
 from datetime import datetime
 from typing import Literal
@@ -42,7 +42,7 @@ class ChatSummarySVCCreate(ChatSessionGet):
 
 
 class ChatSVCGetLatest(ChatSessionGet):
-	n: int = -1 # get all
+	n: int = -1  # get all
 
 
 class ChatSVCDeleteOld(ChatSessionGet):

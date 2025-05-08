@@ -5,22 +5,26 @@ from contextlib import asynccontextmanager, AbstractAsyncContextManager
 from copy import deepcopy
 from functools import partial
 from typing import Any, Literal, Coroutine, Callable, Set, TYPE_CHECKING, Awaitable
+
 from purse import Redlock
 from pydantic import BaseModel, model_validator, ConfigDict, Field
 from redis.asyncio import Redis, RedisCluster, Sentinel, ConnectionPool
 from redis.asyncio.sentinel import SlaveNotFoundError
+
 from utilities.logger import logger
 from utilities.settings import Config
 
 # --- Set of known Redis read-only commands ---
 _READ_ONLY_COMMANDS: Set[str] = {"get", "mget", "strlen", "getrange", "getbit", "hget", "hmget", "hgetall", "hlen",
-	"hkeys", "hvals", "hexists", "hstrlen", "hrandfield", "lindex", "llen", "lrange", "lpos", "scard", "sismember",
-	"smembers", "srandmember", "sdiff", "sinter", "sunion", "sscan", "zcard", "zcount", "zscore", "zrank", "zrevrank",
-	"zrange", "zrevrange", "zrangebyscore", "zrevrangebyscore", "zlexcount", "zrangebylex", "zrevrangebylex", "zscan",
-	"geodist", "geohash", "geopos", "georadius", "georadiusbymember", "geosearch", "exists", "type", "keys", "scan",
-	"ping", "echo", "time", "dbsize", "ttl", "pttl", "dump", "object", "memory", "bitcount", "bitpos", "cluster",
-	"readonly", "json.get", "json.mget", "json.type", "json.strlen", "json.objlen", "json.objkeys", "json.arrlen",
-	"json.arrindex", }
+                                 "hkeys", "hvals", "hexists", "hstrlen", "hrandfield", "lindex", "llen", "lrange",
+                                 "lpos", "scard", "sismember", "smembers", "srandmember", "sdiff", "sinter", "sunion",
+                                 "sscan", "zcard", "zcount", "zscore", "zrank", "zrevrank", "zrange", "zrevrange",
+                                 "zrangebyscore", "zrevrangebyscore", "zlexcount", "zrangebylex", "zrevrangebylex",
+                                 "zscan", "geodist", "geohash", "geopos", "georadius", "georadiusbymember", "geosearch",
+                                 "exists", "type", "keys", "scan", "ping", "echo", "time", "dbsize", "ttl", "pttl",
+                                 "dump", "object", "memory", "bitcount", "bitpos", "cluster", "readonly", "json.get",
+                                 "json.mget", "json.type", "json.strlen", "json.objlen", "json.objkeys", "json.arrlen",
+                                 "json.arrindex", }
 
 if TYPE_CHECKING:
 	_REDIS = Redis | RedisCluster
@@ -142,7 +146,8 @@ class RedisWrapper(_RWrapper):
 	def new(self) -> Redis | RedisCluster:
 		return Redis(connection_pool=self._pool)
 
-class RedisWrapperClient(_RedisWrapperAbstract,_REDIS):
+
+class RedisWrapperClient(_RedisWrapperAbstract, _REDIS):
 	# noinspection PyUnresolvedReferences
 	"""Input is 'mode' and all client arguments. Data and config will merge to each other.
 		When called directly by Redis API, Create a new real Redis instance and call.
@@ -232,6 +237,7 @@ if __name__ == '__main__':
 	                                                 config=dict(decode_responses=True)))
 	redis = r.new()
 
+
 	async def task1():
 		class Token(BaseModel):
 			id: int
@@ -296,5 +302,6 @@ if __name__ == '__main__':
 			assert i > pre
 			pre = i
 		return "success"
+
 
 	asyncio.run(main())

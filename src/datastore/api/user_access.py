@@ -21,17 +21,19 @@ async def verify(user_ver: UserVerify) -> UserInfoReturn:
 
 
 @router.get('/get')
-async def get(token_id:UUID)->UserInfoReturn:
+async def get(token_id: UUID) -> UserInfoReturn:
 	async with get_user_access_svc() as svc:
 		return await svc.get_user(Token(token_id=token_id))
 
+
 @router.delete('/delete')
-async def delete(token:Token)-> UserInfoReturn:
+async def delete(token: Token) -> UserInfoReturn:
 	async with get_user_access_svc() as svc:
 		user = await svc.get_user(token)
 		await svc.delete_user(token)
-		user.addition_info="This user is deleted successfully."
+		user.addition_info = "This user is deleted successfully."
 		return user
+
 
 @router.delete('/delete_tokens')
 async def delete_token(tokens_delete: TokenDelete):

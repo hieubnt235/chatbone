@@ -3,10 +3,10 @@ __all__ = ["Node", "Edge", "WorkflowSetup", "WorkflowSetupException", "Workflow"
 from abc import ABC, abstractmethod
 from typing import Annotated, Sequence, AsyncGenerator
 
-from utilities.utils import BaseMethodException, handle_exception
 from langgraph.graph import StateGraph
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ray.serve import Application, deployment
+from utilities.utils import BaseMethodException, handle_exception
 
 
 class WorkflowSetupException(BaseMethodException):
@@ -23,6 +23,7 @@ class Node(BaseModel):
 	"""
 	model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 	name: str
+
 	@abstractmethod
 	async def __call__(self, state: WorkflowState):
 		pass
@@ -44,7 +45,7 @@ class Workflow:
 		self._builder = builder
 		self._compile_kwargs = compile_kwargs
 
-	async def __call__(self,*args,compile_kwargs:dict, **kwargs) -> AsyncGenerator:
+	async def __call__(self, *args, compile_kwargs: dict, **kwargs) -> AsyncGenerator:
 		graph = self._builder.compile(**compile_kwargs)
 		async for state in graph.astream(*args, **kwargs):
 			yield state
@@ -63,7 +64,7 @@ class WorkflowSetup(BaseModel, ABC):
 	input: type | None = None
 	output: type | None = None
 
-	deployment_kwargs: Annotated[dict, Field(default_factory=dict)] # ray.serve.deployment
+	deployment_kwargs: Annotated[dict, Field(default_factory=dict)]  # ray.serve.deployment
 
 	@field_validator("nodes", mode="before")
 	@classmethod

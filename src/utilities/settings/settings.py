@@ -19,7 +19,6 @@ class SettingsException(BaseMethodException):
 	pass
 
 
-
 # noinspection PyNestedDecorators
 class Settings(BaseSettings):
 	"""
@@ -30,7 +29,7 @@ class Settings(BaseSettings):
 	service_root, which is default the directory contain setting file.
 	"""
 
-	model_config = SettingsConfigDict(# env_file=find_dotenv(), # subclass will set
+	model_config = SettingsConfigDict(  # env_file=find_dotenv(), # subclass will set
 		# env_prefix="chatbone_", # subclass will set
 		env_file_encoding='utf-8', extra='ignore', validate_assignment=True, validate_default=True,
 		arbitrary_types_allowed=True, nested_model_default_partial_update=True, env_nested_delimiter='__', )
@@ -39,7 +38,7 @@ class Settings(BaseSettings):
 	"""Name to be realizable between service. This will be used in conjunction with service_id."""
 	service_id: UUID = uuid7()
 
-	service_root:str
+	service_root: str
 	"""Absolute root directory of service, if not provide, it will be directory contain file own Settings subclass."""
 
 	config: None = None
@@ -47,18 +46,18 @@ class Settings(BaseSettings):
 	@model_validator(mode='before')
 	@classmethod
 	@handle_exception(SettingsException)
-	def init_setting(cls,data:dict)->dict:
-		#If the field contains config, it must be as type Config and \'file\' must be provided through environment.
+	def init_setting(cls, data: dict) -> dict:
+		# If the field contains config, it must be as type Config and \'file\' must be provided through environment.
 		if data.get('service_root') is None:
 			data['service_root'] = Path(inspect.getfile(cls)).parent.as_posix()
 
 		# Resolve relative paths recursively
-		solve_relative_paths_recursively(data,Path(data['service_root']))
+		solve_relative_paths_recursively(data, Path(data['service_root']))
 
 		cfg_cls = cls.model_fields['config'].annotation
-		if not issubclass(cfg_cls,type(None)) :
+		if not issubclass(cfg_cls, type(None)):
 			if issubclass(cfg_cls, Config):
-				file:str = data['config']['file']
+				file: str = data['config']['file']
 				data['config'] = cfg_cls(file=file)
 			else:
 				raise ValueError(f'Config attribute must be declare as subclass of BaseConfig. Got {cfg_cls.__name__}.')

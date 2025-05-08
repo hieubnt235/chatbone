@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, Field, AnyUrl
+
 from utilities.schemas.auth import UserAuthenticate
 from utilities.schemas.datastore import *
 from utilities.settings.clients._base import get_http_response, ClientRequestSchema, ClientResponseSchema, BaseClient
@@ -27,33 +28,42 @@ hash_key: username (for quick search)
 
 """
 
+
 class ChatSessionData(BaseModel):
 	messages: MessagesReturn
 	summaries: ChatSummariesReturn
 
+
 class UserData(BaseModel):
-	chat_sessions:dict[UUID,ChatSessionData] = Field(description="dict with keys are chat_session_id.")
+	chat_sessions: dict[UUID, ChatSessionData] = Field(description="dict with keys are chat_session_id.")
 	summaries: UserSummariesReturn
-	urls: list[AnyUrl]|None = Field(None,description="Addition data should be store in object storage and provide url.")
+	urls: list[AnyUrl] | None = Field(None,
+	                                  description="Addition data should be store in object storage and provide url.")
+
 
 class AuthExpiredException(Exception):
 	pass
+
 
 class UserCacheData(BaseModel):
 	# Auth cache
 	connection_id: str
 	user_info: UserInfoReturn
-	auth: UserAuthenticate = Field(description="This is used for the situation that when update database at the disconnecting, the token is expired.")
+	auth: UserAuthenticate = Field(
+		description="This is used for the situation that when update database at the disconnecting, the token is expired.")
 
-	expires_auth: datetime = Field(description="This will force to clear cache and connection, must reauthenticate to reset this."
-	                                           "Don't confuse with redis expire. Which will set and reset by service if any connection exist.")
+	expires_auth: datetime = Field(
+		description="This will force to clear cache and connection, must reauthenticate to reset this."
+		            "Don't confuse with redis expire. Which will set and reset by service if any connection exist.")
 
 	# Data cache
-	old: UserData|None=None
-	new: UserData|None = None
+	old: UserData | None = None
+	new: UserData | None = None
+
 
 class _BaseDataStore(BaseClient):
-	redis: RedisWrapperClient|None = None
+	redis: RedisWrapperClient | None = None
+
 
 class _Access(_BaseDataStore):
 	path = '/access'
@@ -83,8 +93,6 @@ class _Access(_BaseDataStore):
 		"""
 		if request.body is not None:
 			request.params.update(request.body.model_dump())
-
-
 
 	@get_datastore_response('DELETE', UserInfoReturn)
 	async def delete(self, request: GetAndDeleteUserRequest) -> ClientResponseSchema[UserInfoReturn]:

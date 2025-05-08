@@ -21,25 +21,29 @@ class SearchWebConfig(BaseModel):
 		include_image_descriptions: Optional[bool] = False
 	"""
 	max_results: Optional[int] = 5
-	max_length:PositiveInt=Field(1000,description="Maximum number of char length of results. The remain results is drop.")
+	max_length: PositiveInt = Field(1000,
+	                                description="Maximum number of char length of results. The remain results is drop.")
 	include_answer: Optional[bool] = False
+
 
 class SearchDocsConfig(BaseModel):
 	pass
 
+
 class SearchConfig(BaseModel):
-	path:str ='/search'
+	path: str = '/search'
 	"""Path to mount mcp app."""
 
 	web: SearchWebConfig
-	docs:SearchDocsConfig
+	docs: SearchDocsConfig
+
 
 class MathConfig(BaseModel):
-	path:str='/math'
+	path: str = '/math'
 
 
 class ToolsConfig(Config):
-	mcp_path:str = '/mcp'
+	mcp_path: str = '/mcp'
 	"""Path for client accessing to mcp server."""
 
 	search: SearchConfig
@@ -55,12 +59,12 @@ class ToolsSettings(Settings):
 	tavily_api_key: str
 
 	@field_serializer('tavily_api_key')
-	def secret(self,value:str):
-		assert isinstance(value,str)
+	def secret(self, value: str):
+		assert isinstance(value, str)
 		return '***TAVILY_API_KEY***'
 
 
 # noinspection PyArgumentList
-tools_settings= ToolsSettings()
+tools_settings = ToolsSettings()
 
-__all__=['tools_settings']
+__all__ = ['tools_settings']

@@ -16,8 +16,8 @@ async def create(schema: ChatMessageSVCCreate):
 
 
 @router.get('/get')
-async def get_latest(token_id:UUID, chat_session_id:UUID, n: int=-1) -> MessagesReturn:
-	schema = ChatSVCGetLatest(token_id=token_id, chat_session_id=chat_session_id,n=n)
+async def get_latest(token_id: UUID, chat_session_id: UUID, n: int = -1) -> MessagesReturn:
+	schema = ChatSVCGetLatest(token_id=token_id, chat_session_id=chat_session_id, n=n)
 	async with get_chat_message_svc() as svc:
 		return await svc.get_latest_messages(schema)
 

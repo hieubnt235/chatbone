@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from dotenv import find_dotenv
 from pydantic_settings import SettingsConfigDict
 
@@ -8,6 +6,7 @@ from utilities.settings import AsyncSQLDBSettings, Settings, Config
 
 class DatastoreConfig(Config):
 	pass
+
 
 class DatastoreSettings(Settings):
 	"""
@@ -18,6 +17,7 @@ class DatastoreSettings(Settings):
 
 	db: AsyncSQLDBSettings
 
-	config:DatastoreConfig
+	config: DatastoreConfig
+
 
 datastore_settings = DatastoreSettings()

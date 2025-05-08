@@ -9,6 +9,7 @@ from tools.settings import tools_settings
 config = tools_settings.config
 
 from ray import serve
+
 tools_app = FastAPI()
 
 
@@ -20,7 +21,7 @@ class ToolsApp:
 		tools_app.mount(config.math.path, math_mcp.app(config.mcp_path), name=math_mcp.app_name)
 
 	@tools_app.get('/list_mcp_apps')
-	async def list_apps(self)->dict:
+	async def list_apps(self) -> dict:
 		"""
 		List all mcp apps of this tools app.
 
@@ -29,7 +30,7 @@ class ToolsApp:
 		"""
 		ret = {}
 		for r in tools_app.routes:
-			if isinstance(r,Mount) and r.name.endswith(MCP_APP_SUFFIX):
+			if isinstance(r, Mount) and r.name.endswith(MCP_APP_SUFFIX):
 				ret[r.name] = f"ws://{{host_and_port_or_domain}}{r.path}{config.mcp_path}"
 		return ret
 
@@ -39,8 +40,4 @@ if __name__ == '__main__':
 	# uvicorn.run(tools_app)
 	# ray.init()
 
-
-
-
-	serve.run(ToolsApp.bind(), blocking=True)
-#
+	serve.run(ToolsApp.bind(), blocking=True)  #

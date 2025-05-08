@@ -9,9 +9,8 @@ from aiohttp.client import ClientResponse
 from fastapi import HTTPException
 from pydantic import BaseModel, PositiveInt, ConfigDict, Field, ValidationError, model_validator
 from pydantic import HttpUrl
-from redis.asyncio import Redis
+
 from utilities.logger import logger
-from utilities.settings.clients.redis_wrapper import RedisWrapperClient
 
 
 # noinspection PyNestedDecorators
@@ -22,39 +21,37 @@ class BaseClient(BaseModel):
 	Use for the composition class to create complete url.path must start and NOT end with / . Or blank string if it's a highest client. 
 	Ex: /user , /chat ,..."""
 
-	url: str= "http://localhost:8000"
+	url: str = "http://localhost:8000"
 	"""url must NOT end with / . Ex: http//example.com ."""
-
 
 	@model_validator(mode='before')
 	@classmethod
-	def check_and_init(cls,data:dict)-> dict:
+	def check_and_init(cls, data: dict) -> dict:
 		# Check integrity url.
 		if data['url'].endswith('/'):
 			raise ValidationError(f"\'url\' should not end with \'/\'. Got \'{data['url']}\'.")
-		if (cls.path.endswith('/') or not cls.path.startswith('/')) and cls.path!="" :
+		if (cls.path.endswith('/') or not cls.path.startswith('/')) and cls.path != "":
 			raise ValidationError(f"Class variable \'path\' must start and Not end with \'/\'. Got \'{cls.path}\'.")
 
-		data['url'] = data['url']+cls.path
+		data['url'] = data['url'] + cls.path
 
 		subclients = {}
 		# Init sub clients.
-		for k,v in cls.model_fields.items():
-			args =typing.get_args(v.annotation)
-			cls_t = args[0] if len(args)>0 else v.annotation
+		for k, v in cls.model_fields.items():
+			args = typing.get_args(v.annotation)
+			cls_t = args[0] if len(args) > 0 else v.annotation
 
 			if issubclass(cls_t, BaseClient):
 				subclients[k] = cls_t
 
 			# Prevalidate data to pass to all subclients, so that subclients doesn't need to validate anymore.
-			elif issubclass(cls_t,BaseModel) and isinstance(data.get(k,None),dict):
+			elif issubclass(cls_t, BaseModel) and isinstance(data.get(k, None), dict):
 				data[k] = cls_t(**data[k])
-		for k,v in subclients.items():
+		for k, v in subclients.items():
 			data[k] = v(**data)
 		# all sub clients have the same init data.
 		return data
 
-import redis
 
 class ClientResponseSchema[DataType:dict](BaseModel):
 	status: int
@@ -66,27 +63,20 @@ class ClientResponseSchema[DataType:dict](BaseModel):
 	real_url: HttpUrl
 	content_type: str
 	content_length: int
-	content: DataType|dict | str | None = None
-	info: Literal['cache','http']='http'
+	content: DataType | dict | str | None = None
+	info: Literal['cache', 'http'] = 'http'
 
 	@classmethod
-	async def from_client_response(cls, response: ClientResponse, content: Any = None,info:Literal['cache','http']='http'):
-		return await asyncio.to_thread(cls._from_client_response, response,content,info)
+	async def from_client_response(cls, response: ClientResponse, content: Any = None,
+	                               info: Literal['cache', 'http'] = 'http'):
+		return await asyncio.to_thread(cls._from_client_response, response, content, info)
 
 	@classmethod
-	def _from_client_response(cls,response: ClientResponse, content: Any = None,info:str|None=None):
-		return cls(status=response.status,
-		           ok=response.ok,
-		           reason=response.reason,
-		           headers=dict(response.headers),
+	def _from_client_response(cls, response: ClientResponse, content: Any = None, info: str | None = None):
+		return cls(status=response.status, ok=response.ok, reason=response.reason, headers=dict(response.headers),
 		           cookies={key: cookie.value for key, cookie in response.cookies.items()},
-		           content_type=response.content_type,
-		           content_length=response.content_length,
-		           url=str(response.url),
-		           real_url=str(response.url),
-		           content=content,
-		           info=info
-		           )
+		           content_type=response.content_type, content_length=response.content_length, url=str(response.url),
+		           real_url=str(response.url), content=content, info=info)
 
 
 class ClientRequestSchema[DataType:dict](BaseModel):
@@ -107,8 +97,8 @@ class ClientRequestSchema[DataType:dict](BaseModel):
 	                                          "DO NOT set it through constructor.")
 	path_params: str = Field("", exclude=True)
 
-	get_cache_handler: Callable[["ClientRequestSchema"],Coroutine[...,...,ClientResponseSchema|None] ] | None
-	set_cache_handler: Callable[[ClientResponseSchema], Coroutine[...,...,None] ] | None
+	get_cache_handler: Callable[["ClientRequestSchema"], Coroutine[..., ..., ClientResponseSchema | None]] | None
+	set_cache_handler: Callable[[ClientResponseSchema], Coroutine[..., ..., None]] | None
 
 	model_config = ConfigDict(extra='allow', validate_default=True, validate_assignment=True,
 	                          arbitrary_types_allowed=True)
@@ -116,29 +106,28 @@ class ClientRequestSchema[DataType:dict](BaseModel):
 
 # noinspection PyBroadException
 @asynccontextmanager
-async def get_client_response(client:BaseClient, request: ClientRequestSchema) -> AsyncGenerator[ClientResponse, None]:
-		async with aiohttp.ClientSession() as session:
-			async with session.request(**request.model_dump(mode='json', by_alias=True)) as response:
-				logger.debug(f"{client.__class__.__name__} called request {request.method} {request.url}")
-				if not response.ok:
-					logger.debug(response)
-					try:
-						detail = (await response.json())['detail']
-					except:
-						detail = response.reason
-					raise HTTPException(status_code=response.status,detail=detail)
-				yield response
+async def get_client_response(client: BaseClient, request: ClientRequestSchema) -> AsyncGenerator[ClientResponse, None]:
+	async with aiohttp.ClientSession() as session:
+		async with session.request(**request.model_dump(mode='json', by_alias=True)) as response:
+			logger.debug(f"{client.__class__.__name__} called request {request.method} {request.url}")
+			if not response.ok:
+				logger.debug(response)
+				try:
+					detail = (await response.json())['detail']
+				except:
+					detail = response.reason
+				raise HTTPException(status_code=response.status, detail=detail)
+			yield response
 
 
-response_action={
-	'text/plain':'text',
-	'application/json':'json',
-	'x-www-form-urlencoded':'text'
+response_action = {'text/plain': 'text', 'application/json': 'json', 'x-www-form-urlencoded': 'text'
 
 }
 
-async def json_response_handler(response: ClientResponse, response_type:BaseModel|None=None) ->ClientResponseSchema:
-	content = await getattr(response, response_action[response.content_type])() # ex: response.json
+
+async def json_response_handler(response: ClientResponse,
+                                response_type: BaseModel | None = None) -> ClientResponseSchema:
+	content = await getattr(response, response_action[response.content_type])()  # ex: response.json
 
 	# Content must be the same type of supplied response_type if ok.
 	if issubclass(response_type, BaseModel) and response.ok:
@@ -150,10 +139,10 @@ async def json_response_handler(response: ClientResponse, response_type:BaseMode
 	return await ClientResponseSchema[response_type].from_client_response(response, content)
 
 
-def get_http_response(method:Literal['GET','POST','PUT','DELETE'],
-                      response_type: type[Any] = None,
-                      response_handler: Callable[[ClientResponse,...], Coroutine[...,...,ClientResponseSchema] ] = json_response_handler
-                      ) -> Callable[ [Callable[...,Coroutine]], Callable[...,Coroutine]]:
+def get_http_response(method: Literal['GET', 'POST', 'PUT', 'DELETE'], response_type: type[Any] = None,
+                      response_handler: Callable[
+	                      [ClientResponse, ...], Coroutine[..., ..., ClientResponseSchema]] = json_response_handler) -> \
+Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
 	"""
 	Args:
 		method:
@@ -162,18 +151,20 @@ def get_http_response(method:Literal['GET','POST','PUT','DELETE'],
 
 	Returns:
 	"""
-	def decorator(func: Callable[...,Coroutine])-> Callable[...,Coroutine]:
+
+	def decorator(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
 		"""
 		Args:
 			func: preprocess the request, should return ClientRequestSchema or not return anything.
 		"""
+
 		# Note: Wrap only method, with self is the first argument.
 		@functools.wraps(func)
-		async def wrapper(self,request: ClientRequestSchema)->ClientResponseSchema:
+		async def wrapper(self, request: ClientRequestSchema) -> ClientResponseSchema:
 			# Preprocess request
-			r =await func(self,request)
+			r = await func(self, request)
 			request = r or request
-			assert isinstance(request,ClientRequestSchema)
+			assert isinstance(request, ClientRequestSchema)
 
 			# Handle get cache
 			if request.get_cache_handler is not None:
@@ -192,12 +183,12 @@ def get_http_response(method:Literal['GET','POST','PUT','DELETE'],
 					logger.error(f"Cache handler is provided but call fail: {e}")
 
 			# Call API only if getting cache fail or not provided
-			request.method=method
-			request.url= self.url + '/' + func.__name__ + request.path_params
-			async with get_client_response(self,request) as response:
-				client_response= await response_handler(response,response_type)
-				assert isinstance(client_response,ClientResponseSchema)
-				client_response.info='http'
+			request.method = method
+			request.url = self.url + '/' + func.__name__ + request.path_params
+			async with get_client_response(self, request) as response:
+				client_response = await response_handler(response, response_type)
+				assert isinstance(client_response, ClientResponseSchema)
+				client_response.info = 'http'
 
 			# Handle set cache
 			if request.set_cache_handler is not None:
@@ -209,5 +200,5 @@ def get_http_response(method:Literal['GET','POST','PUT','DELETE'],
 			return client_response
 
 		return wrapper
-	return decorator
 
+	return decorator

@@ -1,4 +1,5 @@
-__all__=["DATASTORE","CONFIG"]
+__all__ = ["DATASTORE", "CONFIG"]
+
 from typing import Literal
 
 from dotenv import find_dotenv
@@ -6,7 +7,6 @@ from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Config, Settings
-from utilities.settings.clients.auth import AuthClient
 from utilities.settings.clients.datastore import DatastoreClient
 
 
@@ -32,9 +32,11 @@ class DatastoreRequestTimeout(BaseModel):
 			data[k] = data['default'] if data.get(k) is None else data[k]
 		return data
 
+
 class ChatBoneTimeout(BaseModel):
-	websocket_send: PositiveInt=5
-	cache: PositiveInt=300
+	websocket_send: PositiveInt = 5
+	cache: PositiveInt = 300
+
 
 class ChatConfig(Config):
 	datastore_request_timeout: DatastoreRequestTimeout
@@ -45,10 +47,10 @@ class ChatConfig(Config):
 	max_user_summaries: PositiveInt = 5
 	max_chat_summaries: PositiveInt = 5
 
-	reload_histories_strategy:Literal['after_session','after_n_chats'] = 'after_session'
+	reload_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
 	reload_after_n_chats: PositiveInt = 5
 
-	update_histories_strategy:Literal['after_session','after_n_chats'] = 'after_session'
+	update_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
 	update_after_n_chats: PositiveInt = 5
 
 
@@ -59,9 +61,9 @@ class ChatSettings(Settings):
 	config: ChatConfig
 	datastore: DatastoreClient
 
+
 # noinspection Annotator
 chat_settings = ChatSettings()
 
 CONFIG = chat_settings.config
-DATASTORE = chat_settings.datastore
-# REDIS=DATASTORE.redis
+DATASTORE = chat_settings.datastore  # REDIS=DATASTORE.redis

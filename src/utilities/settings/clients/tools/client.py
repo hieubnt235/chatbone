@@ -1,4 +1,4 @@
-__all__=["ToolsClient"]
+__all__ = ["ToolsClient"]
 
 import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -14,6 +14,7 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from utilities.logger import logger
 
 MCP_APP_SUFFIX = "_mcp_app"
+
 
 def _str2ws_transport(tp: dict[str, str | WSTransport]):
 	for k, t in tp.items():
@@ -69,8 +70,7 @@ class ToolsClient:
 		asyncio.run(main())
 	"""
 
-	def __init__(self, *,
-	             ws_urls_or_transports: dict[str, str | WSTransport] | None = None,
+	def __init__(self, *, ws_urls_or_transports: dict[str, str | WSTransport] | None = None,
 	             base_tools_app_url: str | None = None):
 		"""
 		Args:
@@ -95,19 +95,19 @@ class ToolsClient:
 			asyncio.run(self._create_transports_from_tools_app(base_tools_app_url))
 		############################################
 
-		self._servername2clients: dict[str,Client] = {}
+		self._servername2clients: dict[str, Client] = {}
 		"""app server name:connected client"""
 		self._aestack = AsyncExitStack()
-		self._servername2tools: dict[str,list[StructuredTool]|Exception ]= {}
+		self._servername2tools: dict[str, list[StructuredTool] | Exception] = {}
 
 	async def _create_transports_from_tools_app(self, base_tools_app_url: str) -> list[WSTransport]:
-		base_tools_app_url= base_tools_app_url.removesuffix('/')
+		base_tools_app_url = base_tools_app_url.removesuffix('/')
 		url = urlparse(base_tools_app_url)
 		async with aiohttp.ClientSession() as session:
 			async with session.get(url.geturl() + '/list_mcp_apps', raise_for_status=True) as response:
 				result = await response.json()
-				for name,path in result.items():
-					assert isinstance(path,str)
+				for name, path in result.items():
+					assert isinstance(path, str)
 					result[name] = path.format(host_and_port_or_domain=url.netloc)
 				_str2ws_transport(result)
 				self._transports.update(result)
@@ -116,25 +116,23 @@ class ToolsClient:
 	def mcp_apps(self) -> list[str]:
 		return list(self._transports.keys())
 
-	async def _connect_clients(self, mcp_apps: list[str] | str | None)->Client:
+	async def _connect_clients(self, mcp_apps: list[str] | str | None) -> Client:
 		if mcp_apps is None:
 			mcp_apps = self.mcp_apps
 		else:
-			if not isinstance(mcp_apps,Sequence):
-				mcp_apps=[mcp_apps]
+			if not isinstance(mcp_apps, Sequence):
+				mcp_apps = [mcp_apps]
 			for app in mcp_apps:
 				if app not in self.mcp_apps:
 					raise ValueError(f"Does not have mcp app name \'{app}\'.")
 		for app_name in mcp_apps:
-			self._servername2clients[app_name] = await self._aestack.enter_async_context(Client(self._transports[app_name]))
-
+			self._servername2clients[app_name] = await self._aestack.enter_async_context(
+				Client(self._transports[app_name]))
 
 	@asynccontextmanager
-	async def get_tools(self,mcp_apps: list[str] | str | None,
-	                     *,
-	                     timeout: float | None = 30.0,
-	                     stop_when_one_fail: bool = False,
-	                     raise_exception: bool = False,)-> AsyncContextManager[list[StructuredTool]]:
+	async def get_tools(self, mcp_apps: list[str] | str | None, *, timeout: float | None = 30.0,
+	                    stop_when_one_fail: bool = False, raise_exception: bool = False, ) -> AsyncContextManager[
+		list[StructuredTool]]:
 		"""
 		Enter and get langchain tool. Default setup is yielding all available tools gotten before timeout.
 		Args:
@@ -178,8 +176,7 @@ class ToolsClient:
 			await self.clean()
 
 	async def clean(self):
-		self._servername2clients={}
-		self._servername2tools={}
+		self._servername2clients = {}
+		self._servername2tools = {}
 		await self._aestack.aclose()
 		logger.debug("Client is cleaned.")
-

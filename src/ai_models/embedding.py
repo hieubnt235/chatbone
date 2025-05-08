@@ -22,8 +22,7 @@ class ChatBoneEmbeddings(Embeddings):
 @serve.deployment
 class EmbeddingModel:
 	def __init__(self):
-		self.st = SentenceTransformer(model_name_or_path,
-		                              )
+		self.st = SentenceTransformer(model_name_or_path, )
 
 
 class ChatBoneEmbedding(Embedding)

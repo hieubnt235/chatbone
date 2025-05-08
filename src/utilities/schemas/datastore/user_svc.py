@@ -27,9 +27,10 @@ class UserCreate(UserCredentials):
 
 class UserVerify(UserCreate):
 	create_token_flag: Literal['always', 'if_empty', "if_all_expired", "none"] = 'if_all_expired'
-	hashed_password:str|None= Field(None,deprecated=True,
-	                                description="Future hash algorithm hash one pwd into multiple pwd, so cannot use this value to compare.")
-	password:str
+	hashed_password: str | None = Field(None, deprecated=True,
+	                                    description="Future hash algorithm hash one pwd into multiple pwd, so cannot use this value to compare.")
+	password: str
+
 
 class Token(BaseModel):
 	token_id: UUID
@@ -51,12 +52,12 @@ class UserSummarySVCDeleteOld(Token):
 	remain: PositiveInt
 
 
-
 # RETURN SCHEMAS
 class TokenInfoReturn(BaseModel):
 	id: UUID
 	created_at: datetime
 	expires_at: datetime
+
 
 class UserInfoReturn(BaseModel):
 	username: str
@@ -65,12 +66,13 @@ class UserInfoReturn(BaseModel):
 	created_at: datetime
 	tokens: list[TokenInfoReturn]
 	chat_ids: list[UUID]
-	addition_info: dict=Field(default_factory=dict)
+	addition_info: dict = Field(default_factory=dict)
+
 
 class UserSummaryReturn(BaseModel):
 	id: UUID
 	summary: str
 
+
 class UserSummariesReturn(BaseModel):
 	summaries: list[UserSummaryReturn]
-

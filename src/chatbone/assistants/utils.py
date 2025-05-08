@@ -1,5 +1,4 @@
 import asyncio
-
 from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import AnyMessage
@@ -25,12 +24,14 @@ async def cluster_messages(clusters: list[list[int]], messages: list[AnyMessage]
 		for c in clusters:
 			result.append([messages[i] for i in c])
 		return result
+
 	with ThreadPoolExecutor() as pool:
 		return await asyncio.get_running_loop().run_in_executor(pool, helper, clusters, messages)
 
 
-async def compose_messages(contents: list[str], f: str)->str:
-	def helper(contents: list[str], f: str)->str:
+async def compose_messages(contents: list[str], f: str) -> str:
+	def helper(contents: list[str], f: str) -> str:
 		return f.format("\n".join(contents))
+
 	with ThreadPoolExecutor() as pool:
-		return await asyncio.get_running_loop().run_in_executor(pool, helper, contents,f)
+		return await asyncio.get_running_loop().run_in_executor(pool, helper, contents, f)

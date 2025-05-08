@@ -12,10 +12,7 @@
   <component name="ChangeListManager">
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/.env.chatbone" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/.env.chatbone" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/broker.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/broker.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/settings.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/settings/clients/redis_wrapper.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -929,7 +926,7 @@
       <workItem from="1746459866910" duration="191000" />
       <workItem from="1746491252096" duration="23982000" />
       <workItem from="1746582457415" duration="39147000" />
-      <workItem from="1746675877485" duration="42309000" />
+      <workItem from="1746675877485" duration="46012000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />

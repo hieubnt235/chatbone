@@ -12,23 +12,22 @@ from drafts.core.providers.chat_models.chatbase import ChatBase
 
 
 class ChatHFLocal(ChatBase):
-    """
+	"""
 
-    """
+	"""
 
-    def _generate(self, messages: list[BaseMessage], stop: Optional[list[str]] = None,
-                  run_manager: Optional[CallbackManagerForLLMRun] = None, **kwargs: Any) -> ChatResult:
-        pass
+	def _generate(self, messages: list[BaseMessage], stop: Optional[list[str]] = None,
+	              run_manager: Optional[CallbackManagerForLLMRun] = None, **kwargs: Any) -> ChatResult:
+		pass
 
-    def _stream(self, messages: list[BaseMessage], stop: Optional[list[str]] = None,
-                run_manager: Optional[CallbackManagerForLLMRun] = None, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
-        pass
+	def _stream(self, messages: list[BaseMessage], stop: Optional[list[str]] = None,
+	            run_manager: Optional[CallbackManagerForLLMRun] = None, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
+		pass
 
-    @property
-    def _llm_type(self) -> str:
-        return 'hf_local'
+	@property
+	def _llm_type(self) -> str:
+		return 'hf_local'
 
-    def bind_tools(self, tools: Sequence[
-        Union[typing.Dict[str, Any], type, Callable, BaseTool]  # noqa: UP006
-    ], **kwargs: Any) -> Runnable[LanguageModelInput, BaseMessage]:
-        pass
+	def bind_tools(self, tools: Sequence[Union[typing.Dict[str, Any], type, Callable, BaseTool]  # noqa: UP006
+	], **kwargs: Any) -> Runnable[LanguageModelInput, BaseMessage]:
+		pass
