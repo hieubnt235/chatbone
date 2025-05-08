@@ -12,8 +12,8 @@ services:
         ports:
             - "3333:6379" # Map host port 6379 to container port 6379 (standard Redis)
             - "8001:8001" # Map host port 8001 to container port 8001 (RedisInsight UI)
-        volumes:
-            - redis_stack_data:/data # Mount a named volume to persist Redis data
+#        volumes:
+#            - redis_stack_data:/data # Mount a named volume to persist Redis data
         networks:
             - chatbone-network # Connect to the custom network
 
