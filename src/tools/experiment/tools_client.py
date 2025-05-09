@@ -8,7 +8,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_tavily.tavily_search import TavilySearchInput
 
 from utilities.logger import logger
-from utilities.settings.clients.tools.client import ToolsClient
+from utilities.settings.clients.tools import ToolsClient
 
 client = ToolsClient(base_tools_app_url='http://127.0.0.1:8000')
 

@@ -57,7 +57,10 @@ class Settings(BaseSettings):
 		cfg_cls = cls.model_fields['config'].annotation
 		if not issubclass(cfg_cls, type(None)):
 			if issubclass(cfg_cls, Config):
-				file: str = data['config']['file']
+				try:
+					file: str = data['config']['file']
+				except (KeyError, TypeError):
+					file=None
 				data['config'] = cfg_cls(file=file)
 			else:
 				raise ValueError(f'Config attribute must be declare as subclass of BaseConfig. Got {cfg_cls.__name__}.')

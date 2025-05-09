@@ -7,7 +7,7 @@ from sqlalchemy import select, and_, delete
 from datastore.entities import AccessToken, User
 from utilities.exception import handle_exception, BaseMethodException
 from utilities.func import utc_now
-from utilities.mixin import RepoMixin
+from utilities.misc import RepoMixin
 
 
 class TokenRepoException(BaseMethodException):

@@ -1,10 +1,11 @@
 from typing import Self
 
 from dotenv import find_dotenv
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, PositiveInt
 from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 
+from datastore.app import description
 from utilities.settings import Settings, Config
 
 
@@ -20,6 +21,10 @@ class RedisSettings(BaseModel):
 	password: str | None = None
 	config: RedisConfig
 
+class ChatboneConfig(Config):
+	redis_lock_timeout: PositiveInt|None=10
+	redis_acquire_lock_timeout:PositiveInt|None = 10
+	thread_acquire_lock_timeout: int = 10
 
 class ChatboneSettings(Settings):
 	model_config = SettingsConfigDict(env_prefix='chatbone_', env_file=find_dotenv('.env.chatbone'),
@@ -28,6 +33,10 @@ class ChatboneSettings(Settings):
 
 	redis: RedisSettings
 	redis_client: Redis | None = Field(None, exclude=True)
+
+	config: ChatboneConfig
+
+	user_secret_key:str = Field("abcxyz", description= "Used for encrypt.")
 
 	@model_validator(mode="after")
 	def init_redis_client(self) -> Self:
@@ -39,3 +48,5 @@ class ChatboneSettings(Settings):
 
 chatbone_settings = ChatboneSettings()
 REDIS: Redis = chatbone_settings.redis_client
+CONFIG = chatbone_settings.config
+SECRET_KEY= chatbone_settings.user_secret_key

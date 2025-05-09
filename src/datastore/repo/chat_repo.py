@@ -5,7 +5,7 @@ from sqlalchemy import delete, select, and_
 
 from datastore.entities import ChatSession, Message, User, ChatSummary
 from utilities.exception import BaseMethodException, handle_exception
-from utilities.mixin import RepoMixin
+from utilities.misc import RepoMixin
 
 
 # TODO make repo abstraction

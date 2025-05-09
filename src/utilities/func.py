@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
-
+from cryptography.fernet import Fernet
 import psutil
 from pwdlib import PasswordHash
 
@@ -20,9 +20,14 @@ def verify_password(password: str, hashed_password) -> bool:
 	return password_hash.verify(password, hashed_password)
 
 
+def encrypt(key:str, secret_key:str)->str:
+	return Fernet(secret_key).encrypt(key) # token
+
+def decrypt(token:str, secret_key:str)->str:
+	return Fernet(secret_key).decrypt(token)
+
 def utc_now():
 	return datetime.now(timezone.utc)
-
 
 def cal_time_delta(dt1: datetime, dt2: datetime) -> timedelta:
 	"""

@@ -4,7 +4,7 @@ from sqlalchemy import select, and_
 
 from datastore.entities import User, UserSummary
 from utilities.exception import handle_exception, BaseMethodException
-from utilities.mixin import RepoMixin
+from utilities.misc import RepoMixin
 
 
 class UserRepoException(BaseMethodException):

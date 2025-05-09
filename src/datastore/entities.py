@@ -7,7 +7,7 @@ from sqlalchemy.orm import (DeclarativeBase, Mapped, mapped_column, relationship
 from uuid_extensions.uuid7 import uuid7
 
 from utilities.func import utc_now
-from utilities.mixin import ModelMixin
+from utilities.misc import ModelMixin
 
 
 class Base(ModelMixin, DeclarativeBase):
