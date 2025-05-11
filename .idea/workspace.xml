@@ -12,10 +12,9 @@
   <component name="ChangeListManager">
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/diagrams/.chatbone.vpp.lck" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/diagrams/chatbone.vpp" beforeDir="false" afterPath="$PROJECT_DIR$/docs/diagrams/chatbone.vpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/.$chatbone.drawio.bkp" beforeDir="false" afterPath="$PROJECT_DIR$/docs/.$chatbone.drawio.bkp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/chatbone.drawio" beforeDir="false" afterPath="$PROJECT_DIR$/docs/chatbone.drawio" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/broker.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/broker.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/settings.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -877,7 +876,7 @@
       <workItem from="1746751788875" duration="22693000" />
       <workItem from="1746783727768" duration="12282000" />
       <workItem from="1746851804622" duration="4283000" />
-      <workItem from="1746929136546" duration="7742000" />
+      <workItem from="1746929136546" duration="24389000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />

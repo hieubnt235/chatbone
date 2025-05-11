@@ -52,7 +52,6 @@ class ChatSessionData(ChatBoneJsonModel):
 	urls: list[AnyUrl] = Field(default_factory=list,
 	                           description="Addition data should be store in object storage and provide url.")
 
-
 class UserToken(ChatBoneJsonModel):
 	id: UUID = OMField(index=True)
 	created_at:datetime
@@ -67,6 +66,9 @@ class UserNotFoundError(Exception):
 class NoValidTokenError(Exception):
 	pass
 
+CHAT_SESSION_INPUT_STREAM_FMT="chat_input_stream:{}"
+CHAT_SESSION_OUTPUT_STREAM_FMT="chat_input_stream:{}"
+
 class UserData(ChatBoneJsonModel):
 	"""This class's methods are app-driven, not the low-level query database. """
 	id: UUID = OMField(index=True, primary_key=True)
@@ -79,6 +81,12 @@ class UserData(ChatBoneJsonModel):
 
 	_cs_key_lock = PrivateAttr(_cs_key_lock)
 	_tkn_key_lock = PrivateAttr(_tkn_key_lock)
+
+	async def save_if_not_exists(self):
+		self.check()
+		async with self._get_transaction_pipeline() as pipeline:
+			await pipeline.json().set(self.key(), '.', self.model_dump_json(mode='json'),nx=True)
+		return self
 
 	async def get_encrypt_token(self) -> str:
 		"""Get hash to return to the user"""
@@ -162,6 +170,39 @@ class UserData(ChatBoneJsonModel):
 				await pipeline.execute()
 		return token
 
+	async def get_chat_session(self, session_id: UUID, *,refresh:bool=True, safe:bool=True) -> ChatSessionData|None:
+		"""
+		Get chat session base on session_id safety.
+		Args:
+			session_id:
+			refresh: Whether to refresh UserData to receive chat_session_id
+			safe:
+		Returns:
+			ChatSessionData or None if not exist
+		Raises:
+			RuntimeError: When user data and ChatSessionData in redis server is not sync.
+		"""
+		# Need to check session_id exist BOTH in user data attribute and in redis server, so need safe here.
+		async with AsyncExitStack() as stack:
+			if safe:
+				await stack.enter_async_context(self._modify_safe(ChatSessionData))
+
+			ids = (await self.db().json().get(self.key(), ".chat_session_ids")) if refresh else self.chat_session_ids
+			if session_id in ids:
+				if (cs:= await ChatSessionData.get(session_id)) is not None:
+					return cs
+				else:
+					# This error should never raise in real runtime, only raise for debug.
+					raise RuntimeError(f"Data has session id \'{session_id}\' exist in \'userdata.chat_session_ids\' but do not have object.")
+		return None
+
+	async def delete_chat_session(self, session_id: UUID,*,safe:bool=True):
+		async with AsyncExitStack() as stack:
+			if safe:
+				await stack.enter_async_context(self._modify_safe(ChatSessionData))
+			await ChatSessionData.delete(session_id)
+			self.chat_session_ids.remove(session_id)
+
 	async def update_chat_sessions(self, chat_sessions: list[ChatSessionData], is_overridden:list[bool]|None=None, redis_or_pipeline: Redis | None = None,
 	                               *, refresh:bool=True, execute:bool=True, safe: bool = True)->tuple[Self,int,int]:
 		"""If a chat session already exists, try to update by update each element by concat, else, create a new one or override.
@@ -188,12 +229,11 @@ class UserData(ChatBoneJsonModel):
 			# Separate update and create.
 			current_session_keys: list[str] = (await self.db().json().get(self.key(), ".chat_session_ids"))
 			create_cs: list[ChatSessionData] = []  # for all chat session that
-
 			for i in len(chat_sessions):
 				if is_overridden[i] or (str(chat_sessions[i].id) not in current_session_keys):
 					create_cs.append(chat_sessions.pop(i))
 
-			update_cs: list[ChatSessionData] = [cs for cs in chat_sessions if self.db().exists(cs.key())]
+			update_cs: list[ChatSessionData] = [cs for cs in chat_sessions if (await self.db().exists(cs.key())) ]
 
 			# Create
 			num_created = await self._create_chat_sessions(create_cs, pipeline, safe=False)  # Already safe.
@@ -236,7 +276,12 @@ class UserData(ChatBoneJsonModel):
 
 			# Save and expire
 			chat_sessions = [await cs.save(pipeline) for cs in chat_sessions]
-			await self.expire_sync(chat_sessions.append(self), pipeline)
+
+			keys= [await pipeline.xadd(str(cs.id),{"__init_stream__":"__init_stream__"}, maxlen=0) for cs in chat_sessions]
+			keys.extend(chat_sessions)
+			keys.append(self)
+
+			await self.expire_sync(keys, pipeline)
 
 			# Store keys
 			current_session_keys:list[str] = list(set( await self.db().json().get(self.key(),".chat_session_ids") )) # reload key in the server.
@@ -244,37 +289,6 @@ class UserData(ChatBoneJsonModel):
 			coro: Awaitable[list[int | None]] = pipeline.json().set(self.key(), ".chat_session_ids",set(current_session_keys))
 			await coro
 		return len(current_session_keys)-len(set(current_session_keys))
-
-	async def get_chat_session(self, session_id: UUID, *, safe:bool=True) -> ChatSessionData|None:
-		"""
-		Get chat session base on session_id safety.
-		Args:
-			session_id:
-			safe:
-		Returns:
-			ChatSessionData or None if not exist
-		Raises:
-			RuntimeError: When user data and ChatSessionData in redis server is not sync.
-		"""
-		# Need to check session_id exist BOTH in user data attribute and in redis server, so need safe here.
-		async with AsyncExitStack() as stack:
-			if safe:
-				await stack.enter_async_context(self._modify_safe(ChatSessionData))
-			if session_id in self.chat_session_ids:
-				if (cs:= await ChatSessionData.get(session_id)) is not None:
-					return cs
-				else:
-					# This error should never raise in real runtime, only raise for debug.
-					raise RuntimeError(f"Data has session id \'{session_id}\' exist in \'userdata.chat_session_ids\' but do not have object.")
-		return None
-
-	async def delete_chat_session(self, session_id: UUID,*,safe:bool=True):
-		async with AsyncExitStack() as stack:
-			if safe:
-				await stack.enter_async_context(self._modify_safe(ChatSessionData))
-			await ChatSessionData.delete(session_id)
-			self.chat_session_ids.remove(session_id)
-
 
 	@asynccontextmanager
 	async def _modify_safe(self,model_type: type[ChatBoneJsonModel],
