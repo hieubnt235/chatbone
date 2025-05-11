@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field, model_validator, PositiveInt
 from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 
-from datastore.app import description
 from utilities.settings import Settings, Config
 
 

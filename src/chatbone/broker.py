@@ -75,7 +75,7 @@ class UserData(ChatBoneJsonModel):
 
 	summaries: list[str] = Field(default_factory=list)
 	token_id: str
-	chat_session_ids: list[UUID] = Field(default_factory=set)
+	chat_session_ids: set[UUID] = Field(default_factory=set)
 
 	_cs_key_lock = PrivateAttr(_cs_key_lock)
 	_tkn_key_lock = PrivateAttr(_tkn_key_lock)
@@ -95,6 +95,30 @@ class UserData(ChatBoneJsonModel):
 			raise UserNotFoundError
 		assert userdata.username==username
 		return userdata
+
+	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
+		""" This method is used for check if user is valid to make further request to business service. If user is not valid now
+		because of a token, use 'update_token' to make it valid.
+		User is considered valid when:
+			1. User exists in server.
+			2. User has the non-expired token.
+		If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
+		Returns:
+			valid UserToken object.
+		Raises:
+			UserNotFoundError, NoValidTokenError
+		"""
+		assert timeout>sleep
+		start = time.time()
+
+		while (time.time()-start) < timeout:
+			if (user:=await UserData.get(self.id)) is None:
+				raise UserNotFoundError(f"No user with id '{self.id}' exists in server.")
+			if (token:= await UserToken.get(user.token_id)) is not None:
+				return token
+			await asyncio.sleep(sleep)
+
+		raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
 
 	async def update_token(self, token: UserToken,redis_or_pipeline: Redis | None = None,
 	                       *, refresh:bool=True, execute:bool=True, safe: bool = True)->UserToken:
@@ -138,62 +162,41 @@ class UserData(ChatBoneJsonModel):
 				await pipeline.execute()
 		return token
 
-	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
-		"""
-		User is considered valid when:
-			1. User exists in server.
-			2. User has the non-expired token.
-		If (1) fails, raise the error for the app to shut down. If (2) fail, wait until timeout the token exist, raise when timeout.
-		Returns:
-			valid UserToken object.
-		Raises:
-			UserNotFoundError, NoValidTokenError
-		"""
-		assert timeout>sleep
-		start = time.time()
-
-		while (time.time()-start) < timeout:
-			if (user:=await UserData.get(self.id)) is None:
-				raise UserNotFoundError(f"No user with id '{self.id}' exists in server.")
-			if (token:= await UserToken.get(user.token_id)) is not None:
-				return token
-			await asyncio.sleep(sleep)
-
-		raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
-
-	async def update_chat_sessions(self, chat_sessions: list[ChatSessionData], redis_or_pipeline: Redis | None = None,
-	                               *, refresh:bool=True, execute:bool=True, safe: bool = True)->Self:
-		"""If a chat session already exists (the same id), try to update by update each element by concat, else, create a new one.
-		This method is different from 'update_chat_session' because of partial updating, not overriding.
-
-		This method will create new chat sessions first, then update available ones.
+	async def update_chat_sessions(self, chat_sessions: list[ChatSessionData], is_overridden:list[bool]|None=None, redis_or_pipeline: Redis | None = None,
+	                               *, refresh:bool=True, execute:bool=True, safe: bool = True)->tuple[Self,int,int]:
+		"""If a chat session already exists, try to update by update each element by concat, else, create a new one or override.
+		You can force chat session to be overriden also.
 
 		Args:
 			chat_sessions: list of chat sessions.
+			is_overridden: Index of chat_sessions that will be overridden instead of concat. Must be the same length of chat_session.
 			redis_or_pipeline: Can be Redis, Pipeline or None, see '_get_transaction_pipeline' for details.
 			execute: Whether to execute the pipeline. If the pipeline is not the one given by 'redis_or_pipeline'(given None or Redis), always execute.
 			refresh: Reload this object. This will override the 'execute' parameter.
 			safe: Threadsafe (blocking) during operation or not, protect others from modify operations in the chat sessions (allow read operations).
 		Returns:
-			New refreshed object or self.
+			Refreshed UserData and the number of newly created chat sessions.
 		"""
-		# Separate
-		create_cs: list[ChatSessionData] = []
-		update_cs: list[ChatSessionData] = []
-		for cs in chat_sessions:
-			if cs.id in self.chat_session_ids:
-				assert (await self.db().exists(cs.key()) == 1) # If key is stored, the ChatSessionData must exist in the server.
-				update_cs.append(cs)
-			else:
-				create_cs.append(cs)
+		if is_overridden is not None:
+			assert len(is_overridden) == len(chat_sessions)
 
 		async with AsyncExitStack() as stack:
 			if safe:
 				_ = await stack.enter_async_context(self._modify_safe(ChatSessionData))
 			pipeline = await stack.enter_async_context(self._get_transaction_pipeline(redis_or_pipeline))
 
-			# Create new
-			_ = await self.add_chat_sessions(create_cs, pipeline, safe=False,refresh=False,execute=False)  # Return self.
+			# Separate update and create.
+			current_session_keys: list[str] = (await self.db().json().get(self.key(), ".chat_session_ids"))
+			create_cs: list[ChatSessionData] = []  # for all chat session that
+
+			for i in len(chat_sessions):
+				if is_overridden[i] or (str(chat_sessions[i].id) not in current_session_keys):
+					create_cs.append(chat_sessions.pop(i))
+
+			update_cs: list[ChatSessionData] = [cs for cs in chat_sessions if self.db().exists(cs.key())]
+
+			# Create
+			num_created = await self._create_chat_sessions(create_cs, pipeline, safe=False)  # Already safe.
 
 			# Update
 			for cs in update_cs:
@@ -206,31 +209,26 @@ class UserData(ChatBoneJsonModel):
 				# Be Pipeline means that it will execute from outside but force to execute.
 				# If not Pipeline, it will execute by self._get_transaction_pipeline, so no need to execute more.
 				await pipeline.execute()
-		return self
+		return self, num_created
 
 	async def _update_one_chat_session(self, new_cs: ChatSessionData, redis_or_pipeline: Redis | None = None):
 		assert new_cs.id in self.chat_session_ids
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			coro1: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".messages",
-			                                                                *[m.model_dump() for m in new_cs.messages])
+			coro1: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".messages",*[m.model_dump() for m in new_cs.messages])
 			coro2: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".summaries",*new_cs.summaries)
 			coro3: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".urls",*[str(u) for u in new_cs.urls])
+			await asyncio.gather(coro1,coro2,coro3) # Note: add command to the pipeline, not actually run.
 
-		await asyncio.gather(coro1,coro2,coro3)
-
-	async def add_chat_sessions(self, chat_sessions: list[ChatSessionData], redis_or_pipeline: Redis | None = None,
-	                            *, refresh: bool = True, execute: bool = True, safe: bool = True) -> Self:
-		"""Save and sync all chat session lifetime with user data lifetime. If the chat session is available, it will be overridden.
-
+	async def _create_chat_sessions(self, chat_sessions: list[ChatSessionData], redis_or_pipeline: Redis | None = None,
+	                            *, safe: bool = True) -> Self:
+		"""Save and sync all chat session lifetime with user data lifetime.
 		Args:
 			chat_sessions: list of chat sessions.
 			redis_or_pipeline: Can be Redis, Pipeline or None, see '_get_transaction_pipeline' for details.
-			execute: Whether to execute the pipeline. If the pipeline is not the one given by 'redis_or_pipeline'(given None or Redis), always execute.
-			refresh: Reload this object. This will override the 'execute' parameter.
 			safe: Threadsafe (blocking) during operation or not, protect others from modify operations in the chat sessions (allow read operations).
-
+		Returns:
+			Number of newly created chat sessions.
 		"""
-
 		async with AsyncExitStack() as stack:
 			if safe:
 				_ = await stack.enter_async_context(self._modify_safe(ChatSessionData))
@@ -241,18 +239,11 @@ class UserData(ChatBoneJsonModel):
 			await self.expire_sync(chat_sessions.append(self), pipeline)
 
 			# Store keys
-			coro: Awaitable[list[int | None]] = pipeline.json().arrappend(self.key(), ".chat_session_ids",*[cs.id for cs in chat_sessions])
+			current_session_keys:list[str] = list(set( await self.db().json().get(self.key(),".chat_session_ids") )) # reload key in the server.
+			current_session_keys.extend([str(cs.id) for cs in chat_sessions])
+			coro: Awaitable[list[int | None]] = pipeline.json().set(self.key(), ".chat_session_ids",set(current_session_keys))
 			await coro
-
-			# Post process
-			if refresh:
-				await pipeline.execute()
-				return await UserData.get(self.id)
-			elif execute and isinstance(redis_or_pipeline,Pipeline):
-				# Be Pipeline means that it will execute from outside but force to execute.
-				# If not Pipeline, it will execute by self._get_transaction_pipeline, so no need to execute more.
-				await pipeline.execute()
-		return self
+		return len(current_session_keys)-len(set(current_session_keys))
 
 	async def get_chat_session(self, session_id: UUID, *, safe:bool=True) -> ChatSessionData|None:
 		"""
@@ -319,7 +310,7 @@ class UserData(ChatBoneJsonModel):
 		await self.expire_cascade(num_seconds, session_keys,redis_or_pipeline)
 
 	async def expire_sync(self, models: list[RedisModel | str], redis_or_pipeline: Redis | None = None) -> None:
-		"""Expire all Models sync with this object's current lifetime.
+		"""Expire all Models sync with this object's CURRENT lifetime.
 		Args:
 			models:RedisModel or key (Redis key, not primary key)
 			redis_or_pipeline:
@@ -331,7 +322,7 @@ class UserData(ChatBoneJsonModel):
 
 	async def expire_cascade(self, num_seconds: int, models: list[RedisModel | str],
 	                          redis_or_pipeline: Redis | None = None):
-		"""Expire all models with the same num_seconds"""
+		"""Expire all models with the same num_seconds."""
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			for m in models:
 				await self._expire_one(num_seconds, m, pipeline)
@@ -346,9 +337,9 @@ class UserData(ChatBoneJsonModel):
 			else:
 				raise ValueError
 
+
 	@asynccontextmanager
-	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None) -> AbstractAsyncContextManager[
-		Pipeline]:
+	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None) -> AbstractAsyncContextManager[Pipeline]:
 		"""
 		Args:
 			redis_or_pipeline: Can be Redis, Pipeline or None:
@@ -370,7 +361,6 @@ class UserData(ChatBoneJsonModel):
 				await pipeline.execute()
 
 
-
 # async def get_chat_session(chat_session_id:UUID, username:str)->ChatSessionData
 
 MIGRATION = "migrated_flag"
@@ -386,6 +376,11 @@ async def migration(raise_if_already_migration: bool = False):
 	if raise_if_already_migration:
 		raise RuntimeError("Migration already setup.")
 
+class Stream:
+
+	pass
+
+#TODO test UserData and complete stream.
 
 if __name__ == "__main__":
 	from uuid_extensions import uuid7
