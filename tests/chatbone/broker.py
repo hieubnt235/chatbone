@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from chatbone.broker import UserData
+from chatbone._broker import UserData
 
 
 

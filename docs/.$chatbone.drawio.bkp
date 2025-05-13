@@ -183,8 +183,8 @@
             <mxPoint as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="dCwGsatc8qkczscHen2Q-39" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Heading&lt;/h1&gt;&lt;p&gt;Chat don&#39;t need to know about auth, web must pool to check that. Or chat will return error if can not auth.&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="1">
-          <mxGeometry x="-1230" y="-160" width="180" height="120" as="geometry" />
+        <mxCell id="dCwGsatc8qkczscHen2Q-39" value="&lt;h1 style=&quot;margin-top: 0px;&quot;&gt;Heading&lt;/h1&gt;&lt;p&gt;Chat don&#39;t need to know about auth, web must pool to check that. Or chat will return error if can not auth.&lt;/p&gt;&lt;p&gt;&lt;br&gt;&lt;/p&gt;&lt;p&gt;&lt;br&gt;&lt;/p&gt;" style="text;html=1;whiteSpace=wrap;overflow=hidden;rounded=0;" vertex="1" parent="1">
+          <mxGeometry x="-1230" y="-160" width="240" height="120" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -1,359 +1,199 @@
-import time
+import asyncio
+from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
 from datetime import datetime
-from typing import Literal, Self, Awaitable, Any
+from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
-from aredis_om import JsonModel, Field as OMField, Migrator, RedisModel
-from pydantic import Field, AnyUrl, PrivateAttr
-from redis import asyncio
+from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict
+from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
 
 from chatbone.settings import REDIS, CONFIG, SECRET_KEY
-from utilities.func import utc_now, encrypt, decrypt
+from utilities.func import encrypt, decrypt
 from utilities.logger import logger
-from utilities.misc import LockContextManager
+
+LOCK_POSTFIX="<LOCK>"
 
 
-class ChatBoneJsonModel(JsonModel):
-	class Meta:
-		global_key_prefix = "chatbone"
-		module_key_prefix = ""
-		primary_key_pattern = "pk@{pk}"
-		database: Redis = REDIS
+# noinspection PyPropertyDefinition
+class ChatboneData(BaseModel,ABC):
+	"""This class for data work with Redis.
+	All Redis keys must be defined as property and return string. See the 'all_rkeys' method.
+	The main key must be 'rkey', all other keys will have the lifetime synced with this key.
 
-	@classmethod
-	def global_lock_modify_key(cls) -> str:
-		""" This attribute is used as a lock key for all modify operations for all instances created by the class in Redis server.
-		"""
-		return cls.__name__ + "LockModifyKey"
+	Notes:
+		1. Data is got through attributes of this class, require refresh manually to get updated data.
+		2. Only support modify first level attributes. Nested attributes are not allowed to modify, they must be modified using the submodel.
+			So that if there are any modifiable values, it needs to wrap with BaseModel subclass.
+		3. Model does not own a redis key must be set embedding = True (default), if not, it cannot modify data, or unbehavior things would happen.
+	"""
 
-	@classmethod
-	def global_lock_read_key(cls) -> str:
-		return cls.__name__ + "LockReadKey"
+	# This value is True by default for accidentally create new key in the server because of using an embedding model without set it to True.
+	embedding:ClassVar[bool] = True
+	"""Embedding class will not persist and manage any redis key/object."""
+	redis:ClassVar[Redis] = REDIS
+	model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 
-
-class ChatBoneJsonEmbeddedModel(ChatBoneJsonModel):
-	class Meta:
-		embedded = True
-
-
-class Message(ChatBoneJsonEmbeddedModel):
-	role: Literal['user', 'system', 'assistant']
-	content: str
+	id: UUID
 
 
-class ChatSessionData(ChatBoneJsonModel):
-	id: UUID = OMField(index=True, primary_key=True)
+	_jsonpath:str = PrivateAttr("$.")
+	"""This path will be used to refresh. Embedding model must be reset this value by model own redis key."""
+	_base_rkey:str|None = PrivateAttr(None)
+	"""This attribute is used by embedding Model, and created by the model hold redis key."""
 
-	messages: list[Message] = Field(default_factory=list)
-	summaries: list[str] = Field(default_factory=list)
-	urls: list[AnyUrl] = Field(default_factory=list,
-	                           description="Addition data should be store in object storage and provide url.")
-
-class UserToken(ChatBoneJsonModel):
-	id: UUID = OMField(index=True)
-	created_at:datetime
-	expires_at:datetime
-
-# Note: These locks only handle lock in one thread (including async tasks), not process.
-_cs_key_lock = LockContextManager()
-_tkn_key_lock = LockContextManager()
-
-class UserNotFoundError(Exception):
-	pass
-class NoValidTokenError(Exception):
-	pass
-
-CHAT_SESSION_INPUT_STREAM_FMT="chat_input_stream:{}"
-CHAT_SESSION_OUTPUT_STREAM_FMT="chat_input_stream:{}"
-
-class UserData(ChatBoneJsonModel):
-	"""This class's methods are app-driven, not the low-level query database. """
-	id: UUID = OMField(index=True, primary_key=True)
-	username: str = OMField(index=True)
-	password: str
-
-	summaries: list[str] = Field(default_factory=list)
-	token_id: str
-	chat_session_ids: set[UUID] = Field(default_factory=set)
-
-	_cs_key_lock = PrivateAttr(_cs_key_lock)
-	_tkn_key_lock = PrivateAttr(_tkn_key_lock)
-
-	async def save_if_not_exists(self):
-		self.check()
-		async with self._get_transaction_pipeline() as pipeline:
-			await pipeline.json().set(self.key(), '.', self.model_dump_json(mode='json'),nx=True)
-		return self
-
-	async def get_encrypt_token(self) -> str:
-		"""Get hash to return to the user"""
-		if (userdata:= await UserData.get(self.id)) is None: # refresh
-			raise UserNotFoundError
-		key = str(userdata.id)+'@'+userdata.username
-		return await asyncio.to_thread(encrypt,key, SECRET_KEY)
+	async def refresh(self, exclude:set[str]|None)->Self:
+		"""Load all data"""
+		exclude = exclude or set()
+		fields = [field for field in self.model_fields.items() if field not in exclude]
+		async with self._get_transaction_pipeline(lock_modify=True) as pipeline:
+			loads = await pipeline.json().get(self.rkey,
+			                                 *[f"{self._jsonpath}.{field}" for field in fields])
+		new_object = self.model_validate(**{k:v for k,v in zip(fields,loads)})
+		if self.embedding:
+			new_object.bind__base_rkey(self.rkey,self._jsonpath)
+		return new_object
 
 	@classmethod
-	async def verify_encrypt_token(cls, encrypted_token:str) -> Self | None:
-		key:str = await asyncio.to_thread(decrypt,encrypted_token,SECRET_KEY)
-		uid, username = key.split("@")
-		if (userdata:=await UserData.get(uid) )is None:
-			raise UserNotFoundError
-		assert userdata.username==username
-		return userdata
+	@property
+	def rkey_prefix(cls):
+		return f"{cls.__module__}:{cls.__name__}"
 
-	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
-		""" This method is used for check if user is valid to make further request to business service. If user is not valid now
-		because of a token, use 'update_token' to make it valid.
-		User is considered valid when:
-			1. User exists in server.
-			2. User has the non-expired token.
-		If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
-		Returns:
-			valid UserToken object.
-		Raises:
-			UserNotFoundError, NoValidTokenError
-		"""
-		assert timeout>sleep
-		start = time.time()
+	@property
+	def rkey(self)->str:
+		"""Main rkey. The embedding class must redefine this class to """
+		if self.embedding:
+			if self._base_rkey is None:
+				raise ValueError("This embedding object haven't bound any base rkey.")
+			else:
+				return self._base_rkey
+		return f"{self.rkey_prefix}:{self.id}"
 
-		while (time.time()-start) < timeout:
-			if (user:=await UserData.get(self.id)) is None:
-				raise UserNotFoundError(f"No user with id '{self.id}' exists in server.")
-			if (token:= await UserToken.get(user.token_id)) is not None:
-				return token
-			await asyncio.sleep(sleep)
+	def bind__base_rkey(self, rkey:str, _jsonpath:str):
+		self._base_rkey = rkey
+		self._jsonpath = _jsonpath
 
-		raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
+	@property
+	def all_sub_rkeys(self)->list[str]:
+		"""Sub rkeys, always end with '_rkey'."""
+		rkeys:list[str] = []
+		for name in dir(self):
+			if name.endswith('_rkey'):
+				attr = getattr(self,name)
+				assert isinstance(attr,str)
+				rkeys.append(attr)
+		return rkeys
 
-	async def update_token(self, token: UserToken,redis_or_pipeline: Redis | None = None,
-	                       *, refresh:bool=True, execute:bool=True, safe: bool = True)->UserToken:
-		"""Delete old token (no matter it exists or not) and create new one with expiry date equal to min(Token.expires_at, Redis.ttl(self)).
-		Args:
-			token: UserToken object that must have 'expires_at' attribute > utc_now().
-			redis_or_pipeline: Can be Redis, Pipeline or None, see '_get_transaction_pipeline' for details.
-			execute: Whether to execute the pipeline. If the pipeline is not the one given by 'redis_or_pipeline'(given None or Redis), always execute.
-			refresh: Reload this object. This will override the 'execute' parameter.
-			safe: Threadsafe (blocking) during operation or not, protect others from modify operations in the chat sessions (allow read operations).
 
-		Returns: UserToken object.
-		"""
-
-		async with AsyncExitStack() as stack:
-			if safe:
-				_ = await stack.enter_async_context(self._modify_safe(UserToken))
-			pipeline = await stack.enter_async_context(self._get_transaction_pipeline(redis_or_pipeline))
-
-			# Delete, save
-			await UserToken.delete(self.token_id,pipeline)
-			await token.save(pipeline)
-
-			if (delta:= (token.expires_at - utc_now()).total_seconds() ) <0:
-				raise ValueError("Token already expired.")
-
-			# Not wait for the pipeline, expire intermediately.
-			await token.expire(min(await self.db().ttl(self.key()), delta))
-
-			# Store keys
-			coro: Awaitable[None] = pipeline.json().set(self.key(),".token_id",token.id)
-			await coro
-
-			# Post process
-			if refresh:
-				await pipeline.execute()
-				return await UserToken.get(self.token_id)
-			elif execute and isinstance(redis_or_pipeline,Pipeline):
-				# Be Pipeline means that it will execute from outside but force to execute.
-				# If not Pipeline, it will execute by self._get_transaction_pipeline, so no need to execute more.
-				await pipeline.execute()
-		return token
-
-	async def get_chat_session(self, session_id: UUID, *,refresh:bool=True, safe:bool=True) -> ChatSessionData|None:
-		"""
-		Get chat session base on session_id safety.
-		Args:
-			session_id:
-			refresh: Whether to refresh UserData to receive chat_session_id
-			safe:
-		Returns:
-			ChatSessionData or None if not exist
-		Raises:
-			RuntimeError: When user data and ChatSessionData in redis server is not sync.
-		"""
-		# Need to check session_id exist BOTH in user data attribute and in redis server, so need safe here.
-		async with AsyncExitStack() as stack:
-			if safe:
-				await stack.enter_async_context(self._modify_safe(ChatSessionData))
-
-			ids = (await self.db().json().get(self.key(), ".chat_session_ids")) if refresh else self.chat_session_ids
-			if session_id in ids:
-				if (cs:= await ChatSessionData.get(session_id)) is not None:
-					return cs
-				else:
-					# This error should never raise in real runtime, only raise for debug.
-					raise RuntimeError(f"Data has session id \'{session_id}\' exist in \'userdata.chat_session_ids\' but do not have object.")
-		return None
-
-	async def delete_chat_session(self, session_id: UUID,*,safe:bool=True):
-		async with AsyncExitStack() as stack:
-			if safe:
-				await stack.enter_async_context(self._modify_safe(ChatSessionData))
-			await ChatSessionData.delete(session_id)
-			self.chat_session_ids.remove(session_id)
-
-	async def update_chat_sessions(self, chat_sessions: list[ChatSessionData], is_overridden:list[bool]|None=None, redis_or_pipeline: Redis | None = None,
-	                               *, refresh:bool=True, execute:bool=True, safe: bool = True)->tuple[Self,int,int]:
-		"""If a chat session already exists, try to update by update each element by concat, else, create a new one or override.
-		You can force chat session to be overriden also.
-
-		Args:
-			chat_sessions: list of chat sessions.
-			is_overridden: Index of chat_sessions that will be overridden instead of concat. Must be the same length of chat_session.
-			redis_or_pipeline: Can be Redis, Pipeline or None, see '_get_transaction_pipeline' for details.
-			execute: Whether to execute the pipeline. If the pipeline is not the one given by 'redis_or_pipeline'(given None or Redis), always execute.
-			refresh: Reload this object. This will override the 'execute' parameter.
-			safe: Threadsafe (blocking) during operation or not, protect others from modify operations in the chat sessions (allow read operations).
-		Returns:
-			Refreshed UserData and the number of newly created chat sessions.
-		"""
-		if is_overridden is not None:
-			assert len(is_overridden) == len(chat_sessions)
-
-		async with AsyncExitStack() as stack:
-			if safe:
-				_ = await stack.enter_async_context(self._modify_safe(ChatSessionData))
-			pipeline = await stack.enter_async_context(self._get_transaction_pipeline(redis_or_pipeline))
-
-			# Separate update and create.
-			current_session_keys: list[str] = (await self.db().json().get(self.key(), ".chat_session_ids"))
-			create_cs: list[ChatSessionData] = []  # for all chat session that
-			for i in len(chat_sessions):
-				if is_overridden[i] or (str(chat_sessions[i].id) not in current_session_keys):
-					create_cs.append(chat_sessions.pop(i))
-
-			update_cs: list[ChatSessionData] = [cs for cs in chat_sessions if (await self.db().exists(cs.key())) ]
-
-			# Create
-			num_created = await self._create_chat_sessions(create_cs, pipeline, safe=False)  # Already safe.
-
-			# Update
-			for cs in update_cs:
-				await self._update_one_chat_session(cs,pipeline)
-
-			if refresh:
-				await pipeline.execute()
-				return await UserData.get(self.id)
-			elif execute and isinstance(redis_or_pipeline, Pipeline):
-				# Be Pipeline means that it will execute from outside but force to execute.
-				# If not Pipeline, it will execute by self._get_transaction_pipeline, so no need to execute more.
-				await pipeline.execute()
-		return self, num_created
-
-	async def _update_one_chat_session(self, new_cs: ChatSessionData, redis_or_pipeline: Redis | None = None):
-		assert new_cs.id in self.chat_session_ids
-		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			coro1: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".messages",*[m.model_dump() for m in new_cs.messages])
-			coro2: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".summaries",*new_cs.summaries)
-			coro3: Awaitable[list[int | None]] = pipeline.json().arrappend(new_cs.key(), ".urls",*[str(u) for u in new_cs.urls])
-			await asyncio.gather(coro1,coro2,coro3) # Note: add command to the pipeline, not actually run.
-
-	async def _create_chat_sessions(self, chat_sessions: list[ChatSessionData], redis_or_pipeline: Redis | None = None,
-	                            *, safe: bool = True) -> Self:
-		"""Save and sync all chat session lifetime with user data lifetime.
-		Args:
-			chat_sessions: list of chat sessions.
-			redis_or_pipeline: Can be Redis, Pipeline or None, see '_get_transaction_pipeline' for details.
-			safe: Threadsafe (blocking) during operation or not, protect others from modify operations in the chat sessions (allow read operations).
-		Returns:
-			Number of newly created chat sessions.
-		"""
-		async with AsyncExitStack() as stack:
-			if safe:
-				_ = await stack.enter_async_context(self._modify_safe(ChatSessionData))
-			pipeline = await stack.enter_async_context(self._get_transaction_pipeline(redis_or_pipeline))
-
-			# Save and expire
-			chat_sessions = [await cs.save(pipeline) for cs in chat_sessions]
-
-			keys= [await pipeline.xadd(str(cs.id),{"__init_stream__":"__init_stream__"}, maxlen=0) for cs in chat_sessions]
-			keys.extend(chat_sessions)
-			keys.append(self)
-
-			await self.expire_sync(keys, pipeline)
-
-			# Store keys
-			current_session_keys:list[str] = list(set( await self.db().json().get(self.key(),".chat_session_ids") )) # reload key in the server.
-			current_session_keys.extend([str(cs.id) for cs in chat_sessions])
-			coro: Awaitable[list[int | None]] = pipeline.json().set(self.key(), ".chat_session_ids",set(current_session_keys))
-			await coro
-		return len(current_session_keys)-len(set(current_session_keys))
-
-	@asynccontextmanager
-	async def _modify_safe(self,model_type: type[ChatBoneJsonModel],
-	                       *,
-	                       redis_lock_timeout:int|None=None,
-	                       redis_acquire_lock_timeout:int|None=None,
-	                       thread_acquire_lock_timeout:int|None=None
-	                       )->AbstractAsyncContextManager[Any]:
-		"""Lock both UserToken instance on redis server and the keys stored in this class.
-		this should be used when we need to check data in multiple sources atomically."""
-		redis_lock_timeout = redis_lock_timeout or CONFIG.redis_lock_timeout
-		redis_acquire_lock_timeout= redis_acquire_lock_timeout or CONFIG.redis_acquire_lock_timeout
-		thread_acquire_lock_timeout= thread_acquire_lock_timeout or CONFIG.thread_acquire_lock_timeout
-
-		async with AsyncExitStack() as stack:
-			a = await stack.enter_async_context( self.db().lock(model_type.global_lock_modify_key(),
-			                                                    timeout=redis_lock_timeout,
-			                                                    blocking_timeout=redis_acquire_lock_timeout))  # this will raise if timeout
-			ny = await stack.enter_async_context(self._tkn_key_lock.alock(timeout=thread_acquire_lock_timeout))  # raise also
-			yield a, ny
-
-	async def expire_user(self, num_seconds: int, redis_or_pipeline: Redis | None = None):
-		"""Expire this object, cascade expires all chat sessions and reset the expiry for UserToken with min(num_seconds, UserToken.expires_at)
+	async def expire(self, num_seconds: int, redis_or_pipeline: Redis | None = None):
+		"""Expire all keys of this object.
 		Args:
 			num_seconds:
 			redis_or_pipeline:
 		"""
-		if (token :=await UserToken.get(self.token_id)) is not None:
-			# Expire intermediately.
-			await token.expire(min(num_seconds, (token.expires_at-utc_now()).total_seconds() ))
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			await self.expire_cascade(num_seconds, self.all_sub_rkeys + self.rkey, pipeline)
 
-		session_keys = [ChatSessionData.make_primary_key(pk) for pk in self.chat_session_ids]
-		await self.expire_cascade(num_seconds, session_keys,redis_or_pipeline)
+	async def expire_sync(self, keys: list[str], redis_or_pipeline: Redis | None = None) -> None:
+		"""Expire all Models sync with this object's main rkey lifetime (with 'rkey' key)."""
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			num_seconds = await pipeline.ttl(self.rkey)
+			await self.expire_cascade(num_seconds, keys.append(self), pipeline)
 
-	async def expire_sync(self, models: list[RedisModel | str], redis_or_pipeline: Redis | None = None) -> None:
-		"""Expire all Models sync with this object's CURRENT lifetime.
+	async def expire_cascade(self, num_seconds: int, keys: list[str], redis_or_pipeline: Redis | None = None):
+		"""Expire all keys with the same num_seconds."""
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			for k in keys:
+				await pipeline.expire(k, num_seconds)
+
+	async def save(self, skip_if_exist:bool=True):
+		if self.embedding:
+			raise ValueError("Embedding model cannot save redis object.")
+		await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=skip_if_exist)
+
+	async def delete(self, redis_or_pipeline: Redis | None = None):
+		"""Cascading delete for all keys."""
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+			await pipeline.delete(self.rkey, *self.all_sub_rkeys)
+
+	async def append(self, field: str, values: list[Any],redis_or_pipeline: Redis | None = None):
+		"""Append to a JSON list.
 		Args:
-			models:RedisModel or key (Redis key, not primary key)
+			field: field name of a pydantic model.
+			values: list of values that intent to be appended.
 			redis_or_pipeline:
+		Returns:
 		"""
+		self._check_list_params(field, values)
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+			coro: Awaitable[list[int | None]] = pipeline.json().arrappend(self.rkey, f"{self._jsonpath}.{field}", *values)
+			return await coro
 
-		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			num_seconds = await pipeline.ttl(self.key())
-			await self.expire_cascade(num_seconds, models.append(self), pipeline)
+	async def trim(self, field:str, start:int, stop:int,redis_or_pipeline: Redis | None = None):
+		self._check_list_params(field)
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+			coro: Awaitable[list[int | None]] = pipeline.json().arrtrim(self.rkey,f"{self._jsonpath}.{field}", start,stop)
+			return await coro
 
-	async def expire_cascade(self, num_seconds: int, models: list[RedisModel | str],
-	                          redis_or_pipeline: Redis | None = None):
-		"""Expire all models with the same num_seconds."""
-		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			for m in models:
-				await self._expire_one(num_seconds, m, pipeline)
+	async def set(self, field: str, value: Any,redis_or_pipeline: Redis | None = None):
+		self._check_params(field,value)
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+			coro: Awaitable[list[int | None]] = pipeline.json().set(self.rkey,f"{self._jsonpath}.{field}")
+			return await coro
 
-	# noinspection PyMethodMayBeStatic
-	async def _expire_one(self, num_seconds: int, m: RedisModel | str, redis_or_pipeline: Redis | None = None):
-		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			if isinstance(m, RedisModel):
-				await m.expire(num_seconds, pipeline)  # await db.expire(self.key(), num_seconds)
-			elif isinstance(m, str):
-				await pipeline.expire(m, num_seconds)
-			else:
-				raise ValueError
+	async def clear(self, field: str, value: Any, redis_or_pipeline: Redis | None = None):
+		"""Clear container values (arrays/objects) and set numeric values to 0"""
+		self._check_params(field,value)
+		async with self._get_transaction_pipeline(redis_or_pipeline,lock_modify=True) as pipeline:
+			coro: Awaitable[list[int | None]] = pipeline.json().clear(self.rkey,f"{self._jsonpath}.{field}")
+			return await coro
+
+	#TODO implement more json operations.
+
+	def _check_params(self,field:str ,value:Any):
+		assert field not in ["id","redis","_jsonpath"]
+		ann = self.model_fields[field].annotation
+		org = get_origin(ann)
+		if org is None:
+			if not isinstance(value, ann):
+				raise ValueError(f"Field '{field}' type is '{ann}' but input value is '{type(value)}'.")
+			return
+		if issubclass(org,Sequence):
+			self._check_list_params(field,value)
+		if issubclass(org,dict):
+			self._check_dict_params(field,value)
+		raise ValueError(f"Type {value} is not supported.")
+
+	def _check_dict_params(self,field:str , values:dict):
+		ann = self.model_fields[field].annotation
+		org = get_origin(ann)
+		kt,vt = get_args(ann)
+		if not issubclass(org,dict):
+			raise ValueError(f"The field must be a dict. Got {get_origin(ann)}.")
+		for k,v in values.items():
+			if not isinstance(k,kt) or not isinstance(v,vt):
+				raise ValueError(f"KeyType must be {kt} and ValueType must be {vt}.")
+
+	def _check_list_params(self, field:str, values: list[Any]|None=None):
+		ann = self.model_fields[field].annotation
+		if not issubclass(get_origin(ann), Sequence):
+			raise ValueError(f"The field must be a Sequence. Got {get_origin(ann)} .")
+		if values is not None:
+			if not isinstance(values, get_args(ann)):
+				raise ValueError(f"Value to append in this field must be type {get_args(ann)}. Got {get_args(values)} .")
 
 
 	@asynccontextmanager
-	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None) -> AbstractAsyncContextManager[Pipeline]:
+	async def _lock_modify(self,timeout:int|None=None, blocking_timeout:int|None=None):
+		timeout = timeout or CONFIG.redis_lock_timeout
+		blocking_timeout = blocking_timeout or CONFIG.redis_acquire_lock_timeout
+		async with self.redis.lock(f"{self.rkey}:{LOCK_POSTFIX}",timeout=timeout,blocking_timeout=blocking_timeout) as lock:
+			yield lock
+
+	@asynccontextmanager
+	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None, lock_modify:bool=True, watch:bool=True) -> AbstractAsyncContextManager[Pipeline]:
 		"""
 		Args:
 			redis_or_pipeline: Can be Redis, Pipeline or None:
@@ -361,122 +201,161 @@ class UserData(ChatBoneJsonModel):
 				- If it's None, a new transaction pipeline will be created with Meta.database yield and executed at the last.
 				- If it's a Redis instance, the same as 'None case' but using passed Redis instead of Meta.database.
 				- If it's a Pipeline instance, there must be a transaction Pipeline.
-
 		Returns:
 			Async contextmanager of transaction Pipeline instance.
+		Raises:
+			KeyError: Redis key doesn't exist.
+
 		"""
 		if isinstance(redis_or_pipeline, Pipeline):
 			assert redis_or_pipeline.is_transaction or redis_or_pipeline.explicit_transaction
 			yield redis_or_pipeline  # No execute
 		else:
-			redis_or_pipeline = redis_or_pipeline or self.db()
-			async with redis_or_pipeline.pipeline(transaction=True) as pipeline:
-				yield pipeline
-				await pipeline.execute()
+			redis_or_pipeline = redis_or_pipeline or self.redis
+			async with AsyncExitStack() as stack:
+				if lock_modify:
+					await stack.enter_async_context(self._lock_modify())
+				pipeline:Pipeline = await stack.enter_async_context(redis_or_pipeline.pipeline(transaction=True))
 
+				# Watch for ensuring key not expire during queue commands. Note that if we do not lock,
+				# every command that changes value will make the watch raise an error, so it should be lock and watch when do modifying.
+				# That's why they are all default.
 
-# async def get_chat_session(chat_session_id:UUID, username:str)->ChatSessionData
+				if watch:
+					await pipeline.watch(self.rkey)
+				if not ( await self.redis.exists(self.rkey)):
+					raise KeyError("Rkey is no longer exist. Call 'save' first.")
 
-MIGRATION = "migrated_flag"
+				pipeline.multi()
+				try:
+					yield pipeline
+					await pipeline.execute()
+				except WatchError:
+					raise KeyError("Rkey is no longer exist after queue commands.")
 
-
-async def migration(raise_if_already_migration: bool = False):
-	if await REDIS.get(MIGRATION) is None:
-		async with REDIS.lock(MIGRATION + "lock", timeout=10):
-			if await REDIS.get(MIGRATION) is None:
-				await Migrator().run()
-				await REDIS.set(MIGRATION, "Done")
-				logger.info("Successfully migrated redis om.")
-	if raise_if_already_migration:
-		raise RuntimeError("Migration already setup.")
-
-class Stream:
-
+class StreamData(BaseModel):
 	pass
 
-#TODO test UserData and complete stream.
+class Stream[DataType]:
+	def __init__(self,stream_key:str, datatype:type[DataType], redis:Redis):
+		self.datatype: StreamData = datatype
+		self.key = stream_key
+		self.redis= redis
 
-if __name__ == "__main__":
-	from uuid_extensions import uuid7
-	import asyncio
+	async def send(self, data: DataType, **xadd_kwargs):
+		assert isinstance(data,StreamData)
+
+		if not (await self.redis.exists(self.key)):
+			raise KeyError("Stream key doesn't exist. You should create stream using 'create' class method.")
+		await self.redis.xadd(self.key, data.model_validate(mode='json'),**xadd_kwargs)
+
+	async def receive(self)->DataType:
+		pass
+
+	async def clear(self):
+		pass
+
+	@classmethod
+	@asynccontextmanager
+	async def create(cls, stream_key:str, datatype:type[DataType], redis:Redis|None=None)->Self:
+		redis = redis or REDIS
+		if not isinstance(datatype,StreamData):
+			raise ValueError(f"Datatype must be the subclass of 'StreamData' but got {datatype}.")
+
+		if not (await redis.exists(stream_key)):
+			await redis.xadd(stream_key,{},maxlen=0)
+		assert (await redis.exists(stream_key))
+
+		return cls(stream_key, datatype, redis)
+
+class Message(BaseModel):
+	role: Literal['user', 'system', 'assistant']
+	content: str
+
+class ChatSessionData(ChatboneData):
+	"""
+	This class has two modes:
+		1. Init value to add to UserData.
+		2. After added to UserData and refresh, it will bind with user data, now it can interact with server data.
+
+	"""
+	embedding = True
+
+	messages: list[Message] = Field(default_factory=list)
+	summaries: list[str] = Field(default_factory=list)
+	urls: list[AnyUrl] = Field(default_factory=list,
+	                           description="Addition data should be store in object storage and provide url.")
+
+	@property
+	def cs2as_stream_rkey(self)->str:
+		return f"{self.__module__}:{self.__class__.__name__}:{self.id}:<cs2as_stream>"
+
+	@property
+	def as2cs_stream_rkey(self)->str:
+		return f"{self.__module__}:{self.__class__.__name__}:{self.id}:<as2cs_stream>"
+
+	@asynccontextmanager
+	async def get_stream(self,stream_type:Literal['as2cs','cs2as'], datatype:type[BaseModel], redis:Redis|None=None)->AbstractAsyncContextManager[Stream]:
+		assert stream_type in ['as2cs', 'cs2as']
+		key = self.cs2as_stream_rkey if stream_type == 'cs2as' else self.as2cs_stream_rkey
+
+		async with self.redis.lock(f"{key}:{LOCK_POSTFIX}"):
+			logger.debug(f"Stream '{key}' acquired.")
+			try:
+				yield await Stream[datatype].create(key, datatype,redis)
+			except Exception as e:
+				logger.exception(e)
+			finally:
+				logger.debug(f"Stream '{key}' released.")
 
 
-	async def main():
-		await migration()
-		userdata = UserData(id=uuid7(), username="abc", password="xyz", token_key="token_key_1")
-		await userdata.save()
+class UserNotFoundError(Exception):
+	pass
+class NoValidTokenError(Exception):
+	pass
+
+class Token(BaseModel):
+	id:UUID
+	created_at:datetime
+	expires_at:datetime
+
+class UserData(ChatboneData):
+	"""UserData support lazy load ChatSessionData."""
+	embedding = False
+	username: str
+	password: str
+	summaries: list[str] = Field(default_factory=list)
+	token:Token|None= Field(None,description="Valid token.")
+	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=list)
 
 
-	asyncio.run(main())
+	async def get_encrypt_token(self) -> str:
+		"""Get hash to return to the user"""
+		key = str(self.id)+'@'+self.username+'@'+self.password
+		return await asyncio.to_thread(encrypt,key, SECRET_KEY)
 
-# class Broker:
-# 	"""This will bind with only one Redis client and one main key, should be used for sequencial program,
-# 	 parallel program must have separated Broker with separate Redis."""
-#
-# 	def __init__(self,redis:Redis, meta_key:str):
-#
-# 		self.meta_key = META.format(meta_key=meta_key)
-#
-# 		self.all_keys_handler = RedisSet(ALL_KEYS.format(meta_key=meta_key))
-#
-# 		self.token_key = TOKEN.format(meta_key=meta_key)
-# 		self.user_summaries_key = TOKEN.format(meta_key=meta_key)
-#
-# 		self.meta_handler = RedisKeySpace(redis,self.meta_key, UserMeta)
-# 		self.all_keys
-#
-# 		self.token_handler = RedisHash(redis, self.token_key, Token)
-#
-# 		self.redis=redis
-#
-# 	async def set_meta(self, usermeta:UserMeta|None=None, expire:int|None = None, )->str:
-# 		"""
-# 		Set meta info or/and lifetime for everything.
-# 		Args:
-# 			usermeta: if is instance UserMeta, set it.
-# 			expire: <0 means persist, None mean don't do anything, 0 mean delete.
-# 		Returns:
-# 			The hash key of user meta.
-# 		"""
-# 		if expire == 0:
-# 			return await self.usermeta_handler.clear()
-#
-# 		if usermeta is not None:
-# 			await self.usermeta_handler.set(usermeta.key, usermeta)
-#
-# 		if expire <0:
-#
-#
-#
-# 		await self.usermeta_handler
-#
-# 	async def get_meta(self,hashed_key:str)->str:
-# 		"""
-# 		Args:
-# 			hashed_key:
-#
-# 		Returns: Meta key.
-# 		"""
-#
-# 	async def delete_main(self):
-#
-#
-#
-# 	async def get_token(self,timeout:float= 30, pooling_freq:float=1 )->UUID:
-# 		"""Wait until there is active_token_id.
-# 		Args:
-# 		    pooling_freq: pooling redis frequency, in second.
-# 			timeout: in second.
-# 		Raises:
-# 			TimeoutError
-# 		Returns: active token id.
-# 		"""
-# 		assert timeout >= pooling_freq > 0
-#
-# 		end = time.time()+timeout
-# 		while time.time()<end:
-# 			if (token:= await self.redis.hget(self.ticket,TOKEN_KEY)) is not None:
-# 				return UUID(token)
-# 			await asyncio.sleep(pooling_freq)
-#
-# 		raise TimeoutError
+	@classmethod
+	async def verify_encrypt_token(cls, encrypted_token:str, lazy_load:bool=True) -> Self | None:
+		key:str = await asyncio.to_thread(decrypt,encrypted_token,SECRET_KEY)
+		uid, username, password = key.split("@")
+		userdata = UserData(id=uid,username=username,password=password)
+
+		exclude = set()
+		if lazy_load:
+			exclude.add('chat_sessions')
+
+		userdata = await userdata.refresh(exclude)
+		for cs in userdata.chat_sessions.values():
+			cs.bind__base_rkey(userdata.rkey,"$.chat_sessions")
+		return userdata
+
+	async def add_chat_session(self,chat_session:ChatSessionData)->ChatSessionData:
+		pass
+
+	async def get_chat_sessions(self,session_id:UUID)->ChatSessionData:
+		pass
+
+
+
+
+
