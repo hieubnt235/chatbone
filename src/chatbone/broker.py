@@ -10,17 +10,18 @@ from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
 
-from chatbone.settings import REDIS, CONFIG, SECRET_KEY
+from chatbone.settings import REDIS, CONFIG
 from utilities.func import encrypt, decrypt
 from utilities.logger import logger
 
 LOCK_POSTFIX="<LOCK>"
 
 
-# noinspection PyPropertyDefinition
+
 class ChatboneData(BaseModel,ABC):
 	"""This class for data work with Redis.
 	All Redis keys must be defined as property and return string. See the 'all_rkeys' method.
+		And should have its own id, so that each instance has separate rkey.
 	The main key must be 'rkey', all other keys will have the lifetime synced with this key.
 
 	Notes:
@@ -38,22 +39,27 @@ class ChatboneData(BaseModel,ABC):
 
 	id: UUID
 
+	_bounded:bool=PrivateAttr(False)
 
-	_jsonpath:str = PrivateAttr("$.")
+	_jsonpath:str = PrivateAttr("")
 	"""This path will be used to refresh. Embedding model must be reset this value by model own redis key."""
 	_base_rkey:str|None = PrivateAttr(None)
 	"""This attribute is used by embedding Model, and created by the model hold redis key."""
 
-	async def refresh(self, exclude:set[str]|None)->Self:
+
+	async def refresh(self, exclude:set[str]|None=None)->Self:
 		"""Load all data"""
 		exclude = exclude or set()
-		fields = [field for field in self.model_fields.items() if field not in exclude]
-		async with self._get_transaction_pipeline(lock_modify=True) as pipeline:
-			loads = await pipeline.json().get(self.rkey,
-			                                 *[f"{self._jsonpath}.{field}" for field in fields])
-		new_object = self.model_validate(**{k:v for k,v in zip(fields,loads)})
+		fields = [field for field in self.model_fields.keys() if field not in exclude]
+
+		r = await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])
+		if len(fields)==1:
+			r = {fields[0]: r}
+		else:
+			r = {k[1:]:v for k,v in r.items()}
+		new_object = self.__class__.model_validate(r)
 		if self.embedding:
-			new_object.bind__base_rkey(self.rkey,self._jsonpath)
+			new_object.bind_base_rkey(self.rkey,self._jsonpath)
 		return new_object
 
 	@classmethod
@@ -71,21 +77,68 @@ class ChatboneData(BaseModel,ABC):
 				return self._base_rkey
 		return f"{self.rkey_prefix}:{self.id}"
 
-	def bind__base_rkey(self, rkey:str, _jsonpath:str):
+	def bind_base_rkey(self, rkey:str, jsonpath:str):
+		if not self.embedding:
+			raise Exception("Can not bind the instance not belong to embedded class.")
+		if not jsonpath.startswith("."):
+			raise ValueError("Json path must start with '.' .")
 		self._base_rkey = rkey
-		self._jsonpath = _jsonpath
+		self._jsonpath = jsonpath
+		self._bounded=True
 
-	@property
-	def all_sub_rkeys(self)->list[str]:
-		"""Sub rkeys, always end with '_rkey'."""
+
+	def get_all_sub_rkeys(self)->list[str]:
+		"""Get sub rkeys, which is the property method with name end with '_rkey' and return string.
+		Notes:
+			This attribute will block cpu.
+		"""
 		rkeys:list[str] = []
 		for name in dir(self):
-			if name.endswith('_rkey'):
-				attr = getattr(self,name)
+			if name.startswith('__') or name in ['rkey','get_all_sub_rkeys', 'all_sub_rkeys']:
+				continue
+
+			attr = getattr(self, name)
+			if name.endswith('_rkey') and isinstance(getattr(self.__class__, name),property):
 				assert isinstance(attr,str)
 				rkeys.append(attr)
+				continue
+
+			if (f := self.model_fields.get(name)) is not None:
+				ann = f.annotation
+				args = get_args(ann)
+				org = get_origin(ann)
+
+				# Not any container case.
+				if org is None:
+					if isinstance(attr, ChatboneData):
+						rkeys.extend(attr.get_all_sub_rkeys())
+					else:
+						continue
+
+				# Only search for ChatBoneData subclass that in side high level of container,
+				# such as list[ChatBoneData], Tuple[ChatBoneData,...] (first index) and dict[str, ChatBoneData] (value)
+				elif issubclass(org,list) and issubclass(args[0],ChatboneData):
+					assert isinstance(attr,list)
+					for cbd in attr:
+						assert isinstance(cbd,ChatboneData)
+						rkeys.extend(cbd.get_all_sub_rkeys())
+				elif issubclass(org,tuple):
+					assert isinstance(attr,tuple)
+					try:
+						cbd:ChatboneData = attr[attr.index(ChatboneData)]
+						rkeys.extend(cbd.get_all_sub_rkeys())
+					except ValueError:
+						continue
+				elif issubclass(org,dict):
+					assert isinstance(attr,dict)
+					for cbd in attr.values():
+						assert isinstance(cbd,ChatboneData)
+						rkeys.extend(cbd.get_all_sub_rkeys())
 		return rkeys
 
+	@property
+	async def all_sub_rkeys(self)->list[str]:
+			return await asyncio.to_thread(self.get_all_sub_rkeys)
 
 	async def expire(self, num_seconds: int, redis_or_pipeline: Redis | None = None):
 		"""Expire all keys of this object.
@@ -94,29 +147,48 @@ class ChatboneData(BaseModel,ABC):
 			redis_or_pipeline:
 		"""
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			await self.expire_cascade(num_seconds, self.all_sub_rkeys + self.rkey, pipeline)
+			await self.expire_cascade(num_seconds, (await self.all_sub_rkeys) + [self.rkey], pipeline)
 
 	async def expire_sync(self, keys: list[str], redis_or_pipeline: Redis | None = None) -> None:
 		"""Expire all Models sync with this object's main rkey lifetime (with 'rkey' key)."""
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			num_seconds = await pipeline.ttl(self.rkey)
-			await self.expire_cascade(num_seconds, keys.append(self), pipeline)
+			num_seconds = await self.redis.ttl(self.rkey)
+			keys.append(self.rkey)
+			await self.expire_cascade(num_seconds, keys, pipeline)
 
 	async def expire_cascade(self, num_seconds: int, keys: list[str], redis_or_pipeline: Redis | None = None):
-		"""Expire all keys with the same num_seconds."""
+		"""Expire all keys with the same num_seconds. Negative value means persist (Note that in raw redis, negative means delete)."""
+		assert isinstance(num_seconds,int)
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
-			for k in keys:
-				await pipeline.expire(k, num_seconds)
+			if num_seconds>0:
+				for k in keys:
+					await pipeline.expire(k, num_seconds)
+			else:
+				for k in keys:
+					await pipeline.persist(k)
 
-	async def save(self, skip_if_exist:bool=True):
+	async def save(self,  expire_seconds:int|None=None)->bool|None:
+		"""Save data with self.rkey. Skip_if_exist. If you want to save a new one, 'delete' first.
+		Args:
+			expire_seconds: None means do nothing. Negative means persist.
+		Returns:
+			True if a new value is created, None if no new value is created.
+		"""
 		if self.embedding:
 			raise ValueError("Embedding model cannot save redis object.")
-		await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=skip_if_exist)
+		rs =  await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=True)
+		if expire_seconds is not None:
+			await self.expire(expire_seconds)
+		return rs
 
-	async def delete(self, redis_or_pipeline: Redis | None = None):
-		"""Cascading delete for all keys."""
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
-			await pipeline.delete(self.rkey, *self.all_sub_rkeys)
+	async def delete(self)->int:
+		"""Cascading delete for all redis keys. Note again that this method deletes all redis keys, not the JSON keys.
+		Returns:
+			Number of keys were removed.
+		"""
+		if self.embedding:
+			raise ValueError("Embedding model cannot delete redis object.")
+		return await self.redis.delete(self.rkey, *(await self.all_sub_rkeys))
 
 	async def append(self, field: str, values: list[Any],redis_or_pipeline: Redis | None = None):
 		"""Append to a JSON list.
@@ -126,19 +198,60 @@ class ChatboneData(BaseModel,ABC):
 			redis_or_pipeline:
 		Returns:
 		"""
-		self._check_list_params(field, values)
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+		# TODO, append to instance also ? not only on server. or let the client do refresh ?
+		await asyncio.to_thread(self._check_list_params,field, values)
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=False,watch=False, execute=False) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().arrappend(self.rkey, f"{self._jsonpath}.{field}", *values)
-			return await coro
+			await coro
+			if not redis_or_pipeline:
+				return (await pipeline.execute())[0]
+		return None
 
-	async def trim(self, field:str, start:int, stop:int,redis_or_pipeline: Redis | None = None):
-		self._check_list_params(field)
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
+	async def trim(self, field:str, start:int, stop:int,redis_or_pipeline: Redis | None = None) ->int:
+		"""
+		Keep the range of value
+		Args:
+			field:
+			start:
+			stop:
+			redis_or_pipeline:
+
+		Returns:
+			Number of values remain.
+		"""
+		await asyncio.to_thread(self._check_list_params(field))
+		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=False,watch=False, execute=False) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().arrtrim(self.rkey,f"{self._jsonpath}.{field}", start,stop)
-			return await coro
+			await coro
+			if not redis_or_pipeline:
+				return (await pipeline.execute())[0]
+		return None
+
+	async def update(self, field:str, values:dict[Any,Any],redis_or_pipeline: Redis | None = None):
+		"""Update the dict with keys and values.
+		Args:
+			field:
+			values:
+			redis_or_pipeline
+		Returns:
+		"""
+		await asyncio.to_thread(self._check_dict_params(field,values))
+		async with self._get_transaction_pipeline(redis_or_pipeline ,lock_modify=False,watch=False, execute=False) as pipeline:
+			coros:list[Awaitable[list[int | None]]] = []
+			for k,v in values.items():
+				coros.append(pipeline.json().set(self.rkey, f"{self._jsonpath}.{field}.{k}",v) )
+			return await asyncio.gather(*coros)
 
 	async def set(self, field: str, value: Any,redis_or_pipeline: Redis | None = None):
-		self._check_params(field,value)
+		""" Override the attributes to entirely new one.
+		Args:
+			field:
+			value:
+			redis_or_pipeline:
+		Returns:
+
+		"""
+		await asyncio.to_thread(self._check_params(field,value))
 		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().set(self.rkey,f"{self._jsonpath}.{field}")
 			return await coro
@@ -149,8 +262,6 @@ class ChatboneData(BaseModel,ABC):
 		async with self._get_transaction_pipeline(redis_or_pipeline,lock_modify=True) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().clear(self.rkey,f"{self._jsonpath}.{field}")
 			return await coro
-
-	#TODO implement more json operations.
 
 	def _check_params(self,field:str ,value:Any):
 		assert field not in ["id","redis","_jsonpath"]
@@ -181,8 +292,9 @@ class ChatboneData(BaseModel,ABC):
 		if not issubclass(get_origin(ann), Sequence):
 			raise ValueError(f"The field must be a Sequence. Got {get_origin(ann)} .")
 		if values is not None:
-			if not isinstance(values, get_args(ann)):
-				raise ValueError(f"Value to append in this field must be type {get_args(ann)}. Got {get_args(values)} .")
+			for v in values:
+				if not isinstance(v, get_args(ann)[0]):
+					raise ValueError(f"Value to append in this field must be type {get_args(ann)[0]}. Got {type(values)} .")
 
 
 	@asynccontextmanager
@@ -193,8 +305,15 @@ class ChatboneData(BaseModel,ABC):
 			yield lock
 
 	@asynccontextmanager
-	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None, lock_modify:bool=True, watch:bool=True) -> AbstractAsyncContextManager[Pipeline]:
+	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None, *,
+	                                    lock_modify:bool=False,
+	                                    watch:bool=False,
+	                                    execute:bool=True) -> AbstractAsyncContextManager[Pipeline]:
 		"""
+		Get the transaction pipeline while providing options to ensure that key is exist during execute pipe..
+
+		TODO: How about check exist first, save ttl then persist, execute and expire later depend on the saved value ?
+
 		Args:
 			redis_or_pipeline: Can be Redis, Pipeline or None:
 
@@ -219,7 +338,6 @@ class ChatboneData(BaseModel,ABC):
 
 				# Watch for ensuring key not expire during queue commands. Note that if we do not lock,
 				# every command that changes value will make the watch raise an error, so it should be lock and watch when do modifying.
-				# That's why they are all default.
 
 				if watch:
 					await pipeline.watch(self.rkey)
@@ -229,7 +347,8 @@ class ChatboneData(BaseModel,ABC):
 				pipeline.multi()
 				try:
 					yield pipeline
-					await pipeline.execute()
+					if execute:
+						await pipeline.execute()
 				except WatchError:
 					raise KeyError("Rkey is no longer exist after queue commands.")
 
@@ -288,11 +407,11 @@ class ChatSessionData(ChatboneData):
 
 	@property
 	def cs2as_stream_rkey(self)->str:
-		return f"{self.__module__}:{self.__class__.__name__}:{self.id}:<cs2as_stream>"
+		return f"{self.rkey_prefix}:{self.id}:<cs2as_stream>"
 
 	@property
 	def as2cs_stream_rkey(self)->str:
-		return f"{self.__module__}:{self.__class__.__name__}:{self.id}:<as2cs_stream>"
+		return f"{self.rkey_prefix}:{self.id}:<as2cs_stream>"
 
 	@asynccontextmanager
 	async def get_stream(self,stream_type:Literal['as2cs','cs2as'], datatype:type[BaseModel], redis:Redis|None=None)->AbstractAsyncContextManager[Stream]:
@@ -314,29 +433,86 @@ class UserNotFoundError(Exception):
 class NoValidTokenError(Exception):
 	pass
 
-class Token(BaseModel):
+class EncryptedTokenError(Exception):
+	pass
+
+class AuthToken(BaseModel):
 	id:UUID
 	created_at:datetime
 	expires_at:datetime
 
 class UserData(ChatboneData):
-	"""UserData support lazy load ChatSessionData."""
+	"""UserData support lazy load ChatSessionData.
+	There are two ways to retrieve data:
+	1. Create new instance of this class with username, password, then call refresh.
+	2. Through verify_encrypted_token method.
+	"""
 	embedding = False
 	username: str
 	password: str
 	summaries: list[str] = Field(default_factory=list)
-	token:Token|None= Field(None,description="Valid token.")
-	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=list)
+	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=dict)
 
+	_encrypted_token:str = PrivateAttr(None)
 
-	async def get_encrypt_token(self) -> str:
-		"""Get hash to return to the user"""
+	@property
+	def encrypted_token_rkey(self):
+		return f"{self.rkey_prefix}:<encrypted_token>:{self._encrypted_token}"
+
+	@property
+	def auth_token_rkey(self):
+		return f"{self.rkey_prefix}:{self.id}:<auth_token>"
+
+	async def get_encrypted_token(self, skip_if_exist:bool=True) -> str:
+		"""Get an encrypted token and return to the user.
+		Notes:
+			The data must be saved before this method.
+		Raises
+			KeyError: If data is not available or be expired during operations.
+		"""
+		if (r := await self.redis.json().get(self.rkey, f"${self._jsonpath}.encrypted_token_key")) is None:
+			raise KeyError("User data doesn't exist. Call 'save' first.")
+		if r:
+			assert isinstance(r[0], str)
+			self._encrypted_token = r[0]
+
+			if skip_if_exist:
+				logger.debug("Return old token.")
+				return self._encrypted_token
+			else:
+				d = await self.redis.delete(self.encrypted_token_rkey)
+				assert d==1
+
 		key = str(self.id)+'@'+self.username+'@'+self.password
-		return await asyncio.to_thread(encrypt,key, SECRET_KEY)
+		secret_key, token = await asyncio.to_thread(encrypt,key )
+
+		self._encrypted_token=token
+		async with self._get_transaction_pipeline() as pipeline:
+			await pipeline.set(self.encrypted_token_rkey,secret_key,nx= skip_if_exist)
+
+			# UserData need to know the key for retrieve it by this method instead of always create new one.
+			# Note: Not use self.set but instead pipeline.json().set() because it not in class fields.
+			await pipeline.json().set(self.rkey,f"{self._jsonpath}.encrypted_token_key", token)
+			await self.expire_sync([self.encrypted_token_rkey],pipeline)
+		logger.debug("Create new token.")
+		return token
 
 	@classmethod
-	async def verify_encrypt_token(cls, encrypted_token:str, lazy_load:bool=True) -> Self | None:
-		key:str = await asyncio.to_thread(decrypt,encrypted_token,SECRET_KEY)
+	async def verify_encrypted_token(cls, encrypted_token:str, lazy_load:bool=True) -> Self | None:
+		"""Redis memory:
+		token: secret_key
+		user_key: {key:secret_key}
+
+		1. Query a secret key using a token.
+		2. Use secret key to extract token.
+		3. Use that extracted information to get user data.
+		"""
+		if (secret_key:= await cls.redis.get(f"{cls.rkey_prefix}:<encrypted_token>:{encrypted_token}")) is None:
+			raise EncryptedTokenError("No Encrypted token exist, if user data is not expired, use 'get_encrypted_token' first.")
+
+		assert isinstance(secret_key,str)
+		key:str = await asyncio.to_thread(decrypt,encrypted_token,secret_key)
+
 		uid, username, password = key.split("@")
 		userdata = UserData(id=uid,username=username,password=password)
 
@@ -345,15 +521,32 @@ class UserData(ChatboneData):
 			exclude.add('chat_sessions')
 
 		userdata = await userdata.refresh(exclude)
-		for cs in userdata.chat_sessions.values():
-			cs.bind__base_rkey(userdata.rkey,"$.chat_sessions")
+		await asyncio.to_thread(userdata._bound_cs,userdata.chat_sessions)
+
+		userdata._encrypted_token = encrypted_token
+
 		return userdata
 
-	async def add_chat_session(self,chat_session:ChatSessionData)->ChatSessionData:
-		pass
+	async def add_chat_sessions(self,chat_sessions:list[ChatSessionData])->None:
+		async with self._get_transaction_pipeline() as pipeline:
+			cs_dict = {cs.id:cs for cs in chat_sessions}
+			await self.update('chat_sessions',cs_dict,pipeline)
 
-	async def get_chat_sessions(self,session_id:UUID)->ChatSessionData:
-		pass
+	async def get_chat_sessions(self,session_ids: list[UUID])->dict[UUID,ChatSessionData]:
+		cs_dict:dict = await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.chat_sessions.{uid}" for uid in session_ids ])
+		if len(session_ids)==1:
+			cs_dict = {f"{self._jsonpath}.chat_sessions.{session_ids[0]}":cs_dict}
+		return await asyncio.to_thread(self._process_cs, cs_dict)
+
+	def _process_cs(self, cs_dict: dict) -> list[ChatSessionData]:
+		cs_dict = {UUID(k.rsplit(".", 1)[-1]): ChatSessionData.model_validate(v) for k, v in cs_dict.items()}
+		self._bound_cs(cs_dict)
+		self.chat_sessions.update(cs_dict)
+		return cs_dict
+
+	def _bound_cs(self, cs_dict: dict[UUID, ChatSessionData]):
+		for cs in cs_dict.values():
+			cs.bind_base_rkey(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
 
 
 

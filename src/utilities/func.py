@@ -20,11 +20,19 @@ def verify_password(password: str, hashed_password) -> bool:
 	return password_hash.verify(password, hashed_password)
 
 
-def encrypt(key:str, secret_key:str)->str:
-	return Fernet(secret_key).encrypt(key) # token
+def encrypt(key:str)->tuple[str,str]:
+	"""
+	Args:
+		key:
+	Returns:
+		(secret_key, encrypt_token)
+
+	"""
+	secret_key = Fernet.generate_key()
+	return secret_key.decode(), (Fernet(secret_key).encrypt(key.encode())).decode() # token
 
 def decrypt(token:str, secret_key:str)->str:
-	return Fernet(secret_key).decrypt(token)
+	return Fernet(secret_key.encode()).decrypt(token).decode()
 
 def utc_now():
 	return datetime.now(timezone.utc)
