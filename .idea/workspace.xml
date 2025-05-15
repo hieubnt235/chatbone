@@ -11,12 +11,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
-      <change beforePath="$PROJECT_DIR$/.idea/developer-tools.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/developer-tools.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/broker.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/broker.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/try.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/try/try.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utilities/func.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/utilities/func.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/try/try_broker_data.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/try/try_broker_data.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/try/try_broker_data.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/try/try_broker_data.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -901,7 +899,8 @@
       <workItem from="1747040863833" duration="17411000" />
       <workItem from="1747089038540" duration="42257000" />
       <workItem from="1747199937625" duration="14915000" />
-      <workItem from="1747214879026" duration="22267000" />
+      <workItem from="1747214879026" duration="22414000" />
+      <workItem from="1747274133764" duration="9686000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />
@@ -1056,6 +1055,16 @@
           <line>777</line>
           <option name="timeStamp" value="17" />
         </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/chatbone/broker.py</url>
+          <line>117</line>
+          <option name="timeStamp" value="21" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/chatbone/broker.py</url>
+          <line>154</line>
+          <option name="timeStamp" value="26" />
+        </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
         <breakpoint type="python-exception">
@@ -1072,9 +1081,9 @@
     <SUITE FILE_PATH="coverage/chatbone$reom.coverage" NAME="reom Coverage Results" MODIFIED="1746690692655" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts/notebooks" />
     <SUITE FILE_PATH="coverage/chatbone$td__1_.coverage" NAME="td (1) Coverage Results" MODIFIED="1744288877204" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/datastore" />
     <SUITE FILE_PATH="coverage/chatbone$tasks.coverage" NAME="tasks Coverage Results" MODIFIED="1741085673920" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/tasks" />
-    <SUITE FILE_PATH="coverage/chatbone$config.coverage" NAME="config Coverage Results" MODIFIED="1744545980067" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/settings" />
-    <SUITE FILE_PATH="coverage/chatbone$fa_ray.coverage" NAME="fa-ray Coverage Results" MODIFIED="1744985693889" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$ng.coverage" NAME="ng Coverage Results" MODIFIED="1746247782577" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$fa_ray.coverage" NAME="fa-ray Coverage Results" MODIFIED="1744985693889" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$config.coverage" NAME="config Coverage Results" MODIFIED="1744545980067" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/settings" />
     <SUITE FILE_PATH="coverage/chatbone$broker.coverage" NAME="broker Coverage Results" MODIFIED="1746715430801" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$rpcsv.coverage" NAME="rpcsv Coverage Results" MODIFIED="1745977716376" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/chatbone$dummy.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745496474512" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
@@ -1109,7 +1118,7 @@
     <SUITE FILE_PATH="coverage/chatbone$settings__2_.coverage" NAME="settings (2) Coverage Results" MODIFIED="1746762264944" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$async_highload.coverage" NAME="async_highload Coverage Results" MODIFIED="1741322716840" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
     <SUITE FILE_PATH="coverage/settings_py$app.coverage" NAME="app Coverage Results" MODIFIED="1745652831334" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />
-    <SUITE FILE_PATH="coverage/chatbone$try_broker_data.coverage" NAME="try_broker_data Coverage Results" MODIFIED="1747236387311" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/try" />
+    <SUITE FILE_PATH="coverage/chatbone$try_broker_data.coverage" NAME="try_broker_data Coverage Results" MODIFIED="1747283822276" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/try" />
     <SUITE FILE_PATH="coverage/chatbone$test_chatbone.coverage" NAME="test chatbone Coverage Results" MODIFIED="1742648958017" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
     <SUITE FILE_PATH="coverage/chatbone$client_reqrep.coverage" NAME="client_reqrep Coverage Results" MODIFIED="1744449891861" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/.venv/lib/python3.12/site-packages/aiohttp" />
     <SUITE FILE_PATH="coverage/chatbone$rjson.coverage" NAME="rjson Coverage Results" MODIFIED="1747108163917" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />

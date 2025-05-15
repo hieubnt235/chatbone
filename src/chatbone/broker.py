@@ -2,6 +2,7 @@ import asyncio
 from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
 from datetime import datetime
+from inspect import iscoroutine
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
@@ -15,14 +16,20 @@ from utilities.func import encrypt, decrypt
 from utilities.logger import logger
 
 LOCK_POSTFIX="<LOCK>"
-
+NON_EXIST="<NON_EXIST>"
+"""Dummy value for free delete, expire, check,..."""
 
 
 class ChatboneData(BaseModel,ABC):
 	"""This class for data work with Redis.
-	All Redis keys must be defined as property and return string. See the 'all_rkeys' method.
-		And should have its own id, so that each instance has separate rkey.
-	The main key must be 'rkey', all other keys will have the lifetime synced with this key.
+	All Redis keys are very important for cascade deleting or expiring, they must:
+
+		1. Be defined as property, method name ends with '_rkey' and returns string. See the 'all_rkeys' method.
+		2. Have its own id, so that each instance has separate rkey.
+	    3. All keys need to be static (constant, or bound with the top level key (with id)), dynamic case should raise when not available.
+	    4. Ensure all rkey always exist at the time of expiring or deleting.
+
+	static means
 
 	Notes:
 		1. Data is got through attributes of this class, require refresh manually to get updated data.
@@ -45,21 +52,22 @@ class ChatboneData(BaseModel,ABC):
 	"""This path will be used to refresh. Embedding model must be reset this value by model own redis key."""
 	_base_rkey:str|None = PrivateAttr(None)
 	"""This attribute is used by embedding Model, and created by the model hold redis key."""
-
+	_refresh_exclude_default:set[str] = PrivateAttr(default_factory=lambda :set())
 
 	async def refresh(self, exclude:set[str]|None=None)->Self:
 		"""Load all data"""
-		exclude = exclude or set()
+		exclude = exclude or self._refresh_exclude_default
 		fields = [field for field in self.model_fields.keys() if field not in exclude]
 
-		r = await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])
+		if (r:= await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])) is None:
+			raise KeyError("User data doesn't exist. Call 'save' first.")
 		if len(fields)==1:
 			r = {fields[0]: r}
 		else:
 			r = {k[1:]:v for k,v in r.items()}
 		new_object = self.__class__.model_validate(r)
 		if self.embedding:
-			new_object.bind_base_rkey(self.rkey,self._jsonpath)
+			new_object.bind_rkey_and_json_path(self.rkey,self._jsonpath)
 		return new_object
 
 	@classmethod
@@ -77,7 +85,8 @@ class ChatboneData(BaseModel,ABC):
 				return self._base_rkey
 		return f"{self.rkey_prefix}:{self.id}"
 
-	def bind_base_rkey(self, rkey:str, jsonpath:str):
+
+	def bind_rkey_and_json_path(self, rkey:str, jsonpath:str):
 		if not self.embedding:
 			raise Exception("Can not bind the instance not belong to embedded class.")
 		if not jsonpath.startswith("."):
@@ -93,31 +102,34 @@ class ChatboneData(BaseModel,ABC):
 			This attribute will block cpu.
 		"""
 		rkeys:list[str] = []
+		fields = self.model_fields
+
 		for name in dir(self):
-			if name.startswith('__') or name in ['rkey','get_all_sub_rkeys', 'all_sub_rkeys']:
+			if 	name.startswith('__') or name in ['rkey','all_sub_rkeys','get_all_sub_rkeys']:
 				continue
 
-			attr = getattr(self, name)
-			if name.endswith('_rkey') and isinstance(getattr(self.__class__, name),property):
-				assert isinstance(attr,str)
-				rkeys.append(attr)
+			f = fields.get(name)
+			if not isinstance(getattr(self.__class__, name,None), property) and f is None:
+				# if not a property or a field
 				continue
 
-			if (f := self.model_fields.get(name)) is not None:
-				ann = f.annotation
-				args = get_args(ann)
-				org = get_origin(ann)
+			# Field case: Field exist, and a field value type must be ChatboneData,
+			# list[ChatBoneData], Tuple[ChatBoneData,...] and dict[Any, ChatBoneData]
+			if isinstance(attr:=getattr(self, name),(ChatboneData, list,dict,tuple) ) and f is not None :
+				org = get_origin(f.annotation)
 
-				# Not any container case.
 				if org is None:
-					if isinstance(attr, ChatboneData):
-						rkeys.extend(attr.get_all_sub_rkeys())
-					else:
-						continue
+					# Not any container or implicit container typehint case. We have to detect that because when implicit,
+					# We do not know what exactly it stores, can be ChatboneData or not. Missing will lead to leak redis keys.
+					try:
+						assert isinstance(attr, ChatboneData)
+					except AssertionError:
+						raise SyntaxError(f"Type hint of all container in pydantic model must be explicit. "
+						                  f"Ex: list[str], dict[str,str] not list or dict."
+						                  f" Got {f.annotation}.")
+					rkeys.extend(attr.get_all_sub_rkeys())
 
-				# Only search for ChatBoneData subclass that in side high level of container,
-				# such as list[ChatBoneData], Tuple[ChatBoneData,...] (first index) and dict[str, ChatBoneData] (value)
-				elif issubclass(org,list) and issubclass(args[0],ChatboneData):
+				elif issubclass(org,list) and issubclass(get_args(f.annotation)[0],ChatboneData):
 					assert isinstance(attr,list)
 					for cbd in attr:
 						assert isinstance(cbd,ChatboneData)
@@ -134,11 +146,24 @@ class ChatboneData(BaseModel,ABC):
 					for cbd in attr.values():
 						assert isinstance(cbd,ChatboneData)
 						rkeys.extend(cbd.get_all_sub_rkeys())
+
+			# Property case exists only name is not in field case.
+			elif (iscoroutine(attr) or callable(attr)) or (not name.endswith('_rkey')):
+				# Filter properties or field.
+				continue
+
+			else:
+				try:
+					assert isinstance(attr,str)
+					rkeys.append(attr)
+				except AssertionError:
+					raise SyntaxError(f"rkey property method must return value type string, got {type(attr)}")
+
 		return rkeys
 
 	@property
 	async def all_sub_rkeys(self)->list[str]:
-			return await asyncio.to_thread(self.get_all_sub_rkeys)
+		return await asyncio.to_thread(self.get_all_sub_rkeys)
 
 	async def expire(self, num_seconds: int, redis_or_pipeline: Redis | None = None):
 		"""Expire all keys of this object.
@@ -167,13 +192,14 @@ class ChatboneData(BaseModel,ABC):
 				for k in keys:
 					await pipeline.persist(k)
 
-	async def save(self,  expire_seconds:int|None=None)->bool|None:
-		"""Save data with self.rkey. Skip_if_exist. If you want to save a new one, 'delete' first.
+	async def save(self,expire_seconds:int|None=None)->bool|None:
+		"""Save data with self.rkey. Skip if exist. If you want to save a new one, 'delete' first.
 		Args:
 			expire_seconds: None means do nothing. Negative means persist.
 		Returns:
 			True if a new value is created, None if no new value is created.
 		"""
+		# TODO: support skip and update in save ?, careful handle cascade keys.
 		if self.embedding:
 			raise ValueError("Embedding model cannot save redis object.")
 		rs =  await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=True)
@@ -249,7 +275,6 @@ class ChatboneData(BaseModel,ABC):
 			value:
 			redis_or_pipeline:
 		Returns:
-
 		"""
 		await asyncio.to_thread(self._check_params(field,value))
 		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
@@ -360,7 +385,7 @@ class Stream[DataType]:
 		self.datatype: StreamData = datatype
 		self.key = stream_key
 		self.redis= redis
-
+	# TODO NOW
 	async def send(self, data: DataType, **xadd_kwargs):
 		assert isinstance(data,StreamData)
 
@@ -453,11 +478,11 @@ class UserData(ChatboneData):
 	summaries: list[str] = Field(default_factory=list)
 	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=dict)
 
-	_encrypted_token:str = PrivateAttr(None)
+	encrypted_secret_token:str=Field(NON_EXIST, description="Value of this json key will be the redis key for secret (also be the token returned to user).")
 
 	@property
-	def encrypted_token_rkey(self):
-		return f"{self.rkey_prefix}:<encrypted_token>:{self._encrypted_token}"
+	def encrypted_secret_rkey(self):
+		return f"{self.rkey_prefix}:<encrypted_token>:{self.encrypted_secret_token}"
 
 	@property
 	def auth_token_rkey(self):
@@ -470,32 +495,33 @@ class UserData(ChatboneData):
 		Raises
 			KeyError: If data is not available or be expired during operations.
 		"""
-		if (r := await self.redis.json().get(self.rkey, f"${self._jsonpath}.encrypted_token_key")) is None:
+		if (r := await self.redis.json().get(self.rkey, f"{self._jsonpath}.encrypted_secret_token")) is None:
 			raise KeyError("User data doesn't exist. Call 'save' first.")
-		if r:
-			assert isinstance(r[0], str)
-			self._encrypted_token = r[0]
-
-			if skip_if_exist:
-				logger.debug("Return old token.")
-				return self._encrypted_token
-			else:
-				d = await self.redis.delete(self.encrypted_token_rkey)
-				assert d==1
+		else:
+			assert isinstance(r, str)
+			if r != NON_EXIST:
+				if skip_if_exist:
+					self.encrypted_secret_token = r
+					logger.debug("Return old token.")
+					return self.encrypted_secret_token
+				else:
+					d = await self.redis.delete(self.encrypted_secret_rkey)
+					assert d==1
 
 		key = str(self.id)+'@'+self.username+'@'+self.password
 		secret_key, token = await asyncio.to_thread(encrypt,key )
+		self.encrypted_secret_token=token # this must be set first for self.encrypted_secret_rkey
 
-		self._encrypted_token=token
 		async with self._get_transaction_pipeline() as pipeline:
-			await pipeline.set(self.encrypted_token_rkey,secret_key,nx= skip_if_exist)
+			await pipeline.set(self.encrypted_secret_rkey,secret_key)
 
 			# UserData need to know the key for retrieve it by this method instead of always create new one.
 			# Note: Not use self.set but instead pipeline.json().set() because it not in class fields.
-			await pipeline.json().set(self.rkey,f"{self._jsonpath}.encrypted_token_key", token)
-			await self.expire_sync([self.encrypted_token_rkey],pipeline)
+			await pipeline.json().set(self.rkey,f"{self._jsonpath}.encrypted_secret_token", token)
+			await self.expire_sync([self.encrypted_secret_rkey],pipeline)
 		logger.debug("Create new token.")
-		return token
+
+		return self.encrypted_secret_token
 
 	@classmethod
 	async def verify_encrypted_token(cls, encrypted_token:str, lazy_load:bool=True) -> Self | None:
@@ -523,7 +549,7 @@ class UserData(ChatboneData):
 		userdata = await userdata.refresh(exclude)
 		await asyncio.to_thread(userdata._bound_cs,userdata.chat_sessions)
 
-		userdata._encrypted_token = encrypted_token
+		userdata.encrypted_secret_token = encrypted_token
 
 		return userdata
 
@@ -546,7 +572,7 @@ class UserData(ChatboneData):
 
 	def _bound_cs(self, cs_dict: dict[UUID, ChatSessionData]):
 		for cs in cs_dict.values():
-			cs.bind_base_rkey(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
+			cs.bind_rkey_and_json_path(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
 
 
 

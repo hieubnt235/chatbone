@@ -113,6 +113,18 @@ async def main4():
 	a = await cs.append("summaries",["sum1", "sum2"]) # good =))
 	print(a)
 
+	print(await REDIS.ttl(userdata11.rkey), await REDIS.ttl(userdata11.encrypted_secret_rkey) )
+	await userdata11.expire(30)
+	print(await REDIS.ttl(userdata11.rkey), await REDIS.ttl(userdata11.encrypted_secret_rkey) )
+
+	await userdata1.save(expire_seconds=100)
+	token1 = await userdata1.get_encrypted_token()
+	print(token1==token)
+	print(await REDIS.ttl(userdata11.rkey), await REDIS.ttl(userdata11.encrypted_secret_rkey) )
+
+	await asyncio.sleep(10)
+	await userdata11.delete() # good, delete both token and rkey.
+
 m = main4()
 
 asyncio.run(m)
