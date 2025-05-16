@@ -1,11 +1,12 @@
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet
 import psutil
 from pwdlib import PasswordHash
+from pydantic import BaseModel
 
 # Password utils
 password_hash = PasswordHash.recommended()
@@ -109,6 +110,11 @@ def solve_relative_paths_recursively(data: dict, abs_path: Path):
 			solve_relative_paths_recursively(v, abs_path)
 		if isinstance(v, str) and k.endswith(("file", "path", "dir")):
 			data[k] = (abs_path / Path(v)).resolve().as_posix()
+
+def dump_base_models(base_models:list[BaseModel], mode:Literal['json','python']='python'):
+	return [b.model_dump(mode=mode) for b in base_models]
+
+
 
 # async def get_tasks(pid:int|None=None):
 # 	ts = [t.get_coro().__qualname__ for t in asyncio.all_tasks()]

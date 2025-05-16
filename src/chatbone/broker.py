@@ -1,23 +1,28 @@
+__all__=["UserData","ChatSessionData","AS2CSData","CS2ASData"]
 import asyncio
+import json
+import time
 from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
-from datetime import datetime
+from copy import deepcopy
+from datetime import datetime, timezone
 from inspect import iscoroutine
+from json import JSONDecodeError
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
-from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict
+from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict, ValidationError
 from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
+from redis.exceptions import LockError
 
 from chatbone.settings import REDIS, CONFIG
-from utilities.func import encrypt, decrypt
+from utilities.func import encrypt, decrypt, utc_now, dump_base_models
 from utilities.logger import logger
 
 LOCK_POSTFIX="<LOCK>"
-NON_EXIST="<NON_EXIST>"
-"""Dummy value for free delete, expire, check,..."""
+
 
 
 class ChatboneData(BaseModel,ABC):
@@ -52,20 +57,51 @@ class ChatboneData(BaseModel,ABC):
 	"""This path will be used to refresh. Embedding model must be reset this value by model own redis key."""
 	_base_rkey:str|None = PrivateAttr(None)
 	"""This attribute is used by embedding Model, and created by the model hold redis key."""
-	_refresh_exclude_default:set[str] = PrivateAttr(default_factory=lambda :set())
+	_refresh_include_default:set[str] = PrivateAttr(default_factory=set)
 
-	async def refresh(self, exclude:set[str]|None=None)->Self:
-		"""Load all data"""
-		exclude = exclude or self._refresh_exclude_default
-		fields = [field for field in self.model_fields.keys() if field not in exclude]
+	async def refresh(self, exclude:set[str]|None=None, include:set[str]|None=None)->Self:
+		"""Refresh fields. If both 'exclude' and 'include' are None, refresh the default,
+		typically information for resolving dynamic redis keys.
+
+		This method should be called when ever create a new object and access to rkey (delete, expire, ...) without do save.
+		'Save' method calls refresh itself.
+
+		Args:
+			exclude: Refresh field includes all available fields that not this set. Set this blank set to refresh all.
+			include: Refresh field includes all available fields that in this set.
+
+		Returns:
+			New refreshed object of this class.
+		"""
+		def resolve_fields(exclude:set[str]|None, include:set[str]|None)->set[str]:
+			if include is not None and exclude is not None:
+				raise ValueError("Cannot set both exclude and include argument at the same time.")
+			if exclude is not None:
+				fields = {field for field in self.model_fields.keys() if field not in exclude}
+			elif include is not None:
+				fields = {field for field in self.model_fields.keys() if field in include}
+			else:
+				fields = deepcopy(self._refresh_include_default)
+			return fields
+
+		fields:set[str] = await asyncio.to_thread(resolve_fields,exclude,include)
+		if len(fields)==0:
+			return self
 
 		if (r:= await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])) is None:
 			raise KeyError("User data doesn't exist. Call 'save' first.")
 		if len(fields)==1:
-			r = {fields[0]: r}
+			r = {fields.pop(): r}
 		else:
 			r = {k[1:]:v for k,v in r.items()}
-		new_object = self.__class__.model_validate(r)
+		assert isinstance(r,dict)
+		# TODO: maybe it somehow not effective to create new object, test and compare performance of update vs create new one.
+
+		logger.debug(f"Update attributes with dict:\n {json.dumps(r, indent=4)}")
+		obj_dict = self.model_dump()
+		obj_dict.update(r) # Note: swallow update is intentional.
+		new_object = self.__class__.model_validate(obj_dict)
+
 		if self.embedding:
 			new_object.bind_rkey_and_json_path(self.rkey,self._jsonpath)
 		return new_object
@@ -105,7 +141,7 @@ class ChatboneData(BaseModel,ABC):
 		fields = self.model_fields
 
 		for name in dir(self):
-			if 	name.startswith('__') or name in ['rkey','all_sub_rkeys','get_all_sub_rkeys']:
+			if 	name.startswith('__') or name in ['rkey','all_sub_rkeys','get_all_sub_rkeys','is_bounded']:
 				continue
 
 			f = fields.get(name)
@@ -157,9 +193,15 @@ class ChatboneData(BaseModel,ABC):
 					assert isinstance(attr,str)
 					rkeys.append(attr)
 				except AssertionError:
-					raise SyntaxError(f"rkey property method must return value type string, got {type(attr)}")
+					raise SyntaxError(f"rkey property method {name} must return value type string, got {type(attr)}")
 
 		return rkeys
+
+	@property
+	def is_bounded(self)->bool:
+		if not self.embedding:
+			raise ValueError("Non-embedding-model cannot access to this property.")
+		return self._bounded
 
 	@property
 	async def all_sub_rkeys(self)->list[str]:
@@ -171,6 +213,8 @@ class ChatboneData(BaseModel,ABC):
 			num_seconds:
 			redis_or_pipeline:
 		"""
+		if self.embedding:
+			raise ValueError("Embedding model cannot do this operation .")
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			await self.expire_cascade(num_seconds, (await self.all_sub_rkeys) + [self.rkey], pipeline)
 
@@ -192,20 +236,22 @@ class ChatboneData(BaseModel,ABC):
 				for k in keys:
 					await pipeline.persist(k)
 
-	async def save(self,expire_seconds:int|None=None)->bool|None:
-		"""Save data with self.rkey. Skip if exist. If you want to save a new one, 'delete' first.
+	async def save(self,expire_seconds:int|None=None, refresh:bool=True )->bool|None|Self:
+		"""Save data with self.rkey. Skip if existed. If you want to save a new one, 'delete' first.
 		Args:
 			expire_seconds: None means do nothing. Negative means persist.
+			refresh: Whether to refresh or not.
 		Returns:
 			True if a new value is created, None if no new value is created.
 		"""
 		# TODO: support skip and update in save ?, careful handle cascade keys.
 		if self.embedding:
-			raise ValueError("Embedding model cannot save redis object.")
-		rs =  await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=True)
+			raise ValueError("Embedding model cannot do this operation .")
+		_ =  await self.redis.json().set(self.rkey,'.',self.model_dump(mode='json'),nx=True)
+		obj = (await self.refresh()) if refresh else self
 		if expire_seconds is not None:
-			await self.expire(expire_seconds)
-		return rs
+			await obj.expire(expire_seconds)
+		return obj
 
 	async def delete(self)->int:
 		"""Cascading delete for all redis keys. Note again that this method deletes all redis keys, not the JSON keys.
@@ -213,7 +259,7 @@ class ChatboneData(BaseModel,ABC):
 			Number of keys were removed.
 		"""
 		if self.embedding:
-			raise ValueError("Embedding model cannot delete redis object.")
+			raise ValueError("Embedding model cannot do this operation .")
 		return await self.redis.delete(self.rkey, *(await self.all_sub_rkeys))
 
 	async def append(self, field: str, values: list[Any],redis_or_pipeline: Redis | None = None):
@@ -223,11 +269,15 @@ class ChatboneData(BaseModel,ABC):
 			values: list of values that intent to be appended.
 			redis_or_pipeline:
 		Returns:
+			If JSON list exists, return len of the entire list.
+			If the pipeline is given, return None.
 		"""
 		# TODO, append to instance also ? not only on server. or let the client do refresh ?
 		await asyncio.to_thread(self._check_list_params,field, values)
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=False,watch=False, execute=False) as pipeline:
-			coro: Awaitable[list[int | None]] = pipeline.json().arrappend(self.rkey, f"{self._jsonpath}.{field}", *values)
+
+		async with self._get_transaction_pipeline(redis_or_pipeline,  execute=False) as pipeline:
+			coro: Awaitable[list[int | None]] = pipeline.json().arrappend(self.rkey, f"{self._jsonpath}.{field}",
+			                                                              *(await asyncio.to_thread(dump_base_models,values,'json')))
 			await coro
 			if not redis_or_pipeline:
 				return (await pipeline.execute())[0]
@@ -245,8 +295,8 @@ class ChatboneData(BaseModel,ABC):
 		Returns:
 			Number of values remain.
 		"""
-		await asyncio.to_thread(self._check_list_params(field))
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=False,watch=False, execute=False) as pipeline:
+		await asyncio.to_thread(self._check_list_params,field)
+		async with self._get_transaction_pipeline(redis_or_pipeline,  execute=False) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().arrtrim(self.rkey,f"{self._jsonpath}.{field}", start,stop)
 			await coro
 			if not redis_or_pipeline:
@@ -256,13 +306,13 @@ class ChatboneData(BaseModel,ABC):
 	async def update(self, field:str, values:dict[Any,Any],redis_or_pipeline: Redis | None = None):
 		"""Update the dict with keys and values.
 		Args:
-			field:
-			values:
-			redis_or_pipeline
+			field: typehint of field must be a dict[Any,Any]
+			values: must be type dict that match the field.
+			redis_or_pipeline:
 		Returns:
 		"""
-		await asyncio.to_thread(self._check_dict_params(field,values))
-		async with self._get_transaction_pipeline(redis_or_pipeline ,lock_modify=False,watch=False, execute=False) as pipeline:
+		await asyncio.to_thread(self._check_dict_params,field,values)
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			coros:list[Awaitable[list[int | None]]] = []
 			for k,v in values.items():
 				coros.append(pipeline.json().set(self.rkey, f"{self._jsonpath}.{field}.{k}",v) )
@@ -276,15 +326,17 @@ class ChatboneData(BaseModel,ABC):
 			redis_or_pipeline:
 		Returns:
 		"""
-		await asyncio.to_thread(self._check_params(field,value))
-		async with self._get_transaction_pipeline(redis_or_pipeline, lock_modify=True) as pipeline:
-			coro: Awaitable[list[int | None]] = pipeline.json().set(self.rkey,f"{self._jsonpath}.{field}")
+		await asyncio.to_thread(self._check_params,field,value)
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
+			if isinstance(value,BaseModel):
+				value = value.model_dump(mode='json')
+			coro: Awaitable[list[int | None]] = pipeline.json().set(self.rkey,f"{self._jsonpath}.{field}",value)
 			return await coro
 
 	async def clear(self, field: str, value: Any, redis_or_pipeline: Redis | None = None):
 		"""Clear container values (arrays/objects) and set numeric values to 0"""
-		self._check_params(field,value)
-		async with self._get_transaction_pipeline(redis_or_pipeline,lock_modify=True) as pipeline:
+		await asyncio.to_thread(self._check_params,field,value)
+		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			coro: Awaitable[list[int | None]] = pipeline.json().clear(self.rkey,f"{self._jsonpath}.{field}")
 			return await coro
 
@@ -323,16 +375,15 @@ class ChatboneData(BaseModel,ABC):
 
 
 	@asynccontextmanager
-	async def _lock_modify(self,timeout:int|None=None, blocking_timeout:int|None=None):
+	async def _lock_modify(self,key:str,timeout:int|None=None, blocking_timeout:int|None=None):
 		timeout = timeout or CONFIG.redis_lock_timeout
 		blocking_timeout = blocking_timeout or CONFIG.redis_acquire_lock_timeout
-		async with self.redis.lock(f"{self.rkey}:{LOCK_POSTFIX}",timeout=timeout,blocking_timeout=blocking_timeout) as lock:
+		async with self.redis.lock(key,timeout=timeout,blocking_timeout=blocking_timeout) as lock:
 			yield lock
 
 	@asynccontextmanager
 	async def _get_transaction_pipeline(self, redis_or_pipeline: Redis | None = None, *,
-	                                    lock_modify:bool=False,
-	                                    watch:bool=False,
+	                                    lock_modify:str|Literal['rkey']|None=None,
 	                                    execute:bool=True) -> AbstractAsyncContextManager[Pipeline]:
 		"""
 		Get the transaction pipeline while providing options to ensure that key is exist during execute pipe..
@@ -341,7 +392,6 @@ class ChatboneData(BaseModel,ABC):
 
 		Args:
 			redis_or_pipeline: Can be Redis, Pipeline or None:
-
 				- If it's None, a new transaction pipeline will be created with Meta.database yield and executed at the last.
 				- If it's a Redis instance, the same as 'None case' but using passed Redis instead of Meta.database.
 				- If it's a Pipeline instance, there must be a transaction Pipeline.
@@ -357,60 +407,178 @@ class ChatboneData(BaseModel,ABC):
 		else:
 			redis_or_pipeline = redis_or_pipeline or self.redis
 			async with AsyncExitStack() as stack:
-				if lock_modify:
-					await stack.enter_async_context(self._lock_modify())
+				if lock_modify is not None:
+					lock_modify= f"{self.rkey}:{LOCK_POSTFIX}" if lock_modify=='rkey' else lock_modify
+					await stack.enter_async_context(self._lock_modify(lock_modify))
 				pipeline:Pipeline = await stack.enter_async_context(redis_or_pipeline.pipeline(transaction=True))
+				yield pipeline
+				if execute:
+					await pipeline.execute()
 
-				# Watch for ensuring key not expire during queue commands. Note that if we do not lock,
-				# every command that changes value will make the watch raise an error, so it should be lock and watch when do modifying.
+# class JsonRPCSchema(BaseModel):
+# 	jsonrpc: Literal['2.0']
+# 	method: str
+# 	params: tuple[str | Any] | dict[str, Any] | BaseModel
+# 	id: int | UUID | str
 
-				if watch:
-					await pipeline.watch(self.rkey)
-				if not ( await self.redis.exists(self.rkey)):
-					raise KeyError("Rkey is no longer exist. Call 'save' first.")
-
-				pipeline.multi()
-				try:
-					yield pipeline
-					if execute:
-						await pipeline.execute()
-				except WatchError:
-					raise KeyError("Rkey is no longer exist after queue commands.")
 
 class StreamData(BaseModel):
-	pass
-
-class Stream[DataType]:
-	def __init__(self,stream_key:str, datatype:type[DataType], redis:Redis):
-		self.datatype: StreamData = datatype
-		self.key = stream_key
-		self.redis= redis
-	# TODO NOW
-	async def send(self, data: DataType, **xadd_kwargs):
-		assert isinstance(data,StreamData)
-
-		if not (await self.redis.exists(self.key)):
-			raise KeyError("Stream key doesn't exist. You should create stream using 'create' class method.")
-		await self.redis.xadd(self.key, data.model_validate(mode='json'),**xadd_kwargs)
-
-	async def receive(self)->DataType:
-		pass
-
-	async def clear(self):
-		pass
+	def _encode(self):
+		encoder_data:dict[str,int|float|str|bytes] = {}
+		for field,value in self.model_dump(mode='json',exclude_none=True,exclude_defaults=True).items():
+			if not isinstance(value, (bytes, str, int, float)):
+				encoder_data[field] = json.dumps(value)
+			else:
+				encoder_data[field] = value
+		return encoder_data
 
 	@classmethod
-	@asynccontextmanager
-	async def create(cls, stream_key:str, datatype:type[DataType], redis:Redis|None=None)->Self:
-		redis = redis or REDIS
-		if not isinstance(datatype,StreamData):
-			raise ValueError(f"Datatype must be the subclass of 'StreamData' but got {datatype}.")
+	def _decode(cls,data: dict[str,int|float|str|bytes])->Self:
+		decode_data = {}
+		for k,value in data.items():
+			try:
+				decode_data[k] = json.loads(value)
+			except JSONDecodeError:
+				decode_data[k] = value
+		return cls.model_validate(decode_data)
 
-		if not (await redis.exists(stream_key)):
-			await redis.xadd(stream_key,{},maxlen=0)
+	async def encode(self)->dict[str,int|float|str|bytes]:
+		return await asyncio.to_thread(self._encode)
+
+	@classmethod
+	async def decode(cls,data: dict[str,int|float|str|bytes])->Self:
+		return await asyncio.to_thread(cls._decode,data)
+
+class TextUrlsFormat(BaseModel):
+	# both fields are required
+	# TODO: make validation methods for the format.
+	text_fmt:str =Field(description="The message string, optional with format place holder to be used to insert object (image, video,...) through urls."
+	                                "Note that place holder must be match with 'fmt_data', or it can lead to unbehavior.")
+	fmt_data: dict[str,AnyUrl] = Field(description="urls to object store data.", default_factory=dict)
+
+class RequestForm(BaseModel):
+	request_id:UUID = Field(description="The id of response from session must be match with the request's one.")
+	message: TextUrlsFormat|None = Field(None)
+
+class ResultForm(BaseModel):
+	"""Data stream of one assistant phase(node). All 'data_token' with the same 'phase_id' will be concat, process and show to user."""
+	phase_id:UUID = Field(description="Id for grouping information sequence. All related data are only considered as of a phase if they have the same id.")
+	phase_info:str|None= Field(None, description="Information about the current phase. Ex: searching, calculating, thinking, ...")
+	stream_token: TextUrlsFormat
+
+class AS2CSData(StreamData):
+	request: RequestForm|None=Field(None, description="Query user for more information.")
+	result : ResultForm|None=Field(None, description="The result, processing information,...")
+	state: Literal['processing','done'] = Field(description="'done' means assistant reach its final phase and start stream out the result."
+	                                                        "And 'done' should be along with result_form, this is the result we show directly to user. "
+	                                                        "Also, when parse meet 'done' for the first time, all data after should be considered as done.")
+
+class CS2ASData(StreamData):
+	type: Literal['supply','refuse'] =Field(description="Whether user supply more information or refuse to give any.")
+	response_id:UUID
+	response: TextUrlsFormat|None=Field(None)
+
+class Stream[T: (AS2CSData,CS2ASData) ]:
+	def __init__(self,stream_key:str, datatype: type[T], redis:Redis):
+		self.datatype:type[T]  = datatype
+		self.key = stream_key
+		self.redis= redis
+
+	@classmethod
+	async def _create(cls, stream_key:str, stream_type:Literal['as2cs','cs2as'], redis:Redis)->Self:
+		datatype: type[T] = AS2CSData if stream_type=="as2cs" else CS2ASData
 		assert (await redis.exists(stream_key))
-
 		return cls(stream_key, datatype, redis)
+
+class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
+
+	async def write(self, data: T, maxlen:int|None=None, approximate:bool=True, limit:int|None=None)->str:
+		""" Write to the stream and optionally trim stream after adding.
+		Args:
+			data:
+			maxlen: maximum len we expect that the stream should be after added.
+			approximate: if True, means keeping the stream len AT LEAST the maxlen, so maybe len is tens longer.
+			limit: Maximum values to remove after adding.
+		Returns:
+			Stream id
+		Notes:
+			See more about parameter in 'XADD' and 'XTRIM'.
+			Trim feature should be used by chat service, not by assistant. Assistant just give only data.
+		"""
+		assert isinstance(data,self.datatype)
+		flag = await self.redis.xadd(self.key,await data.encode(),maxlen=maxlen, nomkstream=True,approximate=approximate, limit=limit)
+		if flag is None:
+			raise KeyError("Stream key doesn't exist. You should create stream using 'create' class method.")
+		return flag
+
+class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
+	"""Stateless object stream, it stores state to know what to retrieve next.
+	Default for async for is block and wait for the newest data coming.
+		Examples:
+			async for data in read_stream.bind(new_checkpoint, ):
+				if data.state =="done":
+					...
+
+			async for data in read_stream: # default
+				if data.state=="done":
+
+	"""
+	def __init__(self,stream_key:str, datatype: type[T], redis:Redis):
+		super().__init__(stream_key, datatype, redis)
+
+		self._checkpoint_id:str = "$"
+		self._count:int = 1
+		self._save_checkpoint:bool=False
+
+	def bind(self,checkpoint:str|None=None,count:int|None=None, save_checkpoint:bool|None=None)->Self:
+		"""Create a new object with new state. Use current states if they are not provided.
+		Args:
+			checkpoint:
+			count:
+			save_checkpoint:
+		Returns:
+			New object of ReadStream.
+		"""
+		new_obj= self.__class__(self.key,self.datatype,self.redis)
+		new_obj._checkpoint_id = checkpoint or self._checkpoint_id
+		new_obj._count = count or self._count
+		new_obj._save_checkpoint = save_checkpoint or self._save_checkpoint
+		return new_obj
+
+	async def read(self,checkpoint:str|None=None,count:int|None=None,*,block:int|None=None )-> list[T]:
+		"""
+		Args:
+			checkpoint:
+			block:
+			count:
+		Returns:
+			list of data
+		Notes:
+			read method does not check if the stream key exists. So either does not exist or exist with blank data will return [].
+		"""
+		"""Raw data from redis stream has the form like this:
+			[['test_stream', [('1747389494281-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'}), ('1747389494418-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'})]]]' 
+			So data extract be like: data[0][1][:][1], with : is data.
+		"""
+		checkpoint = checkpoint or self._checkpoint_id
+		count = count or self._count
+		data= await self.redis.xread({self.key:checkpoint},count,block)
+		if data:
+			decoded_data = []
+			for d in data[0][1]:
+				decoded_data.append(await self.datatype.decode(d[1]))
+			if self._save_checkpoint:
+				self._checkpoint_id = data[0][1][-1][0]
+			return decoded_data
+		else:
+			return data # []
+	def __aiter__(self)->Self:
+		return self
+
+	async def __anext__(self)->list[T]:
+		return await self.read(block=0) # block forever.
+
+AnyStream = ReadStream[AS2CSData]|ReadStream[CS2ASData] |WriteStream[AS2CSData] |WriteStream[CS2ASData]
 
 class Message(BaseModel):
 	role: Literal['user', 'system', 'assistant']
@@ -421,7 +589,6 @@ class ChatSessionData(ChatboneData):
 	This class has two modes:
 		1. Init value to add to UserData.
 		2. After added to UserData and refresh, it will bind with user data, now it can interact with server data.
-
 	"""
 	embedding = True
 
@@ -429,6 +596,70 @@ class ChatSessionData(ChatboneData):
 	summaries: list[str] = Field(default_factory=list)
 	urls: list[AnyUrl] = Field(default_factory=list,
 	                           description="Addition data should be store in object storage and provide url.")
+
+	@asynccontextmanager
+	async def get_stream(self,stream_type:Literal['as2cs','cs2as'], role:Literal['cs','as'], redis:Redis|None=None,*,
+	                     write_role_acquire_timeout:int|None=None,
+	                     raise_on_write_role_acquire_fail:bool=True
+	                     )->AbstractAsyncContextManager[AnyStream]:
+		"""
+		Args:
+			stream_type:
+			role:
+			redis:
+			write_role_acquire_timeout:
+			raise_on_write_role_acquire_fail
+		Returns:
+
+		Raises:
+			LockError: Timeout because the others are using the 'write' role of the stream.
+		"""
+		assert (stream_type in ['as2cs', 'cs2as']) and (role in ['cs','as'])
+		key = self.cs2as_stream_rkey if stream_type == 'cs2as' else self.as2cs_stream_rkey
+		redis = redis or self.redis
+
+		# Create and expire a stream key if it does not exist.
+		try:
+			async with self._get_transaction_pipeline(execute=False) as pipeline:
+				await pipeline.watch(key)
+				if await pipeline.exists(key):
+					logger.debug(f"After watch: Stream key '{key}' already created.")
+					pass
+				else:
+					pipeline.multi()
+					await pipeline.xadd(key,{"__init__stream_key":"__init__stream_key"},maxlen=0)
+					await self.expire_sync([key],pipeline)
+					await pipeline.execute()
+					logger.debug(f"Stream key '{key}' initialized.")
+		except WatchError:
+			assert (await redis.exists(key))
+			logger.debug(f"Watch error: Stream key '{key}' already created.")
+
+		locked:bool=False
+		async with AsyncExitStack() as stack:
+			try:
+				if stream_type.startswith(role): # Means a 'write' role of the stream.
+					# Only write role is locked. So that consumers is many but producer is one.
+					acquire_timeout = write_role_acquire_timeout or CONFIG.redis_acquire_lock_timeout
+					await stack.enter_async_context(self.redis.lock(
+						f"{key}:{LOCK_POSTFIX}", blocking_timeout=acquire_timeout))
+					locked=True
+					logger.debug(f"Stream '{stream_type}' with role '{role}' is acquired.\nLock '{key}:{LOCK_POSTFIX}' is acquired.")
+					yield await WriteStream._create(key, stream_type, redis)
+				else:
+					logger.debug(f"Stream '{stream_type}' with role '{role}' is acquired.")
+					yield await ReadStream._create(key, stream_type, redis)
+			except LockError:
+				logger.debug(f"Lock '{key}:{LOCK_POSTFIX}' acquire fail after trying for {acquire_timeout} seconds.")
+				if raise_on_write_role_acquire_fail:
+					raise
+			except Exception as e:
+				logger.error(e)
+				raise
+			finally:
+				# await stack.aclose()
+				if locked:
+					logger.debug(f"Stream '{key}' released.")
 
 	@property
 	def cs2as_stream_rkey(self)->str:
@@ -438,33 +669,24 @@ class ChatSessionData(ChatboneData):
 	def as2cs_stream_rkey(self)->str:
 		return f"{self.rkey_prefix}:{self.id}:<as2cs_stream>"
 
-	@asynccontextmanager
-	async def get_stream(self,stream_type:Literal['as2cs','cs2as'], datatype:type[BaseModel], redis:Redis|None=None)->AbstractAsyncContextManager[Stream]:
-		assert stream_type in ['as2cs', 'cs2as']
-		key = self.cs2as_stream_rkey if stream_type == 'cs2as' else self.as2cs_stream_rkey
-
-		async with self.redis.lock(f"{key}:{LOCK_POSTFIX}"):
-			logger.debug(f"Stream '{key}' acquired.")
-			try:
-				yield await Stream[datatype].create(key, datatype,redis)
-			except Exception as e:
-				logger.exception(e)
-			finally:
-				logger.debug(f"Stream '{key}' released.")
-
 
 class UserNotFoundError(Exception):
 	pass
 class NoValidTokenError(Exception):
 	pass
-
 class EncryptedTokenError(Exception):
 	pass
+class RedisKeyError(KeyError):
+	pass
 
-class AuthToken(BaseModel):
+class UserToken(BaseModel):
 	id:UUID
 	created_at:datetime
 	expires_at:datetime
+
+MIN_DATATIME= datetime.min.replace(tzinfo=timezone.utc)
+MIN_UUID = UUID(int=0)
+default_user_token = UserToken(id = MIN_UUID, created_at= MIN_DATATIME, expires_at= MIN_DATATIME)
 
 class UserData(ChatboneData):
 	"""UserData support lazy load ChatSessionData.
@@ -478,15 +700,18 @@ class UserData(ChatboneData):
 	summaries: list[str] = Field(default_factory=list)
 	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=dict)
 
-	encrypted_secret_token:str=Field(NON_EXIST, description="Value of this json key will be the redis key for secret (also be the token returned to user).")
+	# for dynamic keys.
+	encrypted_secret_token:str|None=Field(None, description="Value of this json key will be the redis key for secret (also be the token returned to user).")
+	user_token: UserToken = Field(default_user_token,description="Token for access datastore. Be got by authentication process")
+
+	_refresh_include_default: set[str] = PrivateAttr(default_factory=lambda : {"encrypted_secret_token"})
+	"""Attributes in this set will be refresh by default when call 'refresh'. These Attributes must not be passed as init."""
 
 	@property
 	def encrypted_secret_rkey(self):
+		if self.encrypted_secret_token is None:
+			raise RedisKeyError("Cannot resolve 'encrypted_secret_rkey', you must 'refresh' default mode to load dynamic rkeys first.  ")
 		return f"{self.rkey_prefix}:<encrypted_token>:{self.encrypted_secret_token}"
-
-	@property
-	def auth_token_rkey(self):
-		return f"{self.rkey_prefix}:{self.id}:<auth_token>"
 
 	async def get_encrypted_token(self, skip_if_exist:bool=True) -> str:
 		"""Get an encrypted token and return to the user.
@@ -496,12 +721,11 @@ class UserData(ChatboneData):
 			KeyError: If data is not available or be expired during operations.
 		"""
 		if (r := await self.redis.json().get(self.rkey, f"{self._jsonpath}.encrypted_secret_token")) is None:
-			raise KeyError("User data doesn't exist. Call 'save' first.")
+			raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
 		else:
-			assert isinstance(r, str)
-			if r != NON_EXIST:
+			self.encrypted_secret_token = r
+			if r != 'null': # None is saved and load as 'null'
 				if skip_if_exist:
-					self.encrypted_secret_token = r
 					logger.debug("Return old token.")
 					return self.encrypted_secret_token
 				else:
@@ -524,7 +748,7 @@ class UserData(ChatboneData):
 		return self.encrypted_secret_token
 
 	@classmethod
-	async def verify_encrypted_token(cls, encrypted_token:str, lazy_load:bool=True) -> Self | None:
+	async def verify_encrypted_token(cls, encrypted_token:str, lazy_load_chat_sessions:bool=True) -> Self | None:
 		"""Redis memory:
 		token: secret_key
 		user_key: {key:secret_key}
@@ -543,7 +767,7 @@ class UserData(ChatboneData):
 		userdata = UserData(id=uid,username=username,password=password)
 
 		exclude = set()
-		if lazy_load:
+		if lazy_load_chat_sessions:
 			exclude.add('chat_sessions')
 
 		userdata = await userdata.refresh(exclude)
@@ -553,12 +777,45 @@ class UserData(ChatboneData):
 
 		return userdata
 
-	async def add_chat_sessions(self,chat_sessions:list[ChatSessionData])->None:
-		async with self._get_transaction_pipeline() as pipeline:
-			cs_dict = {cs.id:cs for cs in chat_sessions}
-			await self.update('chat_sessions',cs_dict,pipeline)
+	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
+		""" This method is used for check if user is valid to make further request to business service. If user is not valid now
+		because of a token, use 'update_token' to make it valid.
+		User is considered valid when:
+			1. User exists in server.
+			2. User has the non-expired token.
+		If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
+		Returns:
+			valid UserToken object.
+		Raises:
+			UserNotFoundError, NoValidTokenError
+		"""
+		assert timeout>sleep
+		start = time.time()
+
+		def time_remain():
+			return timeout - (time.time()-start)
+
+		while time_remain()>0:
+			if (token:= await self.redis.json().get(self.rkey,f"{self._jsonpath}.user_token")) is None:
+				raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
+			try:
+				ut =  UserToken.model_validate(token)
+				if ut.expires_at<utc_now():
+					raise ValueError
+				return ut
+			except (ValidationError,ValueError):
+				logger.debug(f"User '{self.id}' does not have valid token, got token: {token}.\n"
+				             f"Waiting time remain: {time_remain()} seconds.")
+				await asyncio.sleep(sleep)
+
+		raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
 
 	async def get_chat_sessions(self,session_ids: list[UUID])->dict[UUID,ChatSessionData]:
+		"""For lazy get chat_sessions.
+		Args:
+			session_ids:
+		Returns:
+		"""
 		cs_dict:dict = await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.chat_sessions.{uid}" for uid in session_ids ])
 		if len(session_ids)==1:
 			cs_dict = {f"{self._jsonpath}.chat_sessions.{session_ids[0]}":cs_dict}
@@ -573,6 +830,13 @@ class UserData(ChatboneData):
 	def _bound_cs(self, cs_dict: dict[UUID, ChatSessionData]):
 		for cs in cs_dict.values():
 			cs.bind_rkey_and_json_path(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
+
+	# Redundant, use update directly. Also, all modify methods should be use base class directly, subclasses implement verify and lazy get methods.
+	# Directly get should be refresh first and get.
+	# async def update_chat_sessions(self,chat_sessions:list[ChatSessionData])->None:
+	# 	async with self._get_transaction_pipeline() as pipeline:
+	# 		cs_dict = {cs.id:cs for cs in chat_sessions}
+	# 		await self.update('chat_sessions',cs_dict,pipeline)
 
 
 
