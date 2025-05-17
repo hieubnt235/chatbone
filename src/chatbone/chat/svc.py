@@ -1,5 +1,9 @@
+import asyncio
+from uuid import UUID
+
 from fastapi import HTTPException, status
 
+from chatbone.broker import UserData
 from chatbone.chat.settings import DATASTORE, CONFIG
 from utilities.exception import handle_http_exception
 from utilities.settings.clients.datastore import *
@@ -17,8 +21,8 @@ AuthenticationError = HTTPException(status_code=status.HTTP_407_PROXY_AUTHENTICA
                                     detail="Chat session authentication fail because of expiring or no authentication.")
 
 
-# defined as a class for the chance to add some cache logic in the future.
-class DataSVC:
+class _DataSVC:
+	"""For interacting with data store service."""
 	@handle_http_exception(ServerError)
 	async def create_chat_session(self, schema: ChatSVCBase) -> ChatSessionReturn:
 		user_info_res = await DATASTORE.user.access.get(ClientRequestSchema[Token](body=Token(token_id=schema.token_id),
@@ -145,3 +149,30 @@ class DataSVC:
 		_ = await DATASTORE.user.summary.create(req)
 		summaries = await self._get_user_summaries(UserSummarySVCGetLatest(token_id=schema.token_id, n=-1))
 		return summaries
+
+class ChatAssistantSVC(_DataSVC):
+	"""
+	1. Do heartbeat for cache.
+	2. Operation start and stop assistant.
+	3. Persist messages, handle access token invalid at the end.
+	"""
+
+	@handle_http_exception(ServerError)
+	async def chat(self, assistant_name:str, chat_session_id:UUID, userdata:UserData):
+		"""
+		Heartbeat
+		Args:
+			assistant_name:
+			chat_session_id:
+			userdata:
+		Returns:
+		"""
+		try:
+			cs = await userdata.get_c
+		except asyncio.CancelledError:
+			raise
+		finally:
+			pass
+
+chat_assistant_svc = ChatAssistantSVC()
+

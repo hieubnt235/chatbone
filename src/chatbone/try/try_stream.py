@@ -57,16 +57,19 @@ async def main1():
 		await userdata.delete()
 		print(await REDIS.ttl(cs.as2cs_stream_rkey), await REDIS.ttl(cs.cs2as_stream_rkey))
 
-async def main2():
+async def create_bounded_cs(expire:int|None=None):
 	if await REDIS.exists(userdata1.rkey):
 		userdata = await userdata1.refresh() # refresh to update cascade rkeys.
 		await userdata.delete()
-	userdata = await userdata1.save(expire_seconds=100) # save new
+	userdata = await userdata1.save(expire_seconds=expire) # save new
 
 	chatsessions = [cs for cs in userdata.chat_sessions.values()]
 	cs = chatsessions[0]
 	cs = (await userdata.get_chat_sessions([cs.id]))[cs.id]
+	return cs, userdata
 
+async def main2():
+	cs,userdata = await create_bounded_cs(100)
 	async def write_stream():
 		async with cs.get_stream('as2cs', 'as', ) as stream:
 			n=1
@@ -85,14 +88,7 @@ async def main2():
 	await asyncio.gather(write_stream(),write_stream2())
 
 async def main3():
-	if await REDIS.exists(userdata1.rkey):
-		userdata = await userdata1.refresh() # refresh to update cascade rkeys.
-		await userdata.delete()
-	userdata = await userdata1.save(expire_seconds=100) # save new
-
-	chatsessions = [cs for cs in userdata.chat_sessions.values()]
-	cs = chatsessions[0]
-	cs = (await userdata.get_chat_sessions([cs.id]))[cs.id]
+	cs,userdata = await create_bounded_cs(100)
 
 	async def read_user_input():
 		return await asyncio.to_thread(input,"Say something:")
@@ -123,3 +119,4 @@ async def main3():
 # asyncio.run(main1())
 # asyncio.run(main2())
 asyncio.run(main3())
+#
