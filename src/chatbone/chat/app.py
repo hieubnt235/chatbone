@@ -1,10 +1,11 @@
 import anyio
 import ray
 from fastapi import FastAPI, WebSocketDisconnect
+from fastapi.security import
 from ray import serve
 
-from chatbone.chat.svc.chat_assistant_svc import *
-from utilities.schemas.chat import JsonRPCSchema
+from chatbone.chat.svc import *
+
 from .settings import chat_settings
 
 config = chat_settings.config
@@ -14,6 +15,9 @@ app = FastAPI()
 class GetMessages(JsonRPCSchema):
 	params: ChatSVCGetLatest
 
+# TODO : ONLY CHAT AND ASSISTANT
+# TODO: CHATAPP USE ONLY GET_USER_INFO FROM AUTH.
+# TODO: STREAM NEED TO BE SERIALIZATION TO PASS TO ... ( CHange Redis to RedisClient)
 
 @serve.deployment()
 @serve.ingress(app)

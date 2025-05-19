@@ -7,6 +7,7 @@ from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Config, Settings
+from utilities.settings.clients.auth import AuthClient
 from utilities.settings.clients.datastore import DatastoreClient
 
 
@@ -60,7 +61,7 @@ class ChatSettings(Settings):
 
 	config: ChatConfig
 	datastore: DatastoreClient
-
+	auth: AuthClient
 
 # noinspection Annotator
 chat_settings = ChatSettings()

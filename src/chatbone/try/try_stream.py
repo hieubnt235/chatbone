@@ -42,14 +42,14 @@ async def main1():
 	try:
 		await cs.append("messages",[Message(role="user",content=f"content:{i}") for i in range(3)])
 	except ValueError as e:
-		logger.error(e) #This embedding object haven't bound any base rkey.
+		logger.error(f"EXPECTED ERROR (NOT ERROR):{e}") #This embedding object haven't bound any base rkey.
 		cs = (await userdata.get_chat_sessions([cs.id]))[cs.id]
 		print(f"is bounded: {cs.is_bounded}")
 		print(await cs.append("messages",[Message(role="user",content=f"content:{i}") for i in range(3)])) # 5, 2 for init and 3 news.
 
 	print(await userdata.all_sub_rkeys)
 
-	async with cs.get_stream('as2cs','as',) as stream:
+	async with cs.get_streams() as streams:
 		print(await REDIS.ttl(cs.as2cs_stream_rkey), await REDIS.ttl(cs.cs2as_stream_rkey))
 		await userdata.expire(30)
 		print(await REDIS.ttl(cs.as2cs_stream_rkey), await REDIS.ttl(cs.cs2as_stream_rkey))
@@ -70,8 +70,10 @@ async def create_bounded_cs(expire:int|None=None):
 
 async def main2():
 	cs,userdata = await create_bounded_cs(100)
+
 	async def write_stream():
-		async with cs.get_stream('as2cs', 'as', ) as stream:
+		async with cs.get_streams() as streams:
+			stream = streams['as2cs'][0]
 			n=1
 			while n<6:
 				print(f"Write stream 1 acquired lock for {n} seconds. {type(stream)}")
@@ -81,10 +83,10 @@ async def main2():
 	async def write_stream2():
 		await asyncio.sleep(2)
 		try:
-			async with cs.get_stream('as2cs', 'as',write_role_acquire_timeout=2 ) as stream:
+			async with cs.get_streams(write_streams_acquire_timeout=2 ) as streams:
 				pass
 		except LockError:
-			logger.error("Caught lock error during acquire lock two times.")
+			logger.error("NOT AN ERROR: Caught lock error during acquire lock two times.")
 	await asyncio.gather(write_stream(),write_stream2())
 
 async def main3():
@@ -94,13 +96,15 @@ async def main3():
 		return await asyncio.to_thread(input,"Say something:")
 
 	async def read_stream():
-		async with cs.get_stream('as2cs', 'cs') as stream:
+		async with cs.get_streams(read_only=True) as streams:
+			stream = streams['as2cs'][1]
 			assert isinstance(stream,ReadStream)
 			async for data in stream:
 				print(data)
 
 	async def write_stream():
-		async with cs.get_stream('as2cs', 'as' ) as stream:
+		async with cs.get_streams() as streams:
+			stream = streams['as2cs'][0]
 			assert isinstance(stream,WriteStream)
 			user_input = ""
 			# Warning, need to handle shutdown, because the ctrl C shutdown does not release the lock
@@ -116,7 +120,22 @@ async def main3():
 		await userdata.delete()
 		print("finally")
 
+async def main4():
+	import ray
+	ray.init()
+
+	await REDIS.xadd("test_write_stream",{"a":1})
+	stream = WriteStream("test_write_stream",AS2CSData)
+	print(stream)
+	stream_ref =  ray.put(stream)
+
+	print(stream_ref)
+	stream_loaded = ray.get(stream_ref)
+	print(stream_loaded)
+	# print(stream_loaded.re)
+
+#checkpoint
 # asyncio.run(main1())
 # asyncio.run(main2())
-asyncio.run(main3())
-#
+# asyncio.run(main3())
+asyncio.run(main4())

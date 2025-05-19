@@ -17,7 +17,7 @@ from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
 from redis.exceptions import LockError
 
-from chatbone.settings import REDIS, CONFIG
+from chatbone.settings import REDIS, CONFIG, get_redis
 from utilities.func import encrypt, decrypt, utc_now, dump_base_models
 from utilities.logger import logger
 
@@ -222,6 +222,7 @@ class ChatboneData(BaseModel,ABC):
 		"""Expire all Models sync with this object's main rkey lifetime (with 'rkey' key)."""
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			num_seconds = await self.redis.ttl(self.rkey)
+			keys = deepcopy(keys)
 			keys.append(self.rkey)
 			await self.expire_cascade(num_seconds, keys, pipeline)
 
@@ -477,18 +478,17 @@ class CS2ASData(StreamData):
 	type: Literal['supply','refuse'] =Field(description="Whether user supply more information or refuse to give any.")
 	response_id:UUID
 	response: TextUrlsFormat|None=Field(None)
-
+#ckptr
 class Stream[T: (AS2CSData,CS2ASData) ]:
-	def __init__(self,stream_key:str, datatype: type[T], redis:Redis):
+	def __init__(self,stream_key:str, datatype: type[T]):
 		self.datatype:type[T]  = datatype
 		self.key = stream_key
-		self.redis= redis
 
 	@classmethod
-	async def _create(cls, stream_key:str, stream_type:Literal['as2cs','cs2as'], redis:Redis)->Self:
+	async def _create(cls, stream_key:str, stream_type:Literal['as2cs','cs2as'])->Self:
 		datatype: type[T] = AS2CSData if stream_type=="as2cs" else CS2ASData
-		assert (await redis.exists(stream_key))
-		return cls(stream_key, datatype, redis)
+		assert (await get_redis().exists(stream_key))
+		return cls(stream_key, datatype)
 
 class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
 
@@ -506,7 +506,7 @@ class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
 			Trim feature should be used by chat service, not by assistant. Assistant just give only data.
 		"""
 		assert isinstance(data,self.datatype)
-		flag = await self.redis.xadd(self.key,await data.encode(),maxlen=maxlen, nomkstream=True,approximate=approximate, limit=limit)
+		flag = await get_redis().xadd(self.key,await data.encode(),maxlen=maxlen, nomkstream=True,approximate=approximate, limit=limit)
 		if flag is None:
 			raise KeyError("Stream key doesn't exist. You should create stream using 'create' class method.")
 		return flag
@@ -523,8 +523,8 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 				if data.state=="done":
 
 	"""
-	def __init__(self,stream_key:str, datatype: type[T], redis:Redis):
-		super().__init__(stream_key, datatype, redis)
+	def __init__(self,stream_key:str, datatype: type[T]):
+		super().__init__(stream_key, datatype)
 
 		self._checkpoint_id:str = "$"
 		self._count:int = 1
@@ -539,7 +539,7 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 		Returns:
 			New object of ReadStream.
 		"""
-		new_obj= self.__class__(self.key,self.datatype,self.redis)
+		new_obj= self.__class__(self.key,self.datatype)
 		new_obj._checkpoint_id = checkpoint or self._checkpoint_id
 		new_obj._count = count or self._count
 		new_obj._save_checkpoint = save_checkpoint or self._save_checkpoint
@@ -562,7 +562,7 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 		"""
 		checkpoint = checkpoint or self._checkpoint_id
 		count = count or self._count
-		data= await self.redis.xread({self.key:checkpoint},count,block)
+		data= await get_redis().xread({self.key:checkpoint},count,block)
 		if data:
 			decoded_data = []
 			for d in data[0][1]:
@@ -598,68 +598,108 @@ class ChatSessionData(ChatboneData):
 	                           description="Addition data should be store in object storage and provide url.")
 
 	@asynccontextmanager
-	async def get_stream(self,stream_type:Literal['as2cs','cs2as'], role:Literal['cs','as'], redis:Redis|None=None,*,
-	                     write_role_acquire_timeout:int|None=None,
-	                     raise_on_write_role_acquire_fail:bool=True
-	                     )->AbstractAsyncContextManager[AnyStream]:
+	async def get_streams(self,*, write_only:bool=False, read_only:bool=False,
+	                     write_streams_acquire_timeout:int|None=None,
+	                     raise_on_write_streams_acquire_fail:bool=True
+	                     )->AbstractAsyncContextManager[dict[Literal['as2cs','cs2as'],list[WriteStream|ReadStream|None] ]]:
 		"""
 		Args:
-			stream_type:
-			role:
-			redis:
-			write_role_acquire_timeout:
-			raise_on_write_role_acquire_fail
+			write_only:
+			read_only:
+			write_streams_acquire_timeout:
+			raise_on_write_streams_acquire_fail
 		Returns:
-
+			dict of as2cs and cs2as streams with value is (write stream, read stream).
 		Raises:
 			LockError: Timeout because the others are using the 'write' role of the stream.
+		Examples:
+
+			async with cs.get_streams() as streams:
+				assert isinstance(streams['as2cs'][0],WriteStream) and isinstance(streams['as2cs'][1],ReadStream)
 		"""
-		assert (stream_type in ['as2cs', 'cs2as']) and (role in ['cs','as'])
-		key = self.cs2as_stream_rkey if stream_type == 'cs2as' else self.as2cs_stream_rkey
-		redis = redis or self.redis
-
-		# Create and expire a stream key if it does not exist.
-		try:
-			async with self._get_transaction_pipeline(execute=False) as pipeline:
-				await pipeline.watch(key)
-				if await pipeline.exists(key):
-					logger.debug(f"After watch: Stream key '{key}' already created.")
-					pass
-				else:
-					pipeline.multi()
-					await pipeline.xadd(key,{"__init__stream_key":"__init__stream_key"},maxlen=0)
-					await self.expire_sync([key],pipeline)
-					await pipeline.execute()
-					logger.debug(f"Stream key '{key}' initialized.")
-		except WatchError:
-			assert (await redis.exists(key))
-			logger.debug(f"Watch error: Stream key '{key}' already created.")
-
+		assert not ( write_only and read_only)
+		await self.init_stream_keys()
+		get_all = (not write_only and not read_only)
+		keys = [self.cs2as_stream_rkey, self.as2cs_stream_rkey]
 		locked:bool=False
+
+		ret_streams= dict(as2cs=[], cs2as=[])
+		async def _append_streams(stream_cls: WriteStream|ReadStream|None):
+			streams = [None,None] if stream_cls is None \
+				else [await stream_cls._create(self.as2cs_stream_rkey,'as2cs'),await stream_cls._create(self.cs2as_stream_rkey,'cs2as')]
+			ret_streams['as2cs'].append(streams[0])
+			ret_streams['cs2as'].append(streams[1])
+
+		stream_cls = [None,None]
 		async with AsyncExitStack() as stack:
 			try:
-				if stream_type.startswith(role): # Means a 'write' role of the stream.
-					# Only write role is locked. So that consumers is many but producer is one.
-					acquire_timeout = write_role_acquire_timeout or CONFIG.redis_acquire_lock_timeout
-					await stack.enter_async_context(self.redis.lock(
-						f"{key}:{LOCK_POSTFIX}", blocking_timeout=acquire_timeout))
+				if write_only or get_all:
+					acquire_timeout = write_streams_acquire_timeout or CONFIG.redis_acquire_lock_timeout
+					_ = [await stack.enter_async_context(self.redis.lock(f"{key}:{LOCK_POSTFIX}", blocking_timeout=acquire_timeout)) for key in keys]
 					locked=True
-					logger.debug(f"Stream '{stream_type}' with role '{role}' is acquired.\nLock '{key}:{LOCK_POSTFIX}' is acquired.")
-					yield await WriteStream._create(key, stream_type, redis)
-				else:
-					logger.debug(f"Stream '{stream_type}' with role '{role}' is acquired.")
-					yield await ReadStream._create(key, stream_type, redis)
+					logger.debug(f"Write streams pair of chat session '{self.id}' were acquired.")
+					stream_cls[0] = WriteStream
+				await _append_streams(stream_cls[0])
+
+				if read_only or get_all:
+					stream_cls[1] = ReadStream
+				await _append_streams(stream_cls[1])
+
+				yield ret_streams
+
 			except LockError:
-				logger.debug(f"Lock '{key}:{LOCK_POSTFIX}' acquire fail after trying for {acquire_timeout} seconds.")
-				if raise_on_write_role_acquire_fail:
+				logger.debug(
+					f"Chat session '{self.id}' write stream acquired locks fail after trying for {acquire_timeout} seconds.")
+				if raise_on_write_streams_acquire_fail:
 					raise
 			except Exception as e:
 				logger.error(e)
-				raise
+				raise e
 			finally:
-				# await stack.aclose()
 				if locked:
-					logger.debug(f"Stream '{key}' released.")
+					logger.debug(f"Write streams of chat session '{self.id}' were released.")
+
+	async def init_stream_keys(self, raise_if_only_one_key_exists:bool=True, max_retry:int=3):
+		"""Create and expire a stream key if it does not exist.
+		Args:
+			raise_if_only_one_key_exists:
+			max_retry
+		Returns:
+		"""
+		keys = [self.cs2as_stream_rkey, self.as2cs_stream_rkey]
+		trial_time = 0
+
+		while trial_time<max_retry:
+			try:
+				async with self._get_transaction_pipeline() as pipeline:
+					await pipeline.watch(*keys)
+					e0,e1 = [await pipeline.exists(k) for k in keys]
+					pipeline.multi()
+					if e0 and e1:
+						logger.debug(f"Stream keys pair {keys} already created.")
+						return
+					elif not e0 and not e1:
+						await self._init_stream_keys(keys,pipeline)
+						logger.debug(f"Stream keys pair {keys} initialized.")
+						return
+					else:
+						key_not_exist = keys[0] if not e0 else keys[1]
+						error = f"Unexpected behavior in runtime. Expect both stream keys pair exist at the same time, but key '{key_not_exist} not exists.'"
+						if raise_if_only_one_key_exists:
+							raise RuntimeError(error)
+						logger.error(error+f"Not raise exception, try to recover not-existed stream key instead.")
+						await self._init_stream_keys([key_not_exist],pipeline)
+						logger.debug(f"Stream keys pair [{key_not_exist}] initialized.")
+						return
+			except WatchError:
+				trial_time+=1
+				logger.debug(f"Watch error occur during 'init_stream_keys', retry.")
+		raise RuntimeError(f"'init_stream_key' fail after {max_retry} times retry. This error must not be occur, trace the code again carefully.")
+
+	async def _init_stream_keys(self,keys:list[str],pipeline:Pipeline):
+		assert pipeline.is_transaction or pipeline.explicit_transaction
+		[await pipeline.xadd(k, {"__init__stream_key": "__init__stream_key"}, maxlen=0) for k in keys]
+		await self.expire_sync(keys, pipeline)
 
 	@property
 	def cs2as_stream_rkey(self)->str:
