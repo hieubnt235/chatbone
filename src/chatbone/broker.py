@@ -503,7 +503,7 @@ class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
 			Stream id
 		Notes:
 			See more about parameter in 'XADD' and 'XTRIM'.
-			Trim feature should be used by chat service, not by assistant. Assistant just give only data.
+			Trim feature should be used by chat service, not by assistant. Assistant instances just give only data.
 		"""
 		assert isinstance(data,self.datatype)
 		flag = await get_redis().xadd(self.key,await data.encode(),maxlen=maxlen, nomkstream=True,approximate=approximate, limit=limit)
@@ -720,13 +720,15 @@ class RedisKeyError(KeyError):
 	pass
 
 class UserToken(BaseModel):
+	"""Oauth2 bearer token"""
 	id:UUID
 	created_at:datetime
 	expires_at:datetime
 
 MIN_DATATIME= datetime.min.replace(tzinfo=timezone.utc)
 MIN_UUID = UUID(int=0)
-default_user_token = UserToken(id = MIN_UUID, created_at= MIN_DATATIME, expires_at= MIN_DATATIME)
+def default_user_token_factory():
+	return UserToken(id = MIN_UUID, created_at= MIN_DATATIME, expires_at= MIN_DATATIME)
 
 class UserData(ChatboneData):
 	"""UserData support lazy load ChatSessionData.
@@ -737,12 +739,13 @@ class UserData(ChatboneData):
 	embedding = False
 	username: str
 	password: str
+	user_token: UserToken = Field(default_factory=default_user_token_factory,description="Token for access datastore. Be got by authentication process")
+
 	summaries: list[str] = Field(default_factory=list)
 	chat_sessions: dict[UUID,ChatSessionData] = Field(default_factory=dict)
 
 	# for dynamic keys.
 	encrypted_secret_token:str|None=Field(None, description="Value of this json key will be the redis key for secret (also be the token returned to user).")
-	user_token: UserToken = Field(default_user_token,description="Token for access datastore. Be got by authentication process")
 
 	_refresh_include_default: set[str] = PrivateAttr(default_factory=lambda : {"encrypted_secret_token"})
 	"""Attributes in this set will be refresh by default when call 'refresh'. These Attributes must not be passed as init."""
@@ -757,8 +760,6 @@ class UserData(ChatboneData):
 		"""Get an encrypted token and return to the user.
 		Notes:
 			The data must be saved before this method.
-		Raises
-			KeyError: If data is not available or be expired during operations.
 		"""
 		if (r := await self.redis.json().get(self.rkey, f"{self._jsonpath}.encrypted_secret_token")) is None:
 			raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
@@ -792,6 +793,9 @@ class UserData(ChatboneData):
 		"""Redis memory:
 		token: secret_key
 		user_key: {key:secret_key}
+
+		Raises:
+			EncryptedTokenError
 
 		1. Query a secret key using a token.
 		2. Use secret key to extract token.

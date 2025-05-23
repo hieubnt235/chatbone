@@ -1,7 +1,7 @@
-from typing import Self, Callable
+from typing import Callable
 
 from dotenv import find_dotenv
-from pydantic import BaseModel, Field, model_validator, PositiveInt
+from pydantic import Field, PositiveInt
 from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 

@@ -20,3 +20,7 @@ summary_create = 5
 summary_get_latest = 5
 summary_delete_old = 5
 
+#[views.home]
+#route='/'
+#
+#[views.]

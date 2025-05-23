@@ -132,7 +132,15 @@ async def main4():
 	print(stream_ref)
 	stream_loaded = ray.get(stream_ref)
 	print(stream_loaded)
-	# print(stream_loaded.re)
+	assert isinstance(stream_loaded,WriteStream)
+	as2csdata = AS2CSData(
+		request=RequestForm(request_id=uuid7(), message=TextUrlsFormat(text_fmt=f"This is user input :hieu'input'")),
+		state='processing')
+	await stream_loaded.write(as2csdata) # good.
+
+
+
+# print(stream_loaded.re)
 
 #checkpoint
 # asyncio.run(main1())

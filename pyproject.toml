@@ -24,6 +24,7 @@ dependencies = [
     "fastapi-mcp>=0.3.0",
     "fastapi[standard]==0.115.12",
     "fastmcp>=2.2.0",
+    "flet[all]==0.28.3",
     "huggingface>=0.0.1",
     "ipywidgets>=8.1.5",
     "jsonrpcclient>=4.0.3",
@@ -45,17 +46,17 @@ dependencies = [
     "pottery>=3.0.1",
     "psycopg[binary]>=3.2.6",
     "pwdlib[argon2]>=0.2.1",
-    "pydantic==2.10.6", # must be 2.10.6
+    "pydantic==2.11.4", # must be 2.10.6
     "pydantic-settings>=2.8.1",
     "pydevd-pycharm~=243.26053.29",
     "pyjwt>=2.10.1",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.25.3",
     "pytest-env>=1.1.5",
-    "ray[serve]>=2.44.1",
-    "redis-om",
+    "ray[serve]==2.46",
+    "redis>=4.6.0",
     "redis-purse>=2.0.0",
-    "redis[hiredis]==4.6.0",
+    "reflex==0.7.11",
     "sqlalchemy[asyncio]>=2.0.38",
     "torch>=2.6.0",
     "torchvision>=0.21.0",
@@ -89,6 +90,3 @@ env=[
 #    "LOGURU_LEVEL=INFO",
     "LOGURU_LEVEL=DEBUG",
 ]
-
-[tool.uv.sources]
-redis-om = { git = "https://github.com/redis/redis-om-python.git" }

@@ -97,9 +97,6 @@ class ClientRequestSchema[DataType:dict](BaseModel):
 	                                          "DO NOT set it through constructor.")
 	path_params: str = Field("", exclude=True)
 
-	get_cache_handler: Callable[["ClientRequestSchema"], Coroutine[..., ..., ClientResponseSchema | None]] | None
-	set_cache_handler: Callable[[ClientResponseSchema], Coroutine[..., ..., None]] | None
-
 	model_config = ConfigDict(extra='allow', validate_default=True, validate_assignment=True,
 	                          arbitrary_types_allowed=True)
 
@@ -120,9 +117,7 @@ async def get_client_response(client: BaseClient, request: ClientRequestSchema) 
 			yield response
 
 
-response_action = {'text/plain': 'text', 'application/json': 'json', 'x-www-form-urlencoded': 'text'
-
-}
+response_action = {'text/plain': 'text', 'application/json': 'json', 'x-www-form-urlencoded': 'text'}
 
 
 async def json_response_handler(response: ClientResponse,
@@ -166,23 +161,6 @@ Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
 			request = r or request
 			assert isinstance(request, ClientRequestSchema)
 
-			# Handle get cache
-			if request.get_cache_handler is not None:
-				try:
-					client_response = await request.get_cache_handler(request)
-					if client_response is not None:  # None if no cache data
-						assert isinstance(client_response, ClientResponseSchema)
-						client_response.info = 'cache'
-						return client_response
-				except AssertionError as e:
-					# Wrong format of function, raise to force replacing.
-					logger.error(f"Cache handler must return ClientResponseSchema or None: {e}")
-					raise e
-				except Exception as e:
-					# Cache error, the process should not interrupt.
-					logger.error(f"Cache handler is provided but call fail: {e}")
-
-			# Call API only if getting cache fail or not provided
 			request.method = method
 			request.url = self.url + '/' + func.__name__ + request.path_params
 			async with get_client_response(self, request) as response:
@@ -190,13 +168,6 @@ Callable[[Callable[..., Coroutine]], Callable[..., Coroutine]]:
 				assert isinstance(client_response, ClientResponseSchema)
 				client_response.info = 'http'
 
-			# Handle set cache
-			if request.set_cache_handler is not None:
-				try:
-					await request.set_cache_handler(client_response)
-				except Exception as e:
-					# Cache error
-					logger.error(f"Cache handler is provided but call fail: {e}")
 			return client_response
 
 		return wrapper

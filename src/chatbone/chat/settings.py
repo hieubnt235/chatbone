@@ -3,7 +3,7 @@ __all__ = ["DATASTORE", "CONFIG"]
 from typing import Literal
 
 from dotenv import find_dotenv
-from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict
+from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Config, Settings
@@ -38,6 +38,25 @@ class ChatBoneTimeout(BaseModel):
 	websocket_send: PositiveInt = 5
 	cache: PositiveInt = 300
 
+class ViewParams(BaseModel):
+	route:str
+	params:dict[str,str|int|None|float] = Field(default_factory=dict)
+
+	# noinspection PyNestedDecorators
+	@field_validator("route",mode='before')
+	@classmethod
+	def check_route(cls,value:str):
+		assert value.startswith('/')
+		return value
+
+
+
+class Views(BaseModel):
+	main: ViewParams = ViewParams(route='/')
+	login: ViewParams = ViewParams(route='/login')
+	signup: ViewParams = ViewParams(route='/signup')
+	# chat: ViewParams = ViewParams(route='/chat')
+
 
 class ChatConfig(Config):
 	datastore_request_timeout: DatastoreRequestTimeout
@@ -54,6 +73,11 @@ class ChatConfig(Config):
 	update_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
 	update_after_n_chats: PositiveInt = 5
 
+	userdata_expire_seconds:PositiveInt=3600
+	"""For expire cache."""
+
+
+	views: Views = Views()
 
 class ChatSettings(Settings):
 	model_config = SettingsConfigDict(env_prefix='chat_', env_file=find_dotenv('.env.chat'))
@@ -68,3 +92,4 @@ chat_settings = ChatSettings()
 
 CONFIG = chat_settings.config
 DATASTORE = chat_settings.datastore  # REDIS=DATASTORE.redis
+AUTH = chat_settings.auth

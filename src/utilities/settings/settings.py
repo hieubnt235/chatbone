@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 	model_config = SettingsConfigDict(  # env_file=find_dotenv(), # subclass will set
 		# env_prefix="chatbone_", # subclass will set
 		env_file_encoding='utf-8', extra='ignore', validate_assignment=True, validate_default=True,
-		arbitrary_types_allowed=True, nested_model_default_partial_update=True, env_nested_delimiter='__', )
+		arbitrary_types_allowed=True, nested_model_default_partial_update=True, env_nested_delimiter='__', frozen=True )
 
 	service_name: ClassVar[str]
 	"""Name to be realizable between service. This will be used in conjunction with service_id."""

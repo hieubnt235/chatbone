@@ -22,12 +22,6 @@ VerifyUserRequest = ClientRequestSchema[UserVerify]
 GetAndDeleteUserRequest = ClientRequestSchema[Token]
 DeleteTokensRequest = ClientRequestSchema[TokenDelete]
 
-"""
-Caching strategy:
-hash_key: username (for quick search)
-
-"""
-
 
 class ChatSessionData(BaseModel):
 	messages: MessagesReturn
