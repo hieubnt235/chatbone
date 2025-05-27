@@ -33,15 +33,30 @@ services:
         networks:
             - chatbone-network # Connect to the custom network
 
+    minio:
+        image: minio/minio:latest
+        container_name: chatbone_storage
+        ports:
+            - "9000:9000" # MinIO API
+            - "9001:9001" # MinIO Console
+        environment:
+            MINIO_ROOT_USER: "hieu" # Replace with your desired username
+            MINIO_ROOT_PASSWORD: "hieu2352001" # Replace with your desired password
+        volumes:
+            - minio_data:/data # Persistent storage for MinIO
+        networks:
+            - chatbone-network
+        command: server /data --console-address ":9001"
+
 # Define named volumes for data persistence
 volumes:
     redis_stack_data:
         driver: local # Use the local driver (default)
     postgres_data:
         driver: local # Use the local driver (default)
-
+    minio_data:
+        driver: local
 # Define a custom network for the services to communicate
 networks:
     chatbone-network:
         driver: bridge # Use the bridge driver (default)
-

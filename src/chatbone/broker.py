@@ -11,7 +11,7 @@ from json import JSONDecodeError
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
-from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict, ValidationError
+from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict, ValidationError, FileUrl, model_validator
 from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
@@ -207,8 +207,8 @@ class ChatboneData(BaseModel,ABC):
 	async def all_sub_rkeys(self)->list[str]:
 		return await asyncio.to_thread(self.get_all_sub_rkeys)
 
-	async def expire(self, num_seconds: int, redis_or_pipeline: Redis | None = None):
-		"""Expire all keys of this object.
+	async def expire(self, num_seconds: float, redis_or_pipeline: Redis | None = None):
+		"""Expire all keys of this object. Note that this method doesn't watch for existing of keys during expiring.
 		Args:
 			num_seconds:
 			redis_or_pipeline:
@@ -226,9 +226,10 @@ class ChatboneData(BaseModel,ABC):
 			keys.append(self.rkey)
 			await self.expire_cascade(num_seconds, keys, pipeline)
 
-	async def expire_cascade(self, num_seconds: int, keys: list[str], redis_or_pipeline: Redis | None = None):
-		"""Expire all keys with the same num_seconds. Negative value means persist (Note that in raw redis, negative means delete)."""
-		assert isinstance(num_seconds,int)
+	async def expire_cascade(self, num_seconds: float, keys: list[str], redis_or_pipeline: Redis | None = None):
+		"""Expire all keys with the same num_seconds. Negative value means persist (Note that in raw redis, negative means delete).
+		This is not use any attributes of an object (self...), but not a class method to limit the usage outside. """
+		assert isinstance(num_seconds,(float,int))
 		async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
 			if num_seconds>0:
 				for k in keys:
@@ -387,10 +388,7 @@ class ChatboneData(BaseModel,ABC):
 	                                    lock_modify:str|Literal['rkey']|None=None,
 	                                    execute:bool=True) -> AbstractAsyncContextManager[Pipeline]:
 		"""
-		Get the transaction pipeline while providing options to ensure that key is exist during execute pipe..
-
-		TODO: How about check exist first, save ttl then persist, execute and expire later depend on the saved value ?
-
+		Get the transaction pipeline while providing options to ensure that a key exists during executing the pipe.
 		Args:
 			redis_or_pipeline: Can be Redis, Pipeline or None:
 				- If it's None, a new transaction pipeline will be created with Meta.database yield and executed at the last.
@@ -402,6 +400,7 @@ class ChatboneData(BaseModel,ABC):
 			KeyError: Redis key doesn't exist.
 
 		"""
+		#TODO: How about check exist first, save ttl then persist, execute and expire later depend on the saved value ?
 		if isinstance(redis_or_pipeline, Pipeline):
 			assert redis_or_pipeline.is_transaction or redis_or_pipeline.explicit_transaction
 			yield redis_or_pipeline  # No execute
@@ -450,16 +449,36 @@ class StreamData(BaseModel):
 	async def decode(cls,data: dict[str,int|float|str|bytes])->Self:
 		return await asyncio.to_thread(cls._decode,data)
 
+class MediaObject(BaseModel):
+	key:str
+	url: FileUrl
+	type: Literal['video','image','audio']
+
+	@model_validator(mode="after")
+	def check_data(self) -> Self:
+		# TODO: check for media type. Call head to url then check for content-type.
+		return self
+
+
 class TextUrlsFormat(BaseModel):
-	# both fields are required
-	# TODO: make validation methods for the format.
 	text_fmt:str =Field(description="The message string, optional with format place holder to be used to insert object (image, video,...) through urls."
-	                                "Note that place holder must be match with 'fmt_data', or it can lead to unbehavior.")
-	fmt_data: dict[str,AnyUrl] = Field(description="urls to object store data.", default_factory=dict)
+	                                "Note that place holder must be match with 'fmt_data', or it can lead to unbehavior."
+	                                "If 'fmt_data' is provided but text has no format holder, it will concat at the end of this text.",
+	                    default=None)
+	fmt_data: dict[str,FileUrl] = Field(description="urls to object stored media data."
+	                                               "The process for data depend on the implement of assistant, it can be ignored.", default_factory=dict)
+	required_data: list[MediaObject] = Field(description="Data must be given to 'fmt_data'.", default_factory=[])
+
+	@model_validator(mode="after")
+	def check_data(self)->Self:
+		for d in self.required_data:
+			if self.fmt_data.get(d.key) is None:
+				raise ValueError(f"Required data '{d}' is not provided.")
+		return self
 
 class RequestForm(BaseModel):
 	request_id:UUID = Field(description="The id of response from session must be match with the request's one.")
-	message: TextUrlsFormat|None = Field(None)
+	message: TextUrlsFormat
 
 class ResultForm(BaseModel):
 	"""Data stream of one assistant phase(node). All 'data_token' with the same 'phase_id' will be concat, process and show to user."""
@@ -468,6 +487,7 @@ class ResultForm(BaseModel):
 	stream_token: TextUrlsFormat
 
 class AS2CSData(StreamData):
+	"""Data sent from assistant (AS) to chat session (CS)."""
 	request: RequestForm|None=Field(None, description="Query user for more information.")
 	result : ResultForm|None=Field(None, description="The result, processing information,...")
 	state: Literal['processing','done'] = Field(description="'done' means assistant reach its final phase and start stream out the result."
@@ -475,10 +495,12 @@ class AS2CSData(StreamData):
 	                                                        "Also, when parse meet 'done' for the first time, all data after should be considered as done.")
 
 class CS2ASData(StreamData):
+	"""Data sent from chat session (CS) to assistant (AS)."""
 	type: Literal['supply','refuse'] =Field(description="Whether user supply more information or refuse to give any.")
 	response_id:UUID
 	response: TextUrlsFormat|None=Field(None)
-#ckptr
+
+
 class Stream[T: (AS2CSData,CS2ASData) ]:
 	def __init__(self,stream_key:str, datatype: type[T]):
 		self.datatype:type[T]  = datatype
@@ -820,6 +842,28 @@ class UserData(ChatboneData):
 		userdata.encrypted_secret_token = encrypted_token
 
 		return userdata
+
+	async def heartbeat(self, expire_seconds:float,sleep_ratio:float|None=None, sleep_seconds:float|None=None ):
+		"""
+		Args:
+			expire_seconds:
+			sleep_ratio: Amount time of sleeping that is the ratio of expire_seconds.
+			sleep_seconds: Exactly expire seconds, this will be overwritten by sleep_ratio
+		"""
+		assert not (sleep_ratio is None and sleep_seconds is None)
+		ss = sleep_ratio*expire_seconds if sleep_ratio else sleep_seconds
+		try:
+			while True:
+				async with self._get_transaction_pipeline() as pipeline:
+					await pipeline.watch(self.rkey)
+					if not (await self.redis.exists(self.rkey)):
+						raise UserNotFoundError
+					pipeline.multi()
+					await self.expire(expire_seconds,pipeline)
+				await asyncio.sleep(ss)
+		except WatchError:
+			raise UserNotFoundError
+
 
 	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
 		""" This method is used for check if user is valid to make further request to business service. If user is not valid now

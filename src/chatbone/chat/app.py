@@ -1,34 +1,17 @@
 import asyncio
-import os
 from copy import deepcopy
 from pathlib import Path
-from typing import Literal, Any, Self
-from uuid import UUID
-
-from fastapi import HTTPException
-from pydantic import Field, ConfigDict
-from uuid_extensions import uuid7
-
-from chatbone.broker import UserData, UserToken, EncryptedTokenError
-from chatbone.chat.settings import CONFIG, AUTH
-from utilities.settings.clients.auth import *
-
-os.environ['RAY_DEDUP_LOGS'] = '0'
+from typing import Literal, Any
 
 import flet as ft
+from fastapi import HTTPException
+from pydantic import Field, ConfigDict
 from ray import serve
+
+from chatbone.broker import UserData, UserToken, EncryptedTokenError, UserNotFoundError
+from chatbone.chat.settings import CONFIG, AUTH
 from utilities.logger import logger
-
-"""
-1. User login
-2. User create, open, delete chat session,..
-3. In one chat session, choose assistant type. then user compose input and send.
-4. User can press stop, or maybe give more information to assistant if assistant query.
-"""
-
-# from .settings import chat_settings
-#
-# config = chat_settings.config
+from utilities.settings.clients.auth import *
 
 views_params_dict = CONFIG.views.model_dump(mode='json')
 
@@ -62,7 +45,7 @@ class ChatboneView(ft.View, BaseModel):
 
 		self.chat_app = chat_app
 		self.page = chat_app.page
-		self.appbar = ft.AppBar(title=ft.Text(self.__class__.__name__))
+		self.appbar = ft.AppBar(title=ft.Text(self.view_name.title()))
 
 	def __hash__(self):
 		return ft.View.__hash__(self)
@@ -106,37 +89,28 @@ class LoginView(ChatboneView):
 
 	async def login_click(self, e):
 		"""
-		Args:
-			e:
-
-		Returns:
-
+			1. Call auth service to log in, receive bearer access token as well as user info.
+			2. Encrypt info a store in browser local storage.
+			3. Call ChatApp.login, which will load encrypted token of user browser, load data, if everything works,
+			it will go to chat controls, or main login controls, with will have option to move to this method again.
 		"""
 		username = self.username_field.value
 		password = self.password_field.value
-		req = ClientRequestSchema[UserAuthenticate](data=UserAuthenticate(username=username, password=password))
 		try:
-			token_jwt: TokenJWT = (await AUTH.authenticate(req)).content
-			userinfo:UserInfoReturn = (await AUTH.get_user(ClientRequestSchema(headers={"Authorization": f"Bearer {token_jwt.access_token}"}))
-			                           ).content
-			userdata = UserData(id = userinfo.id,
-			                    username=userinfo.username,
-			                    password=password,
-			                    user_token=UserToken.model_validate(userinfo.tokens[-1],from_attributes=True)
-			                    )
-			await userdata.save(expire_seconds=CONFIG.userdata_expire_seconds)
-			encrypted_token = await userdata.get_encrypted_token()
-
-			await self.page.client_storage.set_async("encrypted_token", encrypted_token)
+			await self.chat_app.authenticate(username,password)
 			self.login_status.value = "Login successfully."
 			self.page.update()
+
 			await self.chat_app.login()
-			self.go(views_params_dict['main']['route'])
+			self.go(views_params_dict['main']['route']) # this will go to chat view if login successfully.
 
 		except HTTPException as e:
 			self.login_status.value = f"Login fail.{e.detail}"
 			self.page.update()
-
+		except Exception as e:
+			logger.error(e)
+			self.login_status.value = f"Login fail. There is an error on server."
+			self.page.update()
 
 class SignupView(ChatboneView):
 	view_name: Literal['signup'] = 'signup'
@@ -163,13 +137,35 @@ class SignupView(ChatboneView):
 		else:
 			username = self.username_field.value
 			password = self.password_field.value
-			req = ClientRequestSchema[UserRegister](body = UserRegister(username=username,password=password))
 			try:
-				token:TokenJWT = (await AUTH.register(req)).content
+				await self.chat_app.register(username,password)
 				self.signup_status.value = "Signup successfully. Go to login page to login."
 			except HTTPException as e:
+				logger.info(e)
 				self.signup_status.value = e.detail
+			except Exception as e:
+				logger.error(e)
+				self.signup_status.value = f"Signup fail. There is an error on server."
 			self.page.update()
+
+class UserInputFormat(BaseModel):
+	description:str|None=None
+	url:
+
+class Image(UserInputFormat):
+
+
+class AssistantInput(BaseModel):
+	pass
+
+class ChatUI(ft.Container):
+	def __init__(self,*args,**kwargs):
+		super().__init__(*args,**kwargs)
+		self.chat_box = ft.ListView(spacing=10,expand=True)
+		self.messages :list[ft.Text] = []
+		self.input_field = ft.Row([
+			ft.TextField()
+		])
 
 class MainView(ChatboneView):
 	view_name: Literal['main'] = 'main'
@@ -185,10 +181,13 @@ class MainView(ChatboneView):
 			],
 				alignment="center")
 		]
+
+		#TODO
+
 		self.chat_controls:list[ft.Control] = [
-			ft.Column([ft.Text("THis is chat controls.")]),
-			ft.Button(text="Logout", on_click=self.logout_click)
-		]
+			ft.ListView(expand=True,spacing=10),
+			ft.Button(text="Logout", on_click=self.logout_click)]
+		"""chat_controls will be shown only when chat_app.userdata exists. """
 
 		if self.chat_app.userdata is not None:
 			self.controls=self.chat_controls
@@ -197,8 +196,7 @@ class MainView(ChatboneView):
 			self.controls=self.auth_controls
 
 	async def logout_click(self,e):
-		await self.page.client_storage.remove_async("encrypted_token")
-		self.chat_app.userdata=None
+		await self.chat_app.logout()
 		await self.chat_app.route_change(views_params_dict['main']['route'])
 
 	async def login_click(self,e):
@@ -220,38 +218,77 @@ class ViewCreator(BaseModel):
 
 
 class ChatApp:
-	def __init__(self, page:ft.Page|None=None, chatapp:Self|None=None):
+	def __init__(self, page:ft.Page):
 		self.page = page
-
-		if self.page is not None:
-			assert chatapp is not None
-			self.route2viewname: dict[str, str] = {}
-			self.global_app = chatapp
-			self._set_up_page()
-			self.id = uuid7()
-
-			self.userdata: UserData | None = None
-			self.global_app.connections.append(self.id) # TODO this monitor method is wrong, trace the mechanism of handling connections of flet then design later.
-			logger.info(f"New connection with id '{self.id}', total current connections is {len(self.global_app.connections)}.")
-		else:
-			# Global mode
-			self.connections: list[UUID] = []
+		self.route2viewname: dict[str, str] = {}
+		self._set_up_page()
+		self.id = self.page.session_id
+		self.heartbeat_task: asyncio.Task|None=None
+		self.userdata: UserData | None = None
+		logger.info(f"New client with ip '{self.page.client_ip}' connected on device'{self.page.client_user_agent}'. ")
 
 
-	# def __del__(self):
-	# 	self.global_app.connections.pop(self.id)
-	# 	logger.info(f"Connection deleted. Total current connections is {len(self.global_app.connections)}")
+	async def authenticate(self,username, password):
+		req = ClientRequestSchema[UserAuthenticate](data=UserAuthenticate(username=username, password=password))
+		token_jwt: TokenJWT = (await AUTH.authenticate(req)).content
+		userinfo:UserInfoReturn = (await AUTH.get_user(ClientRequestSchema(headers={"Authorization": f"Bearer {token_jwt.access_token}"}))
+								   ).content
+		userdata = UserData(id = userinfo.id, username=userinfo.username, password=password,
+							user_token=UserToken.model_validate(userinfo.tokens[-1],from_attributes=True))
+		await userdata.save(expire_seconds=CONFIG.userdata_expire_seconds)
+		encrypted_token = await userdata.get_encrypted_token()
+		await self.page.client_storage.set_async("encrypted_token", encrypted_token)
+
+	async def register(self,username,password):
+		req = ClientRequestSchema[UserRegister](body=UserRegister(username=username, password=password))
+		token: TokenJWT = (await AUTH.register(req)).content
+
+	async def login(self):
+		self.userdata=None
+		encrypted_token = await self.page.client_storage.get_async("encrypted_token")
+		logger.info(f"encrypted_token in session {encrypted_token}.")
+		if encrypted_token:
+			try:
+				self.userdata = await UserData.verify_encrypted_token(encrypted_token)
+				self.fire_heartbeat_task()
+				assert isinstance(self.heartbeat_task,asyncio.Task)
+			except EncryptedTokenError:
+				logger.info("encrypted token in local storage is no longer valid and get deleted.")
+				await self.page.client_storage.remove_async("encrypted_token")
+
+	async def logout(self):
+		await self.page.client_storage.remove_async("encrypted_token")
+		await self.stop_heartbeat()
+		self.userdata=None # this must be after stop heart beat
+
+	async def stop_heartbeat(self):
+		if self.heartbeat_task is not None:
+			self.heartbeat_task.cancel()
+			await self.heartbeat_task
+			self.heartbeat_task=None
+
+	def fire_heartbeat_task(self):
+		"""Fire the heartbeat_task and save a task in self.hearbeat_task."""
+		async def _heartbeat():
+			if self.userdata is None:
+				raise UserNotFoundError("Userdata not found, login first.")
+			try:
+				logger.info(f"Heartbeat of userdata {self.userdata.username} started.")
+				await self.userdata.heartbeat(CONFIG.userdata_expire_seconds, 0.05)
+			except asyncio.CancelledError:
+				logger.info(f"Heartbeat of userdata {self.userdata.username} stopped.")
+		self.heartbeat_task= asyncio.create_task(_heartbeat())
+
+	@classmethod
+	async def main(cls, page: ft.Page):
+		app = cls(page)
+		await app.login()
+		app.go(views_params_dict['main']['route'])
 
 	async def route_change(self, e: ft.RouteChangeEvent|str):
-		"""
-		Notes: This method can be used to reset
-		Args:
-			e:
-
-		Returns:
-
-		"""
-		routes = e.split('/') if isinstance(e,str) else e.route.split('/')
+		"""Notes: This method can be used to reset"""
+		route_str = e if isinstance(e,str) else e.route
+		routes = route_str.split('/')
 		if routes[0]!="": # Ex: "ass" or "ass/hole". The correct one is "/ass/hole"
 			raise ValueError(f"Route must start with '/'. Got '{routes}'.")
 		if routes[1]=="": # "/"
@@ -264,12 +301,29 @@ class ChatApp:
 				self.route2viewname[r] = await asyncio.to_thread(route2viewname, r)
 			self.page.views.append(await ViewCreator.create(self.route2viewname[r], self))
 		self.page.update()
-		logger.debug(f"After route change: {[(v.__class__.__name__,v.uid) for v in self.page.views]}")
+		logger.info(f"Page id '{self.id}' go to '{route_str}'. Views stack: {[(v.__class__.__name__,v.uid) for v in self.page.views]}")
 
 	async def view_pop(self,e: ft.ViewPopEvent):
 		self.page.views.pop()
 		self.go(self.page.views[-1].route)
 		logger.debug(f"After View pop called: {[v.__class__.__name__ for v in self.page.views]}")
+
+	# async def error(self,e:ControlEvent):
+	# 	logger.error(f"There is an exception is not handled. Event info: '{e.__dict__}'.")
+	# async def close(self,e):
+	# 	logger.info("on close event")
+
+	async def connect(self,e):
+		self.fire_heartbeat_task()
+		logger.info(f"Client ip '{self.page.client_ip}' reconnected on device '{self.page.client_user_agent}'. ")
+
+	async def disconnect(self,e):
+		await self.stop_heartbeat()
+		logger.info(f"Client ip '{self.page.client_ip}' disconnected on device '{self.page.client_user_agent}'.")
+
+	def go(self,route:str):
+		logger.debug(f"{self.id}: go to '{route}'")
+		self.page.go(route)
 
 	def _set_up_page(self):
 		self.page.views.clear()
@@ -277,35 +331,16 @@ class ChatApp:
 		self.page.vertical_alignment = "center"
 		self.page.on_route_change = self.route_change
 		self.page.on_view_pop = self.view_pop
+		self.page.on_connect = self.connect
+		self.page.on_disconnect = self.disconnect
 
-	def go(self,route:str):
-		logger.debug(f"{self.id}: go to '{route}'")
-		self.page.go(route)
+		# self.page.on_error = self.error
+		# self.page.on_close = self.close
 
-	# TODO support save multiple account login information.
-	async def login(self):
-		self.userdata=None
-		encrypted_token = await self.page.client_storage.get_async("encrypted_token")
-		logger.debug(f"encrypted_token in session {encrypted_token}.")
-		if encrypted_token:
-			try:
-				self.userdata = await UserData.verify_encrypted_token(encrypted_token)
-			except EncryptedTokenError:
-				await self.page.client_storage.remove_async("encrypted_token")
 
-	async def main(self, page: ft.Page):
-		app = self.__class__(page,self)
-		await app.login()
-		app.go(views_params_dict['main']['route'])
-		# app.page.go(views_params_dict['main']['route'])
 
-	def get_fastapi_app(self):
-		if self.page is not None:
-			raise ValueError("Only global app can get fastapi app.")
-		return ft.app(self.main, export_asgi_app=True,route_url_strategy='hash')
-
-global_app = ChatApp()
-chat_fa_app = global_app.get_fastapi_app()
+chat_fa_app = ft.app(ChatApp.main, export_asgi_app=True)
+# chat_fa_app = ft.app(ChatApp.main, view=ft.AppView.WEB_BROWSER)
 
 @serve.deployment(num_replicas=3)
 @serve.ingress(chat_fa_app)
@@ -318,9 +353,11 @@ class ChatboneApp:
 
 
 if __name__ == "__main__":
-	import uvicorn
 	# redis, auth and datastore deploy first.
+	import uvicorn
 	uvicorn.run("app:chat_fa_app", port=8888,reload=True)  # serve.run(ChatApp.bind(),blocking=True)
+	# serve.run(ChatboneApp.bind())
+
 	# def print_routes(app):
 	# 	if isinstance(app,FastAPI):
 	# 		for r in app.router.routes:

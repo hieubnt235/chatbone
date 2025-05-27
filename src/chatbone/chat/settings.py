@@ -9,6 +9,7 @@ from pydantic_settings import SettingsConfigDict
 from utilities.settings import Config, Settings
 from utilities.settings.clients.auth import AuthClient
 from utilities.settings.clients.datastore import DatastoreClient
+import os
 
 
 # noinspection PyNestedDecorators
@@ -73,7 +74,7 @@ class ChatConfig(Config):
 	update_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
 	update_after_n_chats: PositiveInt = 5
 
-	userdata_expire_seconds:PositiveInt=3600
+	userdata_expire_seconds:PositiveInt=59
 	"""For expire cache."""
 
 
