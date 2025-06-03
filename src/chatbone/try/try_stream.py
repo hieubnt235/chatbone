@@ -110,7 +110,7 @@ async def main3():
 			# Warning, need to handle shutdown, because the ctrl C shutdown does not release the lock
 			while user_input!="exit()":
 				user_input= await read_user_input()
-				as2csdata = AS2CSData(request=RequestForm(request_id=uuid7(),message=TextUrlsFormat(text_fmt=f"This is user input :'{user_input}'")),state='processing')
+				as2csdata = AS2CSData(request=RequestForm(request_id=uuid7(),message=TextUrlsFormat(text=f"This is user input :'{user_input}'")),state='processing')
 				await stream.write(as2csdata)
 	task2 = asyncio.create_task(read_stream())
 	task3 = asyncio.create_task(write_stream())
@@ -134,7 +134,7 @@ async def main4():
 	print(stream_loaded)
 	assert isinstance(stream_loaded,WriteStream)
 	as2csdata = AS2CSData(
-		request=RequestForm(request_id=uuid7(), message=TextUrlsFormat(text_fmt=f"This is user input :hieu'input'")),
+		request=RequestForm(request_id=uuid7(), message=TextUrlsFormat(text=f"This is user input :hieu'input'")),
 		state='processing')
 	await stream_loaded.write(as2csdata) # good.
 

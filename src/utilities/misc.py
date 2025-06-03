@@ -38,7 +38,7 @@ class ModelMixin:
 		return c
 
 
-class LockContextManager:
+class UniversalLock:
 	def __init__(self):
 		self._tlock = threading.Lock()
 

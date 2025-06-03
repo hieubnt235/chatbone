@@ -1,8 +1,8 @@
 import functools
 
 from utilities.schemas.auth import *
-from utilities.settings.clients._base import BaseClient, ClientRequestSchema, ClientResponseSchema, get_http_response
-from utilities.settings.clients.datastore import UserInfoReturn
+from utilities.settings._base_http import BaseClient, ClientRequestSchema, ClientResponseSchema, get_http_response
+from utilities.settings.datastore import UserInfoReturn
 
 get_auth_response = functools.partial(get_http_response)
 RegisterUserRequest = ClientRequestSchema[UserRegister]

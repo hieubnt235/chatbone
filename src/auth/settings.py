@@ -3,7 +3,7 @@ from pydantic import BaseModel, PositiveInt
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Settings, Config
-from utilities.settings.clients.datastore import DatastoreClient
+from utilities.settings.datastore import DatastoreClient
 
 
 class DatastoreRequestTimeout(BaseModel):

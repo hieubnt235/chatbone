@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from ray import serve
 
 from auth.auth_svc import auth_svc, UserRegister, TokenJWT
-from utilities.settings.clients.datastore import UserInfoReturn
+from utilities.settings.datastore import UserInfoReturn
 
 app = FastAPI(
 	description="Authenticate service should be called by other services to filter data, not by user directly.")

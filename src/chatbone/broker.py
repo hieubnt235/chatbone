@@ -1,4 +1,4 @@
-__all__=["UserData","ChatSessionData","AS2CSData","CS2ASData"]
+__all__=["UserData","ChatSessionData"]
 import asyncio
 import json
 import time
@@ -11,11 +11,13 @@ from json import JSONDecodeError
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
+import cloudpickle
 from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict, ValidationError, FileUrl, model_validator
 from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
 from redis.exceptions import LockError
+from redis.typing import FieldT, EncodableT
 
 from chatbone.settings import REDIS, CONFIG, get_redis
 from utilities.func import encrypt, decrypt, utc_now, dump_base_models
@@ -244,7 +246,7 @@ class ChatboneData(BaseModel,ABC):
 			expire_seconds: None means do nothing. Negative means persist.
 			refresh: Whether to refresh or not.
 		Returns:
-			True if a new value is created, None if no new value is created.
+			True if a refreshed object.
 		"""
 		# TODO: support skip and update in save ?, careful handle cascade keys.
 		if self.embedding:
@@ -422,33 +424,6 @@ class ChatboneData(BaseModel,ABC):
 # 	id: int | UUID | str
 
 
-class StreamData(BaseModel):
-	def _encode(self):
-		encoder_data:dict[str,int|float|str|bytes] = {}
-		for field,value in self.model_dump(mode='json',exclude_none=True,exclude_defaults=True).items():
-			if not isinstance(value, (bytes, str, int, float)):
-				encoder_data[field] = json.dumps(value)
-			else:
-				encoder_data[field] = value
-		return encoder_data
-
-	@classmethod
-	def _decode(cls,data: dict[str,int|float|str|bytes])->Self:
-		decode_data = {}
-		for k,value in data.items():
-			try:
-				decode_data[k] = json.loads(value)
-			except JSONDecodeError:
-				decode_data[k] = value
-		return cls.model_validate(decode_data)
-
-	async def encode(self)->dict[str,int|float|str|bytes]:
-		return await asyncio.to_thread(self._encode)
-
-	@classmethod
-	async def decode(cls,data: dict[str,int|float|str|bytes])->Self:
-		return await asyncio.to_thread(cls._decode,data)
-
 class MediaObject(BaseModel):
 	key:str
 	url: FileUrl
@@ -461,18 +436,18 @@ class MediaObject(BaseModel):
 
 
 class TextUrlsFormat(BaseModel):
-	text_fmt:str =Field(description="The message string, optional with format place holder to be used to insert object (image, video,...) through urls."
+	text:str =Field(description="The message string, optional with format place holder to be used to insert object (image, video,...) through urls."
 	                                "Note that place holder must be match with 'fmt_data', or it can lead to unbehavior."
 	                                "If 'fmt_data' is provided but text has no format holder, it will concat at the end of this text.",
 	                    default=None)
-	fmt_data: dict[str,FileUrl] = Field(description="urls to object stored media data."
+	data: dict[str,FileUrl] = Field(description="urls to object stored media data."
 	                                               "The process for data depend on the implement of assistant, it can be ignored.", default_factory=dict)
 	required_data: list[MediaObject] = Field(description="Data must be given to 'fmt_data'.", default_factory=[])
 
 	@model_validator(mode="after")
 	def check_data(self)->Self:
 		for d in self.required_data:
-			if self.fmt_data.get(d.key) is None:
+			if self.data.get(d.key) is None:
 				raise ValueError(f"Required data '{d}' is not provided.")
 		return self
 
@@ -486,35 +461,49 @@ class ResultForm(BaseModel):
 	phase_info:str|None= Field(None, description="Information about the current phase. Ex: searching, calculating, thinking, ...")
 	stream_token: TextUrlsFormat
 
-class AS2CSData(StreamData):
-	"""Data sent from assistant (AS) to chat session (CS)."""
-	request: RequestForm|None=Field(None, description="Query user for more information.")
-	result : ResultForm|None=Field(None, description="The result, processing information,...")
-	state: Literal['processing','done'] = Field(description="'done' means assistant reach its final phase and start stream out the result."
-	                                                        "And 'done' should be along with result_form, this is the result we show directly to user. "
-	                                                        "Also, when parse meet 'done' for the first time, all data after should be considered as done.")
+class StreamData(BaseModel):
+	model_config = ConfigDict(arbitrary_types_allowed=True)
 
-class CS2ASData(StreamData):
-	"""Data sent from chat session (CS) to assistant (AS)."""
-	type: Literal['supply','refuse'] =Field(description="Whether user supply more information or refuse to give any.")
-	response_id:UUID
-	response: TextUrlsFormat|None=Field(None)
+	def _encode(self)->dict[FieldT,EncodableT]:
+		return {f"{self.__class__}":cloudpickle.dumps(self)}
+		# encoder_data:dict[str,int|float|str|bytes] = {}
+		# for field,value in self.model_dump(mode='json',exclude_none=True,exclude_defaults=True).items():
+		# 	if not isinstance(value, (bytes, str, int, float)):
+		# 		encoder_data[field] = json.dumps(value)
+		# 	else:
+		# 		encoder_data[field] = value
+		# return encoder_data
 
+	@classmethod
+	def _decode(cls,data: dict[FieldT,EncodableT])->Self:
+		return cloudpickle.loads(data[f"{cls}"])
+		# return cls.model_validate()
+		# for k,value in data.items():
+		# 	try:
+		# 		decode_data[k] = json.loads(value)
+		# 	except JSONDecodeError:
+		# 		decode_data[k] = value
+		# return cls.model_validate(decode_data)
 
-class Stream[T: (AS2CSData,CS2ASData) ]:
-	def __init__(self,stream_key:str, datatype: type[T]):
-		self.datatype:type[T]  = datatype
+	async def encode(self)->dict[str,int|float|str|bytes]:
+		return await asyncio.to_thread(self._encode)
+
+	@classmethod
+	async def decode(cls,data: dict[str,int|float|str|bytes])->Self:
+		return await asyncio.to_thread(cls._decode,data)
+
+class Stream:
+	def __init__(self,stream_key:str):
 		self.key = stream_key
 
 	@classmethod
-	async def _create(cls, stream_key:str, stream_type:Literal['as2cs','cs2as'])->Self:
-		datatype: type[T] = AS2CSData if stream_type=="as2cs" else CS2ASData
+	async def _create(cls, stream_key:str )->Self:
 		assert (await get_redis().exists(stream_key))
-		return cls(stream_key, datatype)
+		return cls(stream_key)
 
-class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
+class WriteStream(Stream):
 
-	async def write(self, data: T, maxlen:int|None=None, approximate:bool=True, limit:int|None=None)->str:
+	async def write(self, data: StreamData, maxlen:int|None=None, approximate:bool=True, limit:int|None=None)->str:
 		""" Write to the stream and optionally trim stream after adding.
 		Args:
 			data:
@@ -527,15 +516,15 @@ class WriteStream[T: (AS2CSData,CS2ASData) ](Stream):
 			See more about parameter in 'XADD' and 'XTRIM'.
 			Trim feature should be used by chat service, not by assistant. Assistant instances just give only data.
 		"""
-		assert isinstance(data,self.datatype)
+		assert isinstance(data,StreamData)
 		flag = await get_redis().xadd(self.key,await data.encode(),maxlen=maxlen, nomkstream=True,approximate=approximate, limit=limit)
 		if flag is None:
 			raise KeyError("Stream key doesn't exist. You should create stream using 'create' class method.")
 		return flag
 
-class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
-	"""Stateless object stream, it stores state to know what to retrieve next.
-	Default for async for is block and wait for the newest data coming.
+class ReadStream(Stream):
+	"""Stateful object stream, it stores state to know what to retrieve next.
+	Default setting make async for is blocked and wait for the newest data coming.
 		Examples:
 			async for data in read_stream.bind(new_checkpoint, ):
 				if data.state =="done":
@@ -545,8 +534,8 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 				if data.state=="done":
 
 	"""
-	def __init__(self,stream_key:str, datatype: type[T]):
-		super().__init__(stream_key, datatype)
+	def __init__(self,stream_key:str):
+		super().__init__(stream_key)
 
 		self._checkpoint_id:str = "$"
 		self._count:int = 1
@@ -561,13 +550,13 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 		Returns:
 			New object of ReadStream.
 		"""
-		new_obj= self.__class__(self.key,self.datatype)
+		new_obj= self.__class__(self.key)
 		new_obj._checkpoint_id = checkpoint or self._checkpoint_id
 		new_obj._count = count or self._count
 		new_obj._save_checkpoint = save_checkpoint or self._save_checkpoint
 		return new_obj
 
-	async def read(self,checkpoint:str|None=None,count:int|None=None,*,block:int|None=None )-> list[T]:
+	async def read(self,checkpoint:str|None=None,count:int|None=None,*,block:int|None=None )-> list[StreamData]:
 		"""
 		Args:
 			checkpoint:
@@ -588,7 +577,7 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 		if data:
 			decoded_data = []
 			for d in data[0][1]:
-				decoded_data.append(await self.datatype.decode(d[1]))
+				decoded_data.append(await StreamData.decode(d[1]))
 			if self._save_checkpoint:
 				self._checkpoint_id = data[0][1][-1][0]
 			return decoded_data
@@ -597,10 +586,9 @@ class ReadStream[T: (AS2CSData,CS2ASData) ](Stream):
 	def __aiter__(self)->Self:
 		return self
 
-	async def __anext__(self)->list[T]:
+	async def __anext__(self)->list[StreamData]:
 		return await self.read(block=0) # block forever.
 
-AnyStream = ReadStream[AS2CSData]|ReadStream[CS2ASData] |WriteStream[AS2CSData] |WriteStream[CS2ASData]
 
 class Message(BaseModel):
 	role: Literal['user', 'system', 'assistant']
@@ -616,8 +604,6 @@ class ChatSessionData(ChatboneData):
 
 	messages: list[Message] = Field(default_factory=list)
 	summaries: list[str] = Field(default_factory=list)
-	urls: list[AnyUrl] = Field(default_factory=list,
-	                           description="Addition data should be store in object storage and provide url.")
 
 	@asynccontextmanager
 	async def get_streams(self,*, write_only:bool=False, read_only:bool=False,
@@ -795,7 +781,7 @@ class UserData(ChatboneData):
 					d = await self.redis.delete(self.encrypted_secret_rkey)
 					assert d==1
 
-		key = str(self.id)+'@'+self.username+'@'+self.password
+		key = str(self.id)+'@'+self.username+'@'+self.password # all components of key are required
 		secret_key, token = await asyncio.to_thread(encrypt,key )
 		self.encrypted_secret_token=token # this must be set first for self.encrypted_secret_rkey
 
@@ -865,41 +851,41 @@ class UserData(ChatboneData):
 			raise UserNotFoundError
 
 
-	async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
-		""" This method is used for check if user is valid to make further request to business service. If user is not valid now
-		because of a token, use 'update_token' to make it valid.
-		User is considered valid when:
-			1. User exists in server.
-			2. User has the non-expired token.
-		If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
-		Returns:
-			valid UserToken object.
-		Raises:
-			UserNotFoundError, NoValidTokenError
-		"""
-		assert timeout>sleep
-		start = time.time()
-
-		def time_remain():
-			return timeout - (time.time()-start)
-
-		while time_remain()>0:
-			if (token:= await self.redis.json().get(self.rkey,f"{self._jsonpath}.user_token")) is None:
-				raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
-			try:
-				ut =  UserToken.model_validate(token)
-				if ut.expires_at<utc_now():
-					raise ValueError
-				return ut
-			except (ValidationError,ValueError):
-				logger.debug(f"User '{self.id}' does not have valid token, got token: {token}.\n"
-				             f"Waiting time remain: {time_remain()} seconds.")
-				await asyncio.sleep(sleep)
-
-		raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
+	# async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
+	# 	""" This method is used for check if user is valid to make further request to business service. If user is not valid now
+	# 	because of a token, use 'update_token' to make it valid.
+	# 	User is considered valid when:
+	# 		1. User exists in server.
+	# 		2. User has the non-expired token.
+	# 	If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
+	# 	Returns:
+	# 		valid UserToken object.
+	# 	Raises:
+	# 		UserNotFoundError, NoValidTokenError
+	# 	"""
+	# 	assert timeout>sleep
+	# 	start = time.time()
+	#
+	# 	def time_remain():
+	# 		return timeout - (time.time()-start)
+	#
+	# 	while time_remain()>0:
+	# 		if (token:= await self.redis.json().get(self.rkey,f"{self._jsonpath}.user_token")) is None:
+	# 			raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
+	# 		try:
+	# 			ut =  UserToken.model_validate(token)
+	# 			if ut.expires_at<utc_now():
+	# 				raise ValueError
+	# 			return ut
+	# 		except (ValidationError,ValueError):
+	# 			logger.debug(f"User '{self.id}' does not have valid token, got token: {token}.\n"
+	# 			             f"Waiting time remain: {time_remain()} seconds.")
+	# 			await asyncio.sleep(sleep)
+	#
+	# 	raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
 
 	async def get_chat_sessions(self,session_ids: list[UUID])->dict[UUID,ChatSessionData]:
-		"""For lazy get chat_sessions.
+		"""For lazy get chat_sessions. This method always gets from redis.
 		Args:
 			session_ids:
 		Returns:
@@ -909,15 +895,15 @@ class UserData(ChatboneData):
 			cs_dict = {f"{self._jsonpath}.chat_sessions.{session_ids[0]}":cs_dict}
 		return await asyncio.to_thread(self._process_cs, cs_dict)
 
-	def _process_cs(self, cs_dict: dict) -> list[ChatSessionData]:
+	def _process_cs(self, cs_dict: dict) -> dict[UUID,ChatSessionData]:
 		cs_dict = {UUID(k.rsplit(".", 1)[-1]): ChatSessionData.model_validate(v) for k, v in cs_dict.items()}
-		self._bound_cs(cs_dict)
+
+		#bound
+		for cs in cs_dict.values():
+			cs.bind_rkey_and_json_path(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
 		self.chat_sessions.update(cs_dict)
 		return cs_dict
 
-	def _bound_cs(self, cs_dict: dict[UUID, ChatSessionData]):
-		for cs in cs_dict.values():
-			cs.bind_rkey_and_json_path(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
 
 	# Redundant, use update directly. Also, all modify methods should be use base class directly, subclasses implement verify and lazy get methods.
 	# Directly get should be refresh first and get.

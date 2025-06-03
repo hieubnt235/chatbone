@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Literal
 
 from dotenv import find_dotenv
 from pydantic import Field, PositiveInt
@@ -6,7 +6,8 @@ from pydantic_settings import SettingsConfigDict
 from redis.asyncio import Redis
 
 from utilities.settings import Settings, Config
-from utilities.settings.clients.redis_wrapper import RedisWrapperClient
+from utilities.settings.objest_storage import ObjectStorageSettings
+from utilities.settings.redis_wrapper import RedisWrapperClient
 
 
 # class RedisConfig(Config):
@@ -33,10 +34,11 @@ class ChatboneSettings(Settings):
 
 	# redis: RedisSettings
 	redis: RedisWrapperClient
-
+	object_storage: ObjectStorageSettings
 	config: ChatboneConfig
 
 	user_secret_key:str = Field("abcxyz", description= "Used for encrypt.")
+
 
 	# This is for redis_client is redis.asyncio.Redis type directly. But now use wrapper.
 	# @model_validator(mode="after")
@@ -52,3 +54,13 @@ get_redis: Callable[...,Redis] = chatbone_settings.redis.new
 REDIS: Redis = get_redis()
 CONFIG = chatbone_settings.config
 SECRET_KEY= chatbone_settings.user_secret_key
+OBJ_STORAGE = chatbone_settings.object_storage
+
+if __name__ =="__main__":
+	import asyncio
+	async def main():
+		await OBJ_STORAGE.verify_bucket()
+		print(await OBJ_STORAGE.get_upload_url("test-object"))
+		# print(await OBJ_STORAGE.get_download_url("test-object"))
+
+	asyncio.run(main())

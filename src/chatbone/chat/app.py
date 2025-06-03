@@ -2,17 +2,16 @@ import asyncio
 from copy import deepcopy
 from pathlib import Path
 from typing import Literal, Any
+from uuid import UUID
 
 import flet as ft
-from fastapi import HTTPException
 from pydantic import Field, ConfigDict
-from ray import serve
 
-from chatbone.broker import UserData, UserToken, EncryptedTokenError, UserNotFoundError
-from chatbone.chat.settings import CONFIG, AUTH
+from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError
+from chatbone.chat.svc import *
 from utilities.logger import logger
-from utilities.settings.clients.auth import *
-
+from utilities.settings.auth import *
+from chatbone.assistant_interface import ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection
 views_params_dict = CONFIG.views.model_dump(mode='json')
 
 
@@ -67,8 +66,11 @@ class ChatboneView(ft.View, BaseModel):
 		else:
 			route = views_params_dict[view_names_or_route]['route']
 		def click(e):
-			self.page.go(route)
+			self.go(route)
 		return click
+
+	async def post_init(self):
+		pass
 
 class LoginView(ChatboneView):
 	view_name: Literal['login'] = 'login'
@@ -148,15 +150,6 @@ class SignupView(ChatboneView):
 				self.signup_status.value = f"Signup fail. There is an error on server."
 			self.page.update()
 
-class UserInputFormat(BaseModel):
-	description:str|None=None
-	url:
-
-class Image(UserInputFormat):
-
-
-class AssistantInput(BaseModel):
-	pass
 
 class ChatUI(ft.Container):
 	def __init__(self,*args,**kwargs):
@@ -182,18 +175,54 @@ class MainView(ChatboneView):
 				alignment="center")
 		]
 
-		#TODO
+		#TODO 2
+
+		self.assistant_choice= ft.Dropdown(label="Assistant")
+		self.chat_session_choice=ft.Dropdown(label="Chat session")
+		self.chat_input_field = ft.Row()
+		self.chat_dialog= ft.ListView(expand=True,spacing=10)
+
 
 		self.chat_controls:list[ft.Control] = [
-			ft.ListView(expand=True,spacing=10),
-			ft.Button(text="Logout", on_click=self.logout_click)]
+			ft.Row([self.assistant_choice, self.chat_session_choice]),
+			self.chat_dialog,
+			self.chat_input_field
+			]
 		"""chat_controls will be shown only when chat_app.userdata exists. """
 
 		if self.chat_app.userdata is not None:
 			self.controls=self.chat_controls
-			self.page.update()
+			self.appbar.actions = [ft.Button(text="Logout", on_click=self.logout_click)]
 		else:
 			self.controls=self.auth_controls
+			self.appbar.actions = []
+
+	def _init_chat_controls(self):
+		pass
+
+	async def post_init(self):
+		# assistant_info = await self._get_assistant_info()
+		#TODO
+		cs_ids = (await self.chat_app.local_data)["chat_session_ids"]
+		self.chat_session_choice.options = [ft.DropdownOption()]
+
+	async def chat_session_change(self):
+		pass
+	async def assistant_change(self):
+		pass
+
+	async def _get_assistant_info(self)->dict[str,str]:
+		"""todo
+		Get current assistants and their input format, this format will be used to make UI.
+		Returns:
+			dict with keys is assistant names, values are input formats.
+		"""
+		pass
+
+	def make_chat_input_field(self):
+		self.chat_input_field.controls.append(ft.TextField(),ft.FilePicker())
+
+
 
 	async def logout_click(self,e):
 		await self.chat_app.logout()
@@ -214,8 +243,15 @@ class ViewCreator(BaseModel):
 	@classmethod
 	async def create(cls, view_name: str, chat_app:"ChatApp") -> ChatboneView:
 		obj: VIEW_TYPE = cls(view={"view_name": view_name, "chat_app": chat_app}).view
+		await obj.post_init()
 		return obj
 
+a = ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection
+
+Input2Control = {
+	ImageObject: ft.FilePicker()
+
+}
 
 class ChatApp:
 	def __init__(self, page:ft.Page):
@@ -223,10 +259,82 @@ class ChatApp:
 		self.route2viewname: dict[str, str] = {}
 		self._set_up_page()
 		self.id = self.page.session_id
+
+		# Init later
 		self.heartbeat_task: asyncio.Task|None=None
-		self.userdata: UserData | None = None
+		"""This attribute in chatapp only for first time authenticate. It not be used for further operation, user chat_assistant_svc instead."""
+
+		self.chat_assistant_svc: ChatAssistantSVC|None=None
+		self.opening_chat_sessions: dict[UUID, asyncio.Task] = dict()
+
 		logger.info(f"New client with ip '{self.page.client_ip}' connected on device'{self.page.client_user_agent}'. ")
 
+	@property
+	def userdata(self)->UserData|None:
+		if self.chat_assistant_svc:
+			return self.chat_assistant_svc.userdata
+		return None
+
+	@property
+	def assistant_names(self)->list|None:
+		if self.chat_assistant_svc:
+			return list(self.chat_assistant_svc.assistant_apps.items())
+		return None
+
+	async def create_chat_session(self):
+		session_id = await self.chat_assistant_svc.create_chat_session()
+		local_data:dict[str,Any] = await self.local_data
+		local_data['chat_session_ids'].append(str(session_id))
+		await self.set_local_data(local_data)
+
+	async def delete_chat_session(self, chat_session_id:UUID):
+		await self.chat_assistant_svc.delete_chat_session(chat_session_id)
+		local_data:dict[str,Any] = await self.local_data
+		local_data['chat_session_ids'].pop(str(chat_session_id))
+		await self.set_local_data(local_data)
+
+	async def chat(self,chat_session_id:UUID, assistant_name:str):
+		"""Connects to a chat session with the provided session ID and assistant name.
+		1. Valid the assistant schema
+		2. create handler or callback
+
+		Args:
+		    chat_session_id (UUID): The unique identifier of the chat session to connect to.
+		    assistant_name (str): The name of the assistant to be associated with the chat session.
+		Returns:
+			chat history and input format.
+		Notes:
+			assistant_name can be not healthy at the time this method is called.
+		"""
+		assert self.chat_assistant_svc is not None
+
+
+		# If reopen chat (change assistant)
+		if self.opening_chat_sessions.get(chat_session_id) is not None:
+			await self.close_chat_session(chat_session_id)
+		self.opening_chat_sessions[chat_session_id] = asyncio.create_task(self._open_chat_session())
+
+	async def _open_chat_session(self):
+		pass
+
+	async def close_chat_session(self,chat_session_id:UUID):
+		if (t:= self.opening_chat_sessions.pop(chat_session_id),None) is not None:
+			t.cancel()
+			await t
+			logger.info(f"{self.userdata.username}'s chat session '{chat_session_id}' was closed.")
+		else:
+			logger.warning(f"{self.userdata.username}'s chat session '{chat_session_id}' has closed before."
+			               f"UI should already drop the close option from user for the first close.")
+
+	@property
+	async def local_data(self):
+		return await self.page.client_storage.get_async("local_data")
+
+	async def set_local_data(self, new_local_data):
+		await self.page.client_storage.set_async("local_data", new_local_data)
+
+	async def remove_local_data(self):
+		await self.page.client_storage.remove_async("local_data")
 
 	async def authenticate(self,username, password):
 		req = ClientRequestSchema[UserAuthenticate](data=UserAuthenticate(username=username, password=password))
@@ -235,31 +343,32 @@ class ChatApp:
 								   ).content
 		userdata = UserData(id = userinfo.id, username=userinfo.username, password=password,
 							user_token=UserToken.model_validate(userinfo.tokens[-1],from_attributes=True))
-		await userdata.save(expire_seconds=CONFIG.userdata_expire_seconds)
+		userdata = await userdata.save(expire_seconds=CONFIG.userdata_expire_seconds)
 		encrypted_token = await userdata.get_encrypted_token()
-		await self.page.client_storage.set_async("encrypted_token", encrypted_token)
+		await self.set_local_data({"encrypted_token":encrypted_token, "chat_session_ids": userinfo.chat_ids})
 
+	# noinspection PyMethodMayBeStatic
 	async def register(self,username,password):
 		req = ClientRequestSchema[UserRegister](body=UserRegister(username=username, password=password))
 		token: TokenJWT = (await AUTH.register(req)).content
 
 	async def login(self):
-		self.userdata=None
-		encrypted_token = await self.page.client_storage.get_async("encrypted_token")
-		logger.info(f"encrypted_token in session {encrypted_token}.")
-		if encrypted_token:
+		local_data = await self.local_data
+		logger.info(f"local data in session {local_data}.")
+		if local_data:
 			try:
-				self.userdata = await UserData.verify_encrypted_token(encrypted_token)
+				userdata = await UserData.verify_encrypted_token(local_data['encrypted_token'])
 				self.fire_heartbeat_task()
+				self.chat_assistant_svc = await ChatAssistantSVC.create(userdata)
 				assert isinstance(self.heartbeat_task,asyncio.Task)
 			except EncryptedTokenError:
 				logger.info("encrypted token in local storage is no longer valid and get deleted.")
-				await self.page.client_storage.remove_async("encrypted_token")
+				await self.remove_local_data()
 
 	async def logout(self):
-		await self.page.client_storage.remove_async("encrypted_token")
+		await self.remove_local_data()
 		await self.stop_heartbeat()
-		self.userdata=None # this must be after stop heart beat
+		self.chat_assistant_svc=None
 
 	async def stop_heartbeat(self):
 		if self.heartbeat_task is not None:
@@ -358,128 +467,3 @@ if __name__ == "__main__":
 	uvicorn.run("app:chat_fa_app", port=8888,reload=True)  # serve.run(ChatApp.bind(),blocking=True)
 	# serve.run(ChatboneApp.bind())
 
-	# def print_routes(app):
-	# 	if isinstance(app,FastAPI):
-	# 		for r in app.router.routes:
-	# 			if isinstance(r,Mount):
-	# 				print_routes(r.app)
-	# 			print(r)
-	# 	else:
-	# 		print("**", type(app))
-	#
-	# print_routes(chat_app)
-
-# class GetMessages(JsonRPCSchema):
-# 	params: ChatSVCGetLatest
-
-# TODO : ONLY CHAT AND ASSISTANT
-# TODO: CHATAPP USE ONLY GET_USER_INFO FROM AUTH.
-
-# @serve.deployment()
-# @serve.ingress(app)
-# class ChatBoneApp:
-#
-# 	@app.post('/chat_session/create')
-# 	async def create_chat_session(self, schema: ChatSVCBase) -> ChatSessionReturn:
-# 		return await chat_assistant_svc.create_chat_session(schema)
-#
-# 	@app.delete('/chat_session/delete')
-# 	async def delete_chat_session(self, schema: ChatSessionSVCDelete) -> dict:
-# 		"""Make request to delete chat session and clear cache if success."""
-# 		res = await chat_assistant_svc.delete_chat_session(schema)
-# 		return res
-#
-# 	@app.websocket('/chat/{session_id}')
-# 	async def connect_chat_session(self, websocket: WebSocket, ):
-# 		try:
-# 			await asyncio.wait_for(websocket.accept(), 30)  # Wait for accept.
-# 		except:
-# 			raise WebSocketDisconnect(code=status.WS_1002_PROTOCOL_ERROR,
-# 			                          reason="Timeout when waiting for websocket acceptance.")
-# 		user_histories = ray.put(await self._get_user_session_histories(session_id, token_id))
-#
-# 		# Loop until disconnect.
-# 		try:
-# 			while True:
-# 				# Handle all exceptions and keep the connection alive until disconnect or timeout when sending.
-# 				try:
-# 					assistant_handle, assistant_input = await self._get_assistant_input(websocket)
-#
-# 					# This class will use app_*_stream. Assistants use *_stream.
-# 					app_write_stream, read_stream = anyio.create_memory_object_stream(0)
-# 					write_stream, app_read_stream = anyio.create_memory_object_stream(0)
-#
-# 					await self.chat_assistant_svc.chat(assistant_handle, assistant_input, read_stream, write_stream,
-# 					                                   user_histories)
-#
-#
-#
-# 				except Exception as e:
-# 					logger.exception(e)
-# 					if not isinstance(e, WebSocketException):
-# 						e = WebSocketException(code=status.WS_1011_INTERNAL_ERROR)
-# 					# Try to send exception as text to keep the connection active, but if it cannot, disconnect ws.
-# 					try:
-# 						await asyncio.wait_for(websocket.send_text(e), config.chat_assistant_timeout.websocket_send)
-# 					except:
-# 						raise e  # Disconnect
-# 		except WebSocketDisconnect:
-# 			pass
-#
-# 	async def _get_assistant_input(self, ws: WebSocket) -> tuple[DeploymentHandle, BaseModel]:
-# 		"""
-# 		- Client sends assistant name as text.
-# 		- Server get app and input schema, return schema to the client.
-# 		- Client provides input, which then will be validated with the schema.
-#
-# 		Raises:
-# 			WebSocketException
-#
-# 		Returns:
-# 			Tuple: (assistant_handle, object ref of assistant_input)
-# 		"""
-# 		assistant_name: str = ""
-# 		try:
-# 			assistant_name = await ws.receive_text()
-# 			assistant_handle = serve.get_app_handle(assistant_name)
-# 			input_schema: BaseModel = await assistant_handle.get_input_schemas.remote()
-#
-# 			await asyncio.wait_for(ws.send_json(input_schema), timeout=config.chat_assistant_timeout.websocket_send)
-# 			assistant_input = input_schema.model_validate_json(await ws.receive_json())
-#
-# 			return assistant_handle, assistant_input
-#
-# 		except RayServeException:
-# 			raise WebSocketException(code=status.WS_1003_UNSUPPORTED_DATA,
-# 			                         reason=f"Assistant \'{assistant_name}\' doesn't exist.")
-# 		except ValidationError:
-# 			raise WebSocketException(code=status.WS_1007_INVALID_FRAME_PAYLOAD_DATA,
-# 			                         reason=f"Assistant input format does not true.")
-# 		except asyncio.TimeoutError:
-# 			raise WebSocketException(code=status.WS_1002_PROTOCOL_ERROR, reason="Cannot send the input request schema.")
-#
-# 	async def _get_user_session_histories(self, session_id: UUID, token_id: UUID) -> tuple[
-# 		MessagesReturn, UserSummariesReturn, ChatSummariesReturn]:
-# 		messages = await self.chat_assistant_svc._get_messages(
-# 			ChatSVCGetLatest(token_id=token_id, chat_session_id=session_id, n=config.max_messages))
-# 		user_summaries = await self.chat_assistant_svc._get_user_summaries(
-# 			UserSummarySVCGetLatest(token_id=token_id, n=config.max_user_summaries))
-# 		chat_summaries = await self.chat_assistant_svc._get_chat_summaries(
-# 			ChatSVCGetLatest(token_id=token_id, chat_session_id=session_id, n=config.max_chat_summaries))
-#
-# 		return dict(messages=[m.model_dump(include={'role', 'content'}) for m in messages.messages],
-# 		            user_summaries=[s.summary for s in user_summaries.summaries],
-# 		            chat_summaries=[s.summary for s in chat_summaries.summaries])
-#
-# 	async def _ws_stream_handle(self, ws: WebSocket, app_read_stream: MemoryObjectReceiveStream,
-# 	                            app_write_stream: MemoryObjectSendStream):
-# 		pass
-#
-# 	async def _handle_json_rpc(self, request: dict):
-#
-# 	@app.get('/get_messages')
-# 	async def get_messages(self, schema: ChatSVCGetLatest) -> MessagesReturn:
-# 		return await self.chat_assistant_svc.get_messages(schema)
-#
-#
-# serve.run(ChatboneApp.bind(), blocking=True, name='chatbone_app')

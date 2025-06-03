@@ -15,6 +15,7 @@ from utilities.logger import logger
 
 # noinspection PyNestedDecorators
 class BaseClient(BaseModel):
+	"""BaseClient for HTTP request."""
 	model_config = ConfigDict(extra="ignore")
 	path: ClassVar[str] = ""
 	"""Base path (endpoint) of the service api that client class point to. 

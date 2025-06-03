@@ -7,9 +7,8 @@ from pydantic import BaseModel, PositiveInt, model_validator, ConfigDict, Field,
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Config, Settings
-from utilities.settings.clients.auth import AuthClient
-from utilities.settings.clients.datastore import DatastoreClient
-import os
+from utilities.settings.auth import AuthClient
+from utilities.settings.datastore import DatastoreClient
 
 
 # noinspection PyNestedDecorators
@@ -68,15 +67,11 @@ class ChatConfig(Config):
 	max_user_summaries: PositiveInt = 5
 	max_chat_summaries: PositiveInt = 5
 
-	reload_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
-	reload_after_n_chats: PositiveInt = 5
-
-	update_histories_strategy: Literal['after_session', 'after_n_chats'] = 'after_session'
-	update_after_n_chats: PositiveInt = 5
-
 	userdata_expire_seconds:PositiveInt=59
-	"""For expire cache."""
+	"""For expire userdata cache."""
 
+	write_streams_accquire_timeout: PositiveInt=5
+	"""Time for accquire write stream lock."""
 
 	views: Views = Views()
 

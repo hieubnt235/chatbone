@@ -8,18 +8,18 @@ services:
         image: redis/redis-stack:latest # Use the official Redis Stack image
         container_name: chat_redis # Optional: Assign a specific name to the container
         environment:
-            REDIS_ARGS: "--requirepass 2352001"
+            REDIS_ARGS: "--requirepass 2352001 --user hieu"
         ports:
             - "3333:6379" # Map host port 6379 to container port 6379 (standard Redis)
             - "8001:8001" # Map host port 8001 to container port 8001 (RedisInsight UI)
-#        volumes:
-#            - redis_stack_data:/data # Mount a named volume to persist Redis data
+        volumes:
+            - redis_stack_data:/data # Mount a named volume to persist Redis data
         networks:
             - chatbone-network # Connect to the custom network
 
     # Service definition for PostgreSQL
     postgres:
-        image: postgres:latest # Use the official PostgreSQL image
+        image: pgvector/pgvector:0.8.0-pg17 # Use the official PostgreSQL image
         container_name: chatbone_db # Optional: Assign a specific name to the container
         environment:
             # Set environment variables required by the Postgres image
@@ -42,6 +42,8 @@ services:
         environment:
             MINIO_ROOT_USER: "hieu" # Replace with your desired username
             MINIO_ROOT_PASSWORD: "hieu2352001" # Replace with your desired password
+            MINIO_REGION: ap-southeast-1
+            MINIO_HTTP_TRACE: "stdout"
         volumes:
             - minio_data:/data # Persistent storage for MinIO
         networks:

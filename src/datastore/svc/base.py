@@ -11,7 +11,7 @@ from datastore.entities import AccessToken
 from datastore.repo import TokenRepo
 from utilities.func import check_is_subset
 
-TokenError = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token is not valid.")
+TokenError = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="__TOKEN_ERROR__")
 InvalidRequestError = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request.")
 ServerError = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="Something went wrong with server.")

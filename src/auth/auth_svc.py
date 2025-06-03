@@ -6,8 +6,8 @@ from fastapi import HTTPException, status
 
 from utilities.exception import handle_http_exception
 from utilities.func import hash_password, get_expire_date
-from utilities.settings.clients.auth import *
-from utilities.settings.clients.datastore import DatastoreClient, UserCreate, ClientRequestSchema, UserInfoReturn, \
+from utilities.settings.auth import *
+from utilities.settings.datastore import DatastoreClient, UserCreate, ClientRequestSchema, UserInfoReturn, \
 	ClientResponseSchema, Token, TokenInfoReturn, UserVerify
 from .settings import auth_settings
 
@@ -63,7 +63,7 @@ class AuthenticationSVC:
 
 	@handle_http_exception(ServerError)
 	async def expire_tokens(self):
-		# TODO implement this method to support logout. But first, implement update token in datastore server, client.
+		# TODO implement this method to support logout.
 		pass
 
 	@handle_http_exception(ServerError)
