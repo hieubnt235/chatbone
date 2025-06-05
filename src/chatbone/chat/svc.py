@@ -257,7 +257,7 @@ class ChatAssistantSVC(_DataSVC):
 		"""
 		try:
 			assistant_app = self.assistant_apps[assistant_name]
-			assert type(data) is assistant_app.schema # exact match, not just match the base class.
+			assert isinstance(data,assistant_app.schema)
 		except (KeyError, AssertionError) as e:
 			raise ValueError( f"Static check fail for assistant. {e}")
 

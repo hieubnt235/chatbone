@@ -1,11 +1,12 @@
 import asyncio
 
+from grpc.framework.interfaces.face.face import CancellationError
 from redis.exceptions import LockError
 from uuid_extensions import uuid7
+
+from chatbone.assistant_interface import AssistantData, Status
+from chatbone.broker import REDIS, UserData, Message, WriteStream, ReadStream, RequestForm, TextUrlsFormat
 from utilities.logger import logger
-from chatbone.broker import REDIS, UserData, ChatSessionData, UserNotFoundError, RedisKeyError, UserToken, Message, \
-	WriteStream, ReadStream, AS2CSData, RequestForm, TextUrlsFormat
-from utilities.func import utc_now, get_expire_date
 
 
 def session(uid, n_messages):
@@ -90,53 +91,75 @@ async def main2():
 	await asyncio.gather(write_stream(),write_stream2())
 
 async def main3():
-	cs,userdata = await create_bounded_cs(100)
+	cs,userdata = await create_bounded_cs(59)
 
 	async def read_user_input():
 		return await asyncio.to_thread(input,"Say something:")
 
 	async def read_stream():
-		async with cs.get_streams(read_only=True) as streams:
-			stream = streams['as2cs'][1]
-			assert isinstance(stream,ReadStream)
-			async for data in stream:
-				print(data)
+		try:
+			async with cs.get_streams(read_only=True) as streams:
+				stream = streams['as2cs'][1]
+				assert isinstance(stream,ReadStream)
+				logger.info("Read stream start readding...")
+				async for data in stream:
+					logger.info(f"Read stream get: {type(data)}:{data}")
+		except asyncio.CancelledError:
+			logger.info("Read stream cancelled.")
+
 
 	async def write_stream():
-		async with cs.get_streams() as streams:
-			stream = streams['as2cs'][0]
-			assert isinstance(stream,WriteStream)
-			user_input = ""
-			# Warning, need to handle shutdown, because the ctrl C shutdown does not release the lock
-			while user_input!="exit()":
-				user_input= await read_user_input()
-				as2csdata = AS2CSData(request=RequestForm(request_id=uuid7(),message=TextUrlsFormat(text=f"This is user input :'{user_input}'")),state='processing')
-				await stream.write(as2csdata)
-	task2 = asyncio.create_task(read_stream())
-	task3 = asyncio.create_task(write_stream())
+		try:
+			async with cs.get_streams() as streams:
+				stream = streams['as2cs'][0]
+				assert isinstance(stream,WriteStream)
+				user_input = ""
+				# Warning, need to handle shutdown, because the ctrl C shutdown does not release the lock
+				logger.info("Write stream start query user input and writting...")
+				while user_input!="exit()":
+					user_input= await read_user_input()
+					asdata = AssistantData(status=Status(code="processing",detail=user_input))
+					await stream.write(asdata)
+		except asyncio.CancelledError:
+			logger.info("Write stream cancelled.")
+
+	task2 = asyncio.create_task(read_stream(),name="read_task")
+	task3 = asyncio.create_task(write_stream(),name="write_task")
+	done, pending = await asyncio.wait([task2,task3],return_when=asyncio.FIRST_COMPLETED)
 	try:
-		print(await asyncio.wait([task2,task3],return_when=asyncio.FIRST_COMPLETED))
+		for t in pending:
+			assert isinstance(t,asyncio.Task)
+			print("pending")
+			try:
+				t.cancel()
+				await t
+				print(f"task {t.get_name()} cancelled.")
+			except Exception as e:
+				logger.exception(e)
+		for t in done:
+			if e:=t.exception():
+				logger.exception(e)
 	finally:
 		await userdata.delete()
-		print("finally")
+		print("finally done.")
 
-async def main4():
-	import ray
-	ray.init()
-
-	await REDIS.xadd("test_write_stream",{"a":1})
-	stream = WriteStream("test_write_stream",AS2CSData)
-	print(stream)
-	stream_ref =  ray.put(stream)
-
-	print(stream_ref)
-	stream_loaded = ray.get(stream_ref)
-	print(stream_loaded)
-	assert isinstance(stream_loaded,WriteStream)
-	as2csdata = AS2CSData(
-		request=RequestForm(request_id=uuid7(), message=TextUrlsFormat(text=f"This is user input :hieu'input'")),
-		state='processing')
-	await stream_loaded.write(as2csdata) # good.
+# async def main4():
+# 	import ray
+# 	ray.init()
+#
+# 	await REDIS.xadd("test_write_stream",{"a":1})
+# 	stream = WriteStream("test_write_stream",AS2CSData)
+# 	print(stream)
+# 	stream_ref =  ray.put(stream)
+#
+# 	print(stream_ref)
+# 	stream_loaded = ray.get(stream_ref)
+# 	print(stream_loaded)
+# 	assert isinstance(stream_loaded,WriteStream)
+# 	as2csdata = AS2CSData(
+# 		request=RequestForm(request_id=uuid7(), message=TextUrlsFormat(text=f"This is user input :hieu'input'")),
+# 		state='processing')
+# 	await stream_loaded.write(as2csdata) # good.
 
 
 
@@ -145,5 +168,5 @@ async def main4():
 #checkpoint
 # asyncio.run(main1())
 # asyncio.run(main2())
-# asyncio.run(main3())
-asyncio.run(main4())
+asyncio.run(main3())
+# asyncio.run(main4())

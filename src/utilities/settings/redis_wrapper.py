@@ -34,6 +34,7 @@ else:
 
 class RedisWrapperConfig(Config):
 	decode_responses: bool = True
+	protocol:int=2
 
 
 class RedisWrapperParams(BaseModel):
@@ -140,11 +141,15 @@ class RedisWrapper(_RWrapper):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
+		kwargs["protocol"]=3
 		self._pool = ConnectionPool(**self._params)
 		self._redlock = [Redis(**p) for p in self._redlock_params]
 
-	def new(self) -> Redis | RedisCluster:
-		return Redis(connection_pool=self._pool)
+	def new(self,**kwargs) -> Redis | RedisCluster:
+		pool_kw = deepcopy(self._pool.connection_kwargs)
+		pool_kw.update(kwargs)
+		pool_kw["protocol"]=3
+		return Redis(**pool_kw)
 
 
 class RedisWrapperClient(_RedisWrapperAbstract, _REDIS):
@@ -193,8 +198,8 @@ class RedisWrapperClient(_RedisWrapperAbstract, _REDIS):
 	def create_wrapper(cls, data: dict) -> dict:
 		return {'rwrapper': deepcopy(data)}
 
-	def new(self) -> Redis | RedisCluster:
-		return self.rwrapper.new()
+	def new(self,**kwargs) -> Redis | RedisCluster:
+		return self.rwrapper.new(**kwargs)
 
 	@property
 	def redlock_masters(self) -> list[Redis]:

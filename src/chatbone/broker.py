@@ -1,18 +1,16 @@
 __all__=["UserData","ChatSessionData"]
 import asyncio
 import json
-import time
 from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
 from copy import deepcopy
 from datetime import datetime, timezone
 from inspect import iscoroutine
-from json import JSONDecodeError
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
 import cloudpickle
-from pydantic import Field, AnyUrl, PrivateAttr, BaseModel, ConfigDict, ValidationError, FileUrl, model_validator
+from pydantic import Field, PrivateAttr, BaseModel, ConfigDict, FileUrl, model_validator
 from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
@@ -20,11 +18,11 @@ from redis.exceptions import LockError
 from redis.typing import FieldT, EncodableT
 
 from chatbone.settings import REDIS, CONFIG, get_redis
-from utilities.func import encrypt, decrypt, utc_now, dump_base_models
+from utilities.func import encrypt, decrypt, dump_base_models
 from utilities.logger import logger
 
 LOCK_POSTFIX="<LOCK>"
-
+NULL="null"
 
 
 class ChatboneData(BaseModel,ABC):
@@ -90,8 +88,12 @@ class ChatboneData(BaseModel,ABC):
 		if len(fields)==0:
 			return self
 
-		if (r:= await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])) is None:
-			raise KeyError("User data doesn't exist. Call 'save' first.")
+		r= await self.redis.json().get(self.rkey,*[f"{self._jsonpath}.{field}" for field in fields])
+		# There are two scenarios make r is None are rkey not found, or value is null when get only one path.
+		if r is None:
+			if not await self.redis.exists(self.rkey):
+				raise KeyError("User data doesn't exist. Call 'save' first.")
+			r= NULL
 		if len(fields)==1:
 			r = {fields.pop(): r}
 		else:
@@ -465,7 +467,7 @@ class StreamData(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True)
 
 	def _encode(self)->dict[FieldT,EncodableT]:
-		return {f"{self.__class__}":cloudpickle.dumps(self)}
+		return {f"{StreamData}":cloudpickle.dumps(self)}
 		# encoder_data:dict[str,int|float|str|bytes] = {}
 		# for field,value in self.model_dump(mode='json',exclude_none=True,exclude_defaults=True).items():
 		# 	if not isinstance(value, (bytes, str, int, float)):
@@ -476,7 +478,7 @@ class StreamData(BaseModel):
 
 	@classmethod
 	def _decode(cls,data: dict[FieldT,EncodableT])->Self:
-		return cloudpickle.loads(data[f"{cls}"])
+		return cloudpickle.loads(data[f"{cls}".encode()])
 		# return cls.model_validate()
 		# for k,value in data.items():
 		# 	try:
@@ -537,7 +539,7 @@ class ReadStream(Stream):
 	def __init__(self,stream_key:str):
 		super().__init__(stream_key)
 
-		self._checkpoint_id:str = "$"
+		self._checkpoint_id:str = "$" # get new data coming after the moment of blocking.
 		self._count:int = 1
 		self._save_checkpoint:bool=False
 
@@ -565,24 +567,37 @@ class ReadStream(Stream):
 		Returns:
 			list of data
 		Notes:
-			read method does not check if the stream key exists. So either does not exist or exist with blank data will return [].
+			read method does not check if the stream key exists. So either does not exist or exist with blank data will return [] or {}.
 		"""
-		"""Raw data from redis stream has the form like this:
+		"""
+		Raw encodable data from redis stream has the form like this:
+			protocol 2
 			[['test_stream', [('1747389494281-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'}), ('1747389494418-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'})]]]' 
-			So data extract be like: data[0][1][:][1], with : is data.
+			So data extract be like: data[0][1][:][1], with : is data. (protocol 2)
+			
+			or 
+			
+			protocol 3
+			{'test_stream': [ [('1749050499833-0', {'abc': '123'}),('1749050622319-0', {'abc': '123'}), ('1749050817070-0', {'abc': '123'})]] }
+		With non encodable data, just return byte stream.
 		"""
 		checkpoint = checkpoint or self._checkpoint_id
 		count = count or self._count
-		data= await get_redis().xread({self.key:checkpoint},count,block)
+
+		data= await get_redis(decode_responses=False,protocol=3).xread({self.key:checkpoint},count,block)
 		if data:
+			data = data[self.key.encode()][0]
+			logger.debug(f"Read data: {data}")
 			decoded_data = []
-			for d in data[0][1]:
+			for d in data:
 				decoded_data.append(await StreamData.decode(d[1]))
 			if self._save_checkpoint:
-				self._checkpoint_id = data[0][1][-1][0]
+				self._checkpoint_id = data[-1][0].encode()
 			return decoded_data
 		else:
-			return data # []
+			assert data=={}
+			return []
+
 	def __aiter__(self)->Self:
 		return self
 
@@ -634,7 +649,7 @@ class ChatSessionData(ChatboneData):
 		ret_streams= dict(as2cs=[], cs2as=[])
 		async def _append_streams(stream_cls: WriteStream|ReadStream|None):
 			streams = [None,None] if stream_cls is None \
-				else [await stream_cls._create(self.as2cs_stream_rkey,'as2cs'),await stream_cls._create(self.cs2as_stream_rkey,'cs2as')]
+				else [await stream_cls._create(self.as2cs_stream_rkey),await stream_cls._create(self.cs2as_stream_rkey)]
 			ret_streams['as2cs'].append(streams[0])
 			ret_streams['cs2as'].append(streams[1])
 
@@ -661,7 +676,7 @@ class ChatSessionData(ChatboneData):
 				if raise_on_write_streams_acquire_fail:
 					raise
 			except Exception as e:
-				logger.error(e)
+				logger.exception(e)
 				raise e
 			finally:
 				if locked:
@@ -761,7 +776,9 @@ class UserData(ChatboneData):
 	@property
 	def encrypted_secret_rkey(self):
 		if self.encrypted_secret_token is None:
-			raise RedisKeyError("Cannot resolve 'encrypted_secret_rkey', you must 'refresh' default mode to load dynamic rkeys first.  ")
+			raise RedisKeyError("Cannot resolve 'encrypted_secret_rkey', you must 'refresh' default mode to load dynamic rkeys first.")
+		if self.encrypted_secret_token == NULL:
+			logger.warning(f"encrypted_secret_token in Redis server is null (not string) value but still exist.")
 		return f"{self.rkey_prefix}:<encrypted_token>:{self.encrypted_secret_token}"
 
 	async def get_encrypted_token(self, skip_if_exist:bool=True) -> str:
@@ -769,11 +786,14 @@ class UserData(ChatboneData):
 		Notes:
 			The data must be saved before this method.
 		"""
-		if (r := await self.redis.json().get(self.rkey, f"{self._jsonpath}.encrypted_secret_token")) is None:
-			raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
+		r = await self.redis.json().get(self.rkey, f"{self._jsonpath}.encrypted_secret_token")
+		if r is None:
+			if not await self.redis.exists(self.rkey):
+				raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
+			r = NULL # None type is used for checkinf refreshed state, and NULL  for the real null in redis server.
 		else:
 			self.encrypted_secret_token = r
-			if r != 'null': # None is saved and load as 'null'
+			if r != NULL: # None is saved and load as 'null'
 				if skip_if_exist:
 					logger.debug("Return old token.")
 					return self.encrypted_secret_token
@@ -850,7 +870,7 @@ class UserData(ChatboneData):
 		except WatchError:
 			raise UserNotFoundError
 
-
+	# Comment: App service handle this.
 	# async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
 	# 	""" This method is used for check if user is valid to make further request to business service. If user is not valid now
 	# 	because of a token, use 'update_token' to make it valid.
@@ -905,7 +925,7 @@ class UserData(ChatboneData):
 		return cs_dict
 
 
-	# Redundant, use update directly. Also, all modify methods should be use base class directly, subclasses implement verify and lazy get methods.
+	# Comment: Redundant, use update directly. Also, all modify methods should be use base class directly, subclasses implement verify and lazy get methods.
 	# Directly get should be refresh first and get.
 	# async def update_chat_sessions(self,chat_sessions:list[ChatSessionData])->None:
 	# 	async with self._get_transaction_pipeline() as pipeline:

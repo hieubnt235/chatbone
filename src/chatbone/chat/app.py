@@ -1,17 +1,17 @@
-import asyncio
 from copy import deepcopy
 from pathlib import Path
 from typing import Literal, Any
 from uuid import UUID
 
 import flet as ft
-from pydantic import Field, ConfigDict
+from pydantic import Field
 
+from chatbone.assistant_interface import ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection
 from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError
 from chatbone.chat.svc import *
 from utilities.logger import logger
 from utilities.settings.auth import *
-from chatbone.assistant_interface import ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection
+
 views_params_dict = CONFIG.views.model_dump(mode='json')
 
 

@@ -27,6 +27,8 @@ class ChatboneConfig(Config):
 	redis_acquire_lock_timeout:PositiveInt|None = 10
 	thread_acquire_lock_timeout: int = 10
 
+	request_user_input_timeout: int=100 # <=0 for wait forever.
+
 class ChatboneSettings(Settings):
 	model_config = SettingsConfigDict(env_prefix='chatbone_', env_file=find_dotenv('.env.chatbone'),
 	                                  arbitrary_types_allowed=True)
@@ -37,23 +39,11 @@ class ChatboneSettings(Settings):
 	object_storage: ObjectStorageSettings
 	config: ChatboneConfig
 
-	user_secret_key:str = Field("abcxyz", description= "Used for encrypt.")
-
-
-	# This is for redis_client is redis.asyncio.Redis type directly. But now use wrapper.
-	# @model_validator(mode="after")
-	# def init_redis_client(self) -> Self:
-	# 	if not isinstance(self.redis_client, Redis):
-	# 		self.redis_client = Redis(**self.redis.model_dump(exclude={'config'}),
-	# 		                          **self.redis.config.model_dump(exclude={"config_file"}))
-	# 	return self
-
 
 chatbone_settings = ChatboneSettings()
 get_redis: Callable[...,Redis] = chatbone_settings.redis.new
 REDIS: Redis = get_redis()
 CONFIG = chatbone_settings.config
-SECRET_KEY= chatbone_settings.user_secret_key
 OBJ_STORAGE = chatbone_settings.object_storage
 
 if __name__ =="__main__":

@@ -1,24 +1,43 @@
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
-from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal
+from inspect import isclass
+from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union
 from uuid import UUID
 
 import filetype
 import ray
 import ray.serve.schema as ray_schema
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import BaseModel, ConfigDict, model_validator, create_model
+from pydantic import BaseModel, ConfigDict, model_validator, create_model, Field
+from pydantic.fields import FieldInfo
 from ray import serve
 from ray.exceptions import RayTaskError, TaskCancelledError
 from ray.serve.handle import DeploymentHandle
+from uuid_extensions import uuid7
 
 from chatbone.broker import WriteStream, ReadStream, UserData, StreamData
-from chatbone.settings import OBJ_STORAGE
+from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.logger import logger
 
 CHATBONE_ASSISTANT_APP_POSTFIX = "_chatbone_assistant"
 
+AssistantDataType_T: tuple[type] = ()
+"""Assistant datatype in tuple format, use this to test with isinstance()."""
+
+AssistantDataType_U: Union[type] = None
+"""Assistant datatype in union format."""
+
+def assistant_datatype(cls_type):
+	global AssistantDataType_T, AssistantDataType_U
+	assert isclass(cls_type)
+	type_list = list(AssistantDataType_T)
+	type_list.append(cls_type)
+	AssistantDataType_T = tuple(type_list)
+	AssistantDataType_U = AssistantDataType_U|cls_type if AssistantDataType_U is not None else cls_type
+	return cls_type
 
 class MediaType(str, Enum):
 	IMAGE = "IMAGE"
@@ -94,40 +113,40 @@ class MediaObject(BaseModel):
 		"""Remove the binary object from server"""
 		return await OBJ_STORAGE.remove_object(self.object_name)
 
-
+@assistant_datatype
 class ImageObject(MediaObject):
 	type = MediaType.IMAGE
 	matcher = filetype.image_match
 
-
+@assistant_datatype
 class VideoObject(MediaObject):
 	type = MediaType.VIDEO
 	matcher = filetype.video_match
 
-
+@assistant_datatype
 class AudioObject(MediaObject):
 	type = MediaType.AUDIO
 	matcher = filetype.audio_match
 
-
+@assistant_datatype
 class DocumentObject(MediaObject):
 	type = MediaType.DOCUMENT
 	matcher = filetype.document_match
 
-
+@assistant_datatype
 class TextStream(BaseModel):
 	"""For messages or text stream."""
 	id: UUID | None = None
 	"""Stream id, all chunks with the same id are belong to others and should be concat. If None, chunk acts like an entire message."""
 	chunk: str
 
-
+@assistant_datatype
 class Selection(BaseModel):
 	"""This type is for querying user selections."""
 	options: dict[str, str]
 	"""name:description"""
 
-
+@assistant_datatype
 class UserPreviousData(BaseModel):
 	"""This input type should be set by service, not by user."""
 	userdata: UserData | None = None
@@ -143,24 +162,18 @@ class AssistantStatusCode(str, Enum):
 	CANCELING = "canceling"
 	PROCESSING = "processing"
 
-
+@assistant_datatype
 class Status(BaseModel):
 	code: AssistantStatusCode
 	detail: str | None = None
 
-class InputRequest(BaseModel):
-	id: UUID
-	types: Type["AssistantData"]
-
-class InputResponse(BaseModel):
-	id: UUID
-	data: "AssistantData"
+assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
 # TODO, support multiple files, with the count depend on user. Dont need to change this code, change media instead.
 class AssistantData(StreamData):
 	# T means tuple, U means Union
-	T:ClassVar[Any] = (ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection, UserPreviousData,Status, InputRequest, InputResponse)
-	U:ClassVar[Any] = ImageObject | VideoObject | AudioObject | DocumentObject | TextStream | Selection | UserPreviousData | Status| InputRequest| InputResponse
+	T:ClassVar[Any] = AssistantDataType_T
+	U:ClassVar[Any] = AssistantDataType_U
 	status: Status|None=None
 
 	@model_validator(mode='before')
@@ -177,14 +190,7 @@ class AssistantData(StreamData):
 		return data
 
 	@classmethod
-	def create_model(cls,model_name: str, schema: dict[str, Any] ) -> type[Self]:
-		"""
-		Create a data model dynamically.
-		Args:
-			model_name: class name of a pydantic model, it should be PascalCase
-			schema: Values of schema must be AssistantDataType, AssistantDataType|None
-		Returns:
-		"""
+	def _validate_schema(cls,schema:dict[str,Any]):
 		for field in schema.values():
 			t = field[0] if isinstance(field,Sequence) else field  # extract typehint, ignore default value
 			args = get_args(t)
@@ -193,12 +199,118 @@ class AssistantData(StreamData):
 				if not issubclass(arg, cls.U|None):
 					raise ValueError(f"Does not support field definition {field}.Type hint must be AssistantDataType or None.")
 
-		return create_model(model_name, __base__= AssistantData, **schema)
+	@classmethod
+	def _get_model_name(cls):
+		return uuid7(as_type="str").replace("-",cls.__name__)
 
 	@classmethod
-	def create_request(cls, model_name: str, schema: dict[str, Any])->Self:
-		pass
+	def _get_module_name(cls):
+		return cls.__module__
 
+	@classmethod
+	def create_model(cls, schema: dict[str, Any] ) -> type["AssistantData"]:
+		"""
+		Create a data model dynamically.
+		Args:
+			schema: Values of schema must be AssistantDataType, AssistantDataType|None
+		Returns:
+		"""
+		cls._validate_schema(schema)
+		return create_model(cls._get_model_name(), __base__= AssistantData,__module__=cls._get_module_name(), **schema)
+
+	@classmethod
+	def create_request(cls,schema:dict[str,Any])->"RequestInput":
+		"""
+		Args:
+			schema:
+		Returns:
+			RequestInput instance.
+		"""
+		request_model = cls.create_model(schema)
+		uid = UUID(request_model.__name__.replace(super().__class__.__name__,"-"))
+		return RequestInput(id=uid,data_type=request_model)
+
+class RequestInput(StreamData):
+	"""This class is used for request input from user. User also send this class instance as response."""
+	model_config = ConfigDict(arbitrary_types_allowed=True,validate_assignment=True)
+	id: UUID = Field(frozen=True)
+	data_type: Type[AssistantData] = Field(frozen=True)
+	data: AssistantData|None=None
+
+	@model_validator(mode="after")
+	def check_data(self)->Self:
+		assert isinstance(self.data,(self.data_type,None)) # None means no response.
+		return self
+
+assistant_streams: ContextVar[tuple[WriteStream, ReadStream]] = ContextVar("assistant_streams")
+
+@contextmanager
+def _stream_cm( write_stream:ReadStream, read_stream:WriteStream):
+	token = assistant_streams.set((WriteStream, ReadStream))
+	yield token
+	assistant_streams.reset(token)
+
+def format_doc(func):
+	func.__doc__ = func.__doc__.format(assistant_datatype_strings= assistant_datatype_strings)
+	return func
+
+@format_doc
+async def request_user_input(request_schema:dict[str,tuple[str,str,Literal["optional","required"]]])->AssistantData|None:
+	"""
+	Request some input object from the user with specified object name, object type, and description.
+
+	Args:
+		request_schema: a dictionary with keys as a string type represent the short name of the request object, for example "math_document", "cat_picture".
+		 Values of a dict, according to the keys, is tuple of length 3, both are strings.
+		  - The first value of the tuple is type of requested object, it must be in this list: {assistant_datatype_strings}.
+		  - The second is the text represent description or hint to show to user. If description is not given, it must be the blank string "".
+		  - The third must be "optional" or "require", user has only two options, give all the object marked as "require" or refuse to give any information.
+
+	Returns:
+		AssistantData object containing all user inputs, or None if user refuse to give.
+	"""
+	def _make_field():
+		for k,v in request_schema.items():
+			t, desc, opt = v
+			field:FieldInfo = Field()
+			if (dtype:= globals().get(t)) is None:
+				raise ValueError(f"Does not support type '{t}'.")
+			if opt == "optional":
+				dtype = dtype|None
+				field.default = None
+			elif opt!="required":
+				raise ValueError("Third value of tuple must be 'optional' or 'required'.")
+			field.description = desc
+			request_schema[k] = (dtype,field)
+
+	schema = await asyncio.to_thread(_make_field)
+	request_input: RequestInput = await asyncio.to_thread(AssistantData.create_request,schema)
+
+	write_stream, read_stream = assistant_streams.get()
+	logger.info(f"Sending input request to user through stream with key '{write_stream.key}'...")
+	stream_id = await write_stream.write(request_input)
+	logger.info(f"Sent input request to user, request stored with stream id '{stream_id}'.")
+
+	# wait for get valid requested input object, or until setting.config.request_user_input_timeout
+	async def _wait_task():
+		try:
+			async for data in read_stream.bind("$"):
+				for d in data:
+					if isinstance(data,RequestInput):
+						if data.id == request_input.id:
+							# Note: return only the first reach valid data came after the time of waiting, it's enough I thought. =))
+							return data.data
+						logger.warning(f"Got RequestInput object but not match with the id of the object sent. Ignore and continue waiting.")
+			raise RuntimeError(f"This Exception is not expected to raise in run time, the stream some how be broken while iterating.")
+		except asyncio.CancelledError:
+			logger.debug("The task of waiting for requested user input is cancelled.")
+			return None
+	try:
+		logger.info(f"Waiting for stream with key '{read_stream.key}' for requested input object.")
+		return await asyncio.wait_for(_wait_task(),CONFIG.request_user_input_timeout)
+	except TimeoutError:
+		logger.info("Not received any requested input object for the amount of time, reached timeout.")
+		return None
 
 
 class BaseAssistant(ABC):
@@ -208,7 +320,7 @@ class BaseAssistant(ABC):
 	def __init__(self):
 		assert isinstance(self.graph,CompiledStateGraph)
 		self.schema: Type[AssistantData] = self.graph.builder.schema
-		assert isinstance(self.schema, AssistantData)
+		assert issubclass(self.schema, AssistantData)
 
 	async def get_schema(self) -> Type[AssistantData]:
 		return self.schema
@@ -217,25 +329,21 @@ class BaseAssistant(ABC):
 	async def get_app(cls) -> serve.Application:
 		return serve.deployment(cls)().bind()
 
-	async def graph_stream(self, data: AssistantData)->AsyncGenerator[AssistantData,AssistantData]:
+	async def handle_cancellation(self):
+		"""Optional handling after cancellation."""
+
+	async def _graph_stream(self, data: AssistantData)->AsyncGenerator[AssistantData]:
 		async for chunk in self.graph.astream(data):
+			if not isinstance(chunk,AssistantData):
+				raise ValueError("The returned of graph is not the instance of 'AssistantData'. ")
 			yield chunk
 
-	async def handle_cancellation(self):
-		pass
-
-	async def _wait_for_input_response(self, input_request: AssistantData, read_stream: ReadStream):
-		pass
-
-	async def __call__(self, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream):
+	async def __call__(self, data_input: AssistantData, write_stream: WriteStream, read_stream: ReadStream):
 		try:
-			assert type(data) is self.schema
-			async for chunk in self.graph_stream():
-				chunk.status = Status(code=AssistantStatusCode.PROCESSING)
-				await write_stream.write(chunk)
-				if input_requests:=chunk.get_request_input:
-					await self._wait_for_input_response()
-
+			assert isinstance(data_input,self.schema)
+			with _stream_cm(write_stream, read_stream) as token:
+				async for data in self._graph_stream(data_input):
+					await write_stream.write(data)
 
 		except asyncio.CancelledError as e:
 			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.CANCELING)))
@@ -246,9 +354,9 @@ class BaseAssistant(ABC):
 		finally:
 			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.DONE)))
 
-
 class AssistantInterface:
-	"""Chat app uses this class to communicate with assistant app."""
+	"""Chat app uses this class to communicate with assistant app.
+	"""
 
 	def __init__(self):
 		self._handle: DeploymentHandle = None
