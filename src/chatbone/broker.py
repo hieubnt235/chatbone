@@ -10,7 +10,7 @@ from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin
 from uuid import UUID
 
 from cloudpickle import cloudpickle
-from pydantic import Field, PrivateAttr, BaseModel, ConfigDict, FileUrl, model_validator
+from pydantic import Field, PrivateAttr, BaseModel, ConfigDict
 from redis import WatchError
 from redis.asyncio import Redis
 from redis.asyncio.client import Pipeline
@@ -419,49 +419,6 @@ class ChatboneData(BaseModel,ABC):
 				if execute:
 					await pipeline.execute()
 
-# class JsonRPCSchema(BaseModel):
-# 	jsonrpc: Literal['2.0']
-# 	method: str
-# 	params: tuple[str | Any] | dict[str, Any] | BaseModel
-# 	id: int | UUID | str
-
-
-class MediaObject(BaseModel):
-	key:str
-	url: FileUrl
-	type: Literal['video','image','audio']
-
-	@model_validator(mode="after")
-	def check_data(self) -> Self:
-		# TODO: check for media type. Call head to url then check for content-type.
-		return self
-
-
-class TextUrlsFormat(BaseModel):
-	text:str =Field(description="The message string, optional with format place holder to be used to insert object (image, video,...) through urls."
-	                                "Note that place holder must be match with 'fmt_data', or it can lead to unbehavior."
-	                                "If 'fmt_data' is provided but text has no format holder, it will concat at the end of this text.",
-	                    default=None)
-	data: dict[str,FileUrl] = Field(description="urls to object stored media data."
-	                                               "The process for data depend on the implement of assistant, it can be ignored.", default_factory=dict)
-	required_data: list[MediaObject] = Field(description="Data must be given to 'fmt_data'.", default_factory=[])
-
-	@model_validator(mode="after")
-	def check_data(self)->Self:
-		for d in self.required_data:
-			if self.data.get(d.key) is None:
-				raise ValueError(f"Required data '{d}' is not provided.")
-		return self
-
-class RequestForm(BaseModel):
-	request_id:UUID = Field(description="The id of response from session must be match with the request's one.")
-	message: TextUrlsFormat
-
-class ResultForm(BaseModel):
-	"""Data stream of one assistant phase(node). All 'data_token' with the same 'phase_id' will be concat, process and show to user."""
-	phase_id:UUID = Field(description="Id for grouping information sequence. All related data are only considered as of a phase if they have the same id.")
-	phase_info:str|None= Field(None, description="Information about the current phase. Ex: searching, calculating, thinking, ...")
-	stream_token: TextUrlsFormat
 
 class StreamData(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -870,39 +827,6 @@ class UserData(ChatboneData):
 		except WatchError:
 			raise UserNotFoundError
 
-	# Comment: App service handle this.
-	# async def verify_valid_user(self, timeout: int=15, sleep:int=1)->UserToken:
-	# 	""" This method is used for check if user is valid to make further request to business service. If user is not valid now
-	# 	because of a token, use 'update_token' to make it valid.
-	# 	User is considered valid when:
-	# 		1. User exists in server.
-	# 		2. User has the non-expired token.
-	# 	If (1) fails, raise the error for the app to shut down. If (2) fails, wait until timeout the token exist, raise when timeout.
-	# 	Returns:
-	# 		valid UserToken object.
-	# 	Raises:
-	# 		UserNotFoundError, NoValidTokenError
-	# 	"""
-	# 	assert timeout>sleep
-	# 	start = time.time()
-	#
-	# 	def time_remain():
-	# 		return timeout - (time.time()-start)
-	#
-	# 	while time_remain()>0:
-	# 		if (token:= await self.redis.json().get(self.rkey,f"{self._jsonpath}.user_token")) is None:
-	# 			raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
-	# 		try:
-	# 			ut =  UserToken.model_validate(token)
-	# 			if ut.expires_at<utc_now():
-	# 				raise ValueError
-	# 			return ut
-	# 		except (ValidationError,ValueError):
-	# 			logger.debug(f"User '{self.id}' does not have valid token, got token: {token}.\n"
-	# 			             f"Waiting time remain: {time_remain()} seconds.")
-	# 			await asyncio.sleep(sleep)
-	#
-	# 	raise NoValidTokenError(f"There is no valid token for user with id {self.id}. Timeout for {timeout} seconds.")
 
 	async def get_chat_sessions(self,session_ids: list[UUID])->dict[UUID,ChatSessionData]:
 		"""For lazy get chat_sessions. This method always gets from redis.
@@ -923,15 +847,6 @@ class UserData(ChatboneData):
 			cs.bind_rkey_and_json_path(self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}")
 		self.chat_sessions.update(cs_dict)
 		return cs_dict
-
-
-	# Comment: Redundant, use update directly. Also, all modify methods should be use base class directly, subclasses implement verify and lazy get methods.
-	# Directly get should be refresh first and get.
-	# async def update_chat_sessions(self,chat_sessions:list[ChatSessionData])->None:
-	# 	async with self._get_transaction_pipeline() as pipeline:
-	# 		cs_dict = {cs.id:cs for cs in chat_sessions}
-	# 		await self.update('chat_sessions',cs_dict,pipeline)
-
 
 
 
