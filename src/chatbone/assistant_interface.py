@@ -1,16 +1,20 @@
 import asyncio
-from abc import ABC
+import os
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime
 from enum import Enum
-from inspect import isclass
-from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union
+from types import NoneType
+from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union, Annotated, \
+	get_type_hints, get_origin
 from uuid import UUID
 
 import filetype
 import ray
 import ray.serve.schema as ray_schema
-from langgraph.graph.state import CompiledStateGraph
+from langchain_core.messages.utils import AnyMessage
+from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, model_validator, create_model, Field
 from pydantic.fields import FieldInfo
 from ray import serve
@@ -20,9 +24,10 @@ from uuid_extensions import uuid7
 
 from chatbone.broker import WriteStream, ReadStream, UserData, StreamData
 from chatbone.settings import OBJ_STORAGE, CONFIG
+from utilities.func import utc_now
 from utilities.logger import logger
 
-CHATBONE_ASSISTANT_APP_POSTFIX = "_chatbone_assistant"
+CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 
 AssistantDataType_T: tuple[type] = ()
 """Assistant datatype in tuple format, use this to test with isinstance()."""
@@ -31,8 +36,11 @@ AssistantDataType_U: Union[type] = None
 """Assistant datatype in union format."""
 
 def assistant_datatype(cls_type):
+	"""Decorator to assign assistant datatype.
+	This type is the one stream to app, so it should be pickleable and clear purpose to show to user.
+	Or to be user input type.
+	"""
 	global AssistantDataType_T, AssistantDataType_U
-	assert isclass(cls_type)
 	type_list = list(AssistantDataType_T)
 	type_list.append(cls_type)
 	AssistantDataType_T = tuple(type_list)
@@ -135,10 +143,15 @@ class DocumentObject(MediaObject):
 
 @assistant_datatype
 class TextStream(BaseModel):
-	"""For messages or text stream."""
-	id: UUID | None = None
-	"""Stream id, all chunks with the same id are belong to others and should be concat. If None, chunk acts like an entire message."""
+	"""For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id.  """
+	id: UUID|int|str
+	created_at: datetime = utc_now()
 	chunk: str
+
+@assistant_datatype
+class Message(BaseModel):
+	role: Literal["system","user","content"]
+	content:str
 
 @assistant_datatype
 class Selection(BaseModel):
@@ -149,9 +162,9 @@ class Selection(BaseModel):
 @assistant_datatype
 class UserPreviousData(BaseModel):
 	"""This input type should be set by service, not by user."""
-	userdata: UserData | None = None
-	chat_session_id: UUID | None = None
-
+	userdata: UserData
+	chat_session_id: UUID | None= None
+	# TODO, implement method to get data
 
 class AssistantStatusCode(str, Enum):
 	START = "start"
@@ -169,35 +182,51 @@ class Status(BaseModel):
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
+# Addition support for langchain, this is not assistant type.
+# noinspection PyTypeHints
+LLMMessagesType_T = (Annotated[list[AnyMessage], add_messages], list[AnyMessage] , AnyMessage)
+# noinspection PyTypeHints
+LMMMessagesType_U = Annotated[list[AnyMessage], add_messages]| list[AnyMessage] | AnyMessage
+
 # TODO, support multiple files, with the count depend on user. Dont need to change this code, change media instead.
 class AssistantData(StreamData):
 	# T means tuple, U means Union
-	T:ClassVar[Any] = AssistantDataType_T
-	U:ClassVar[Any] = AssistantDataType_U
-	status: Status|None=None
+	T:ClassVar[Any] = AssistantDataType_T + LLMMessagesType_T
+	U:ClassVar[Any] = AssistantDataType_U | LMMMessagesType_U
+	def __init_subclass__(cls, **kwargs):
+		super().__init_subclass__(**kwargs)
 
-	@model_validator(mode='before')
+		# Note: __annotations__ does not work in ray replica, it will return {}, only work in driver. But it returns
+		# the full annotation, not like get_type_hints (return runtime type) or model_fields ( return baseclass annotations).
+		# So that we should loop through __annotations__, not directly call by keys.
+		type_hints = cls.__annotations__
+		print(type_hints)
+		for name, typehint in type_hints.items():
+			if get_origin(typehint)==ClassVar:
+				continue
+			cls._validate_schema(name,typehint)
+	
+	def __init__(self,*args,**kwargs):
+		super().__init__(*args,**kwargs)
+		print("init assistant data",self.__class__.model_fields)
+
 	@classmethod
-	def check_schema(cls,data:dict):
-		for field in cls.model_fields.values():
-			ann = field.annotation
+	def _validate_schema(cls,name:str, ann:Any):
+		if get_origin(ann) == Annotated: # not have |, only standalone Annotated
+			args = [ann]
+		else:
 			args = get_args(ann)
-			t = list(args) if args else [args]
-			for arg in args:
-				if not issubclass(arg, cls.U | None):
-					raise ValueError(
-						f"Does not support field definition {field}.Type hint must be AssistantDataType or None.")
-		return data
-
-	@classmethod
-	def _validate_schema(cls,schema:dict[str,Any]):
-		for field in schema.values():
-			t = field[0] if isinstance(field,Sequence) else field  # extract typehint, ignore default value
-			args = get_args(t)
-			t = list(args) if args else [t]
-			for arg in args:
-				if not issubclass(arg, cls.U|None):
-					raise ValueError(f"Does not support field definition {field}.Type hint must be AssistantDataType or None.")
+			args = list(args) if args else [ann]
+		for arg in args:
+			if arg == NoneType:
+				assert len(arg) > 1
+			elif not arg in cls.T:
+				m = f"Does not support field definition '{arg}' of name '{name}'.Type hint must be 'AssistantDataType'."
+				raise ValueError(m)
+			elif arg in LLMMessagesType_T:
+				if not name in ["messages", "message"]:
+					m=f"Types in LLMMessagesType accept only key 'messages' or 'message' , got '{name}'."
+					raise ValueError(m)
 
 	@classmethod
 	def _get_model_name(cls):
@@ -208,14 +237,24 @@ class AssistantData(StreamData):
 		return cls.__module__
 
 	@classmethod
-	def create_model(cls, schema: dict[str, Any] ) -> type["AssistantData"]:
+	def validate_schema(cls,schema:dict[str,Any]):
+		for name, field in schema.items():
+			# If not tuple, create simple field for compatible with the latest pydantic versions. While old version not support non-tuple.
+			if not isinstance(field,Sequence):
+				schema[name] = (field,Field())
+			ann = schema[name][0]  # extract annotation, ignore default value
+			cls._validate_schema(name,ann)
+
+	@classmethod
+	def create_model(cls, schema: dict[str, Any] ) -> Type["AssistantData"]:
 		"""
 		Create a data model dynamically.
 		Args:
-			schema: Values of schema must be AssistantDataType, AssistantDataType|None
+			schema: dictionary with keys as name and
 		Returns:
+			Instance of a subclass of AssistantData
 		"""
-		cls._validate_schema(schema)
+		cls.validate_schema(schema)
 		return create_model(cls._get_model_name(), __base__= AssistantData,__module__=cls._get_module_name(), **schema)
 
 	@classmethod
@@ -312,42 +351,64 @@ async def request_user_input(request_schema:dict[str,tuple[str,str,Literal["opti
 		logger.info("Not received any requested input object for the amount of time, reached timeout.")
 		return None
 
+AssistantStreamer = Callable[[AssistantData],AsyncGenerator[AssistantData,None]]
 
-class BaseAssistant(ABC):
+class BaseAssistant(BaseModel):
 	"""This class is the base class of assistant app."""
-	graph: CompiledStateGraph = None
+	model_config = ConfigDict(arbitrary_types_allowed=True, validate_default=True, frozen=True)
+	streamer: AssistantStreamer
+	input_schema: Type[AssistantData]
+
+	assistant_classes:ClassVar[list["BaseAssistant"]]=[]
+
+	def __init_subclass__(cls, **kwargs):
+		super().__init_subclass__(**kwargs)
+		type_hints = get_type_hints(cls)
+		if not type_hints["streamer"] == AssistantStreamer:
+			raise TypeError(f"Typehint of 'streamer' must be 'AssistantStreamer'.")
+		if not type_hints["input_schema"]==Type[AssistantData]:
+			raise TypeError(f"Typehint of 'input_schema' must be 'Type[AssistantData]'.")
+		cls.assistant_classes.append(cls)
+
 
 	def __init__(self):
-		assert isinstance(self.graph,CompiledStateGraph)
-		self.schema: Type[AssistantData] = self.graph.builder.schema
-		assert issubclass(self.schema, AssistantData)
+		"""Does not accept any arguments, so all arguments must initialize as default"""
+		super().__init__()
+		logger.info(f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): {self.__class__.__name__} was initialized.")
 
-	async def get_schema(self) -> Type[AssistantData]:
-		return self.schema
+	def get_schema(self):
+		return self.input_schema
 
 	@classmethod
-	async def get_app(cls) -> serve.Application:
-		return serve.deployment(cls)().bind()
+	def get_app(cls) -> serve.Application:
+		return serve.deployment(name=f"{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}")(cls).bind()
 
 	async def handle_cancellation(self):
-		"""Optional handling after cancellation."""
+		"""Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
+		raise NotImplementedError
 
-	async def _graph_stream(self, data: AssistantData)->AsyncGenerator[AssistantData]:
-		async for chunk in self.graph.astream(data):
+	async def _stream(self, data: AssistantData)->AsyncGenerator[AssistantData, None]:
+		async for chunk in self.streamer(data):
 			if not isinstance(chunk,AssistantData):
-				raise ValueError("The returned of graph is not the instance of 'AssistantData'. ")
+				raise ValueError("The returned of graph is not the instance of 'AssistantData'.")
 			yield chunk
 
 	async def __call__(self, data_input: AssistantData, write_stream: WriteStream, read_stream: ReadStream):
 		try:
-			assert isinstance(data_input,self.schema)
+			if not isinstance(data_input,self.input_schema):
+				raise ValueError(f"User data input type must be {self.input_schema}.")
 			with _stream_cm(write_stream, read_stream) as token:
-				async for data in self._graph_stream(data_input):
+				async for data in self._stream(data_input):
 					await write_stream.write(data)
 
 		except asyncio.CancelledError as e:
 			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.CANCELING)))
-			await self.handle_cancellation()
+			try:
+				await self.handle_cancellation()
+			except NotImplementedError:
+				pass
+			except Exception as e:
+				await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.ERROR, detail=str(e))))
 			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.CANCELED)))
 		except Exception as e:
 			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.ERROR, detail=str(e))))
@@ -392,7 +453,7 @@ class AssistantInterface:
 			read_stream:
 
 		Returns:
-			asyncio.Task: This can be used for cancel the call task.
+			asyncio.Task: This can be used for cancel the call task. TODO
 		"""
 		handle = await AssistantInterface.get_assistant_app_handle(name)
 		task = asyncio.create_task(AssistantInterface._call_task(handle, write_stream, read_stream))
@@ -436,38 +497,3 @@ class AssistantInterface:
 			else:
 				logger.warning(f"Something maybe not as expected with assistant :\n{apps}")
 
-
-if __name__ == "__main__":
-	import cloudpickle
-	from pathlib import Path
-	import time
-	start = time.time()
-	# Test create assistant data model
-
-
-	if not Path("instance").exists():
-		print("dump")
-
-		model = AssistantData.create_model("MyModel", dict(picture=ImageObject, choose=(Selection | None, None),))
-		with open("instance", mode="wb") as f:
-			obj = model(picture=ImageObject(object_name="as", mime="sa"),
-			            # choose=Selection(options={"asd": "sda"}),
-			            status=Status(code="done"))
-			cloudpickle.dump(obj, f)
-		with open("class",mode="wb") as f:
-			cloudpickle.dump(model,f)
-
-	with open("instance", mode="rb") as f:
-		with open("class",mode="rb") as f1:
-			obj = cloudpickle.load(f)
-			print(type(obj))
-			for data in obj:
-				print(data)
-			print(obj.__class__.model_fields)
-
-			cls:BaseModel = cloudpickle.load(f1)
-			print(cls.__name__, cls.model_fields)
-
-	print(time.time()-start)
-
-	##

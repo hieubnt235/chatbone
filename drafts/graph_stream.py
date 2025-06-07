@@ -1,107 +1,59 @@
 import asyncio
 import os
-import threading
-import time
 
-from langgraph.graph import StateGraph, MessagesState, START, END
+from langchain.chat_models import init_chat_model
+from langgraph.graph import StateGraph
+from pydantic import BaseModel, ConfigDict
 
-
-class State(MessagesState):
-	pass
+from utilities.logger import logger
 
 
-def cpu_bound():
-	"""For debugging, it will make coroutines easy to see in tasks graph."""
-	time.sleep(0.25)
+class MyState(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    topic: str
+    joke: str = ""
+print(os.environ["GOOGLE_API_KEY"])
+llm = init_chat_model(model="google_genai:gemini-2.0-flash")
 
+async def call_model(state: MyState):
+    """Call the LLM to generate a joke about a topic"""
+    logger.info("START")
+    llm_response = await llm.ainvoke(
+        [
+            {"role": "user", "content": f"Tell me a joke about {state.topic}"}
+        ]
+    )
+    # for i in range(10):
+    #     await asyncio.sleep(1)
+    #     print(f"<{i}>",end="")
+    logger.info("__end_node__")
+    state.joke  = llm_response.content
+    return state
 
-def info():
-	return f"PID[{os.getpid()}] - [{threading.get_native_id()}] "
+async def node2(state):
+    logger.info("__node2__")
+    print(type(state))
+    state.topic = "node2:" + state.topic
+    return state
 
-
-t = 0.5
-n = 5
-
-
-def coro(s: str):
-	async def c(state):
-		asyncio.current_task().set_name(f"{s} {info()}")
-		for i in range(n):
-			print(f"{info()}:{s}")
-			cpu_bound()
-			await asyncio.sleep(t)
-		return dict(messages=[f'{s}'])
-
-	return c
-
-
-def func(s: str):
-	def f(state):
-		for i in range(n):
-			print(f"{info()}:{s}")
-			time.sleep(1)
-		return dict(messages=[f'{s}'])
-
-	return f
-
-
-async def non_graph_coro():
-	asyncio.current_task().set_name(f"NONE-GRAPH-CORO {info()}")
-	for i in range(n):
-		print(f"{info()}NON-GRAPH-CORO")
-		cpu_bound()
-		await asyncio.sleep(t)
-
-
-builder = StateGraph(State)
-
-builder.add_node('node_1', coro('coro1'))
-builder.add_node('node_2', coro('coro2'))
-builder.add_node('node_3', func('func3'))
-builder.add_node('node_4', func('func4'))
-
-builder.add_edge(START, 'node_1')
-builder.add_edge(START, 'node_2')
-builder.add_edge(START, 'node_3')
-builder.add_edge(START, 'node_4')
-
-builder.add_edge('node_1', END)
-builder.add_edge('node_2', END)
-builder.add_edge('node_3', END)
-builder.add_edge('node_4', END)
-
-graph = builder.compile()
-
-
-# print(graph.get_graph().draw_mermaid())
-
-
-async def async_main(m):
-	asyncio.create_task(non_graph_coro())
-
-	async for node in graph.astream(m):
-		print(node)
-
-
-def main(m):
-	for node in graph.stream(m):
-		print(node)
-
-
-if __name__ == "__main__":
-	m = State(messages=["Hello"])
-
-	asyncio.run(async_main(m))
-
-	# Cannot run because nodes is not all sync func.  # main(m)
-
-# If using stream, all node must be synchronous function, if there is async task, wrap it with sync.
-# All parallel branches will be executed in separated threads.
-
-# If using astream, node can be function (sync func) or coroutine (async func).
-# All sync func in parallel branches will be executed in separated threads, all async one will be executed in the same loop.
-# Note that astream must be call in a loop (ex: asyncio.run). And this loop will run all async func in graph along with others
-# non-graph async funcs.
-
-# Rule of thump: use astream
-# gunicorn, nginx, ...
+graph = (
+    StateGraph(MyState)
+    .add_node("node1",call_model)
+    .add_node("node2",node2)
+    .add_edge("node1","node2")
+    .set_entry_point("node1")
+    .compile()
+)
+async def main():
+    async for message_chunk in graph.astream({"topic": "ice cream"},stream_mode="messages"):
+        # if isinstance(message_chunk,dict):
+        #     message_chunk = json.dumps(message_chunk,indent=4)
+        print(message_chunk,end="\n<sep>\n")
+        # if message_chunk.content:
+        #     print("=========")
+        #     # for k,v in metadata.items():
+        #     #     print(k,":",v)
+        #     print(message_chunk.content, end="|", flush=True)
+        #     print("=========")
+        await asyncio.sleep(1)
+asyncio.run(main())

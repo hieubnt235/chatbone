@@ -9,7 +9,7 @@ from inspect import iscoroutine
 from typing import Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args
 from uuid import UUID
 
-import cloudpickle
+from cloudpickle import cloudpickle
 from pydantic import Field, PrivateAttr, BaseModel, ConfigDict, FileUrl, model_validator
 from redis import WatchError
 from redis.asyncio import Redis
