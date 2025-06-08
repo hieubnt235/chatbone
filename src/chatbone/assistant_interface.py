@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from types import NoneType
 from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union, Annotated, \
-	get_type_hints, get_origin
+	get_type_hints, get_origin, Coroutine
 from uuid import UUID
 
 import filetype
@@ -22,7 +22,7 @@ from ray.exceptions import RayTaskError, TaskCancelledError
 from ray.serve.handle import DeploymentHandle
 from uuid_extensions import uuid7
 
-from chatbone.broker import WriteStream, ReadStream, UserData, StreamData
+from chatbone.broker import WriteStream, ReadStream, StreamData
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
 from utilities.logger import logger
@@ -46,6 +46,7 @@ def assistant_datatype(cls_type):
 	AssistantDataType_T = tuple(type_list)
 	AssistantDataType_U = AssistantDataType_U|cls_type if AssistantDataType_U is not None else cls_type
 	return cls_type
+
 
 class MediaType(str, Enum):
 	IMAGE = "IMAGE"
@@ -145,26 +146,35 @@ class DocumentObject(MediaObject):
 class TextStream(BaseModel):
 	"""For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id.  """
 	id: UUID|int|str
-	created_at: datetime = utc_now()
+	created_at: datetime = Field(default_factory=utc_now)
 	chunk: str
 
 @assistant_datatype
-class Message(BaseModel):
-	role: Literal["system","user","content"]
-	content:str
+class Context(BaseModel):
+	"""Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,..."""
+	model_config = ConfigDict(arbitrary_types_allowed=True)
+	context: dict[str,str] = None
+	context_loader: Callable[[],Coroutine[None,None,dict[str,Any]]]=None
+
+	# noinspection PyNestedDecorators
+	@model_validator(mode="before")
+	@classmethod
+	def _check_init(cls,data:dict):
+		if not data.get("context") and not data.get("context_loader"):
+			raise ValueError("'context' or 'context_loader' must be provided.")
+		return data
+
+	async def get(self)->dict[str,str]:
+		if self.context:
+			return self.context
+		return await self.context_loader()
+
 
 @assistant_datatype
 class Selection(BaseModel):
 	"""This type is for querying user selections."""
 	options: dict[str, str]
 	"""name:description"""
-
-@assistant_datatype
-class UserPreviousData(BaseModel):
-	"""This input type should be set by service, not by user."""
-	userdata: UserData
-	chat_session_id: UUID | None= None
-	# TODO, implement method to get data
 
 class AssistantStatusCode(str, Enum):
 	START = "start"
@@ -182,17 +192,20 @@ class Status(BaseModel):
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
-# Addition support for langchain, this is not assistant type.
 # noinspection PyTypeHints
-LLMMessagesType_T = (Annotated[list[AnyMessage], add_messages], list[AnyMessage] , AnyMessage)
-# noinspection PyTypeHints
-LMMMessagesType_U = Annotated[list[AnyMessage], add_messages]| list[AnyMessage] | AnyMessage
+ManyMessages = Annotated[list[AnyMessage], add_messages]
+assistant_datatype(ManyMessages)
+assistant_datatype_strings.append("ManyMessages")
+
 
 # TODO, support multiple files, with the count depend on user. Dont need to change this code, change media instead.
 class AssistantData(StreamData):
 	# T means tuple, U means Union
-	T:ClassVar[Any] = AssistantDataType_T + LLMMessagesType_T
-	U:ClassVar[Any] = AssistantDataType_U | LMMMessagesType_U
+	T:ClassVar[Any] = AssistantDataType_T
+	U:ClassVar[Any] = AssistantDataType_U
+
+	status: Status
+
 	def __init_subclass__(cls, **kwargs):
 		super().__init_subclass__(**kwargs)
 
@@ -200,7 +213,6 @@ class AssistantData(StreamData):
 		# the full annotation, not like get_type_hints (return runtime type) or model_fields ( return baseclass annotations).
 		# So that we should loop through __annotations__, not directly call by keys.
 		type_hints = cls.__annotations__
-		print(type_hints)
 		for name, typehint in type_hints.items():
 			if get_origin(typehint)==ClassVar:
 				continue
@@ -223,9 +235,9 @@ class AssistantData(StreamData):
 			elif not arg in cls.T:
 				m = f"Does not support field definition '{arg}' of name '{name}'.Type hint must be 'AssistantDataType'."
 				raise ValueError(m)
-			elif arg in LLMMessagesType_T:
-				if not name in ["messages", "message"]:
-					m=f"Types in LLMMessagesType accept only key 'messages' or 'message' , got '{name}'."
+			elif arg==ManyMessages:
+				if name!="messages":
+					m=f"Types 'ManyMessages' accept only key 'messages', got '{name}'."
 					raise ValueError(m)
 
 	@classmethod
@@ -246,26 +258,28 @@ class AssistantData(StreamData):
 			cls._validate_schema(name,ann)
 
 	@classmethod
-	def create_model(cls, schema: dict[str, Any] ) -> Type["AssistantData"]:
+	def create_model(cls, schema: dict[str, Any], doc:str|None=None ) -> Type["AssistantData"]:
 		"""
 		Create a data model dynamically.
 		Args:
 			schema: dictionary with keys as name and
+			doc
 		Returns:
 			Instance of a subclass of AssistantData
 		"""
 		cls.validate_schema(schema)
-		return create_model(cls._get_model_name(), __base__= AssistantData,__module__=cls._get_module_name(), **schema)
+		return create_model(cls._get_model_name(), __base__= cls,__module__=cls._get_module_name(),__doc__=doc, **schema)
 
 	@classmethod
-	def create_request(cls,schema:dict[str,Any])->"RequestInput":
+	def create_request(cls,schema:dict[str,Any],doc:str|None=None)->"RequestInput":
 		"""
 		Args:
 			schema:
+			doc:
 		Returns:
 			RequestInput instance.
 		"""
-		request_model = cls.create_model(schema)
+		request_model = cls.create_model(schema,doc=doc)
 		uid = UUID(request_model.__name__.replace(super().__class__.__name__,"-"))
 		return RequestInput(id=uid,data_type=request_model)
 
@@ -288,6 +302,10 @@ def _stream_cm( write_stream:ReadStream, read_stream:WriteStream):
 	token = assistant_streams.set((WriteStream, ReadStream))
 	yield token
 	assistant_streams.reset(token)
+
+
+# Note: request_user_input is tool call, so it should have nice docstring, also argument should be serialized as
+# type string for LLM can init them.
 
 def format_doc(func):
 	func.__doc__ = func.__doc__.format(assistant_datatype_strings= assistant_datatype_strings)
@@ -364,16 +382,21 @@ class BaseAssistant(BaseModel):
 	def __init_subclass__(cls, **kwargs):
 		super().__init_subclass__(**kwargs)
 		type_hints = get_type_hints(cls)
-		if not type_hints["streamer"] == AssistantStreamer:
-			raise TypeError(f"Typehint of 'streamer' must be 'AssistantStreamer'.")
-		if not type_hints["input_schema"]==Type[AssistantData]:
-			raise TypeError(f"Typehint of 'input_schema' must be 'Type[AssistantData]'.")
+		if (st:=type_hints["streamer"]) != AssistantStreamer:
+			m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
+			raise TypeError(m)
+		if (it:=type_hints["input_schema"])!=Type[AssistantData]:
+			m = f"Typehint of 'input_schema' must be 'Type[AssistantData]'. Got '{it}'."
+			raise TypeError(m)
 		cls.assistant_classes.append(cls)
 
 
 	def __init__(self):
 		"""Does not accept any arguments, so all arguments must initialize as default"""
 		super().__init__()
+		if not isinstance(sr:=self.streamer(None), AsyncGenerator):
+			m = f"streamer return type must be type AsyncGenerator[AssistantData,None], got {type(sr)}."
+			raise ValueError(m)
 		logger.info(f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): {self.__class__.__name__} was initialized.")
 
 	def get_schema(self):
@@ -418,7 +441,6 @@ class BaseAssistant(BaseModel):
 class AssistantInterface:
 	"""Chat app uses this class to communicate with assistant app.
 	"""
-
 	def __init__(self):
 		self._handle: DeploymentHandle = None
 		self._assistant_name: str = None
@@ -453,7 +475,7 @@ class AssistantInterface:
 			read_stream:
 
 		Returns:
-			asyncio.Task: This can be used for cancel the call task. TODO
+			asyncio.Task: This can be used for cancel the call task.
 		"""
 		handle = await AssistantInterface.get_assistant_app_handle(name)
 		task = asyncio.create_task(AssistantInterface._call_task(handle, write_stream, read_stream))
@@ -480,7 +502,6 @@ class AssistantInterface:
 
 	@staticmethod
 	def _get_assistant_app_handle(assistant_name: str) -> DeploymentHandle:
-		assert assistant_name.endswith(CHATBONE_ASSISTANT_APP_POSTFIX)
 		return serve.get_app_handle(assistant_name)
 
 	@staticmethod
@@ -488,12 +509,21 @@ class AssistantInterface:
 		assistants = []
 		apps = serve.status().applications
 		for name, status in apps.items():
-			if not name.endswith(CHATBONE_ASSISTANT_APP_POSTFIX):
-				continue
 			if status.status == ray_schema.ApplicationStatus.RUNNING:
-				for deployment_status in status.deployments.values():
-					if deployment_status.status == ray_schema.DeploymentStatus.HEALTHY and deployment_status.status_trigger == ray_schema.DeploymentStatusTrigger.CONFIG_UPDATE_COMPLETED and deployment_status.replica_states == ray_schema.ReplicaState.RUNNING:
-						assistants.append(name)
-			else:
-				logger.warning(f"Something maybe not as expected with assistant :\n{apps}")
+				# Check healthy for all deployments and detect one name has assistant postfix
+				has_assistant_postfix: bool=False
+				has_one_deployment_not_healthy: bool=False
+				for depl_name, depl_status in status.deployments.items():
+					if depl_name.endswith(CHATBONE_ASSISTANT_APP_POSTFIX):
+						has_assistant_postfix= True
+					if not (depl_status.status == "HEALTHY"
+							and depl_status.status_trigger == "CONFIG_UPDATE_COMPLETED"
+							and depl_status.replica_states["RUNNING"]>0):
+						has_one_deployment_not_healthy=True
+						break
 
+				if has_assistant_postfix and not has_one_deployment_not_healthy:
+					assistants.append(name)
+				elif has_assistant_postfix:
+					logger.info(f"Detected assistant app '{name}' but it's not healthy.")
+		return assistants

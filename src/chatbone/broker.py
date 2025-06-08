@@ -34,7 +34,6 @@ class ChatboneData(BaseModel,ABC):
 	    3. All keys need to be static (constant, or bound with the top level key (with id)), dynamic case should raise when not available.
 	    4. Ensure all rkey always exist at the time of expiring or deleting.
 
-	static means
 
 	Notes:
 		1. Data is got through attributes of this class, require refresh manually to get updated data.
@@ -529,7 +528,7 @@ class ReadStream(Stream):
 		"""
 		Raw encodable data from redis stream has the form like this:
 			protocol 2
-			[['test_stream', [('1747389494281-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'}), ('1747389494418-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"edaede"}'})]]]' 
+			[['test_stream', [('1747389494281-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"abc"}'}), ('1747389494418-0', {'user_input': '', 'addition_info': 'null', 'data': '{"id":"068270c0-14f2-700c-8000-22a71d11823c","created_at":"2025-05-16T09:57:21.309097Z","dump":"def"}'})]]]' 
 			So data extract be like: data[0][1][:][1], with : is data. (protocol 2)
 			
 			or 
@@ -747,7 +746,7 @@ class UserData(ChatboneData):
 		if r is None:
 			if not await self.redis.exists(self.rkey):
 				raise UserNotFoundError("User data doesn't exist. Call 'save' first.")
-			r = NULL # None type is used for checkinf refreshed state, and NULL  for the real null in redis server.
+			r = NULL # None type is used for check if refreshed state, and NULL  for the real null in redis server.
 		else:
 			self.encrypted_secret_token = r
 			if r != NULL: # None is saved and load as 'null'

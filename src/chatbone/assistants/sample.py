@@ -1,16 +1,16 @@
-from typing import AsyncGenerator, Callable, Annotated, Type
+from typing import AsyncGenerator, Callable, Type
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AnyMessage
-from langgraph.graph import StateGraph, add_messages
+from langgraph.graph import StateGraph
 from pydantic import Field
-from utilities.logger import logger
 
-from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer
+from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer, ManyMessages, \
+	Status, AssistantStatusCode
+from utilities.logger import logger
 
 
 class SampleInputSchema(AssistantData):
-	messages: Annotated[list[AnyMessage], add_messages] = Field(default_factory=list)
+	messages: ManyMessages = Field(default_factory=list)
 
 def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData, None]]:
 	builder = StateGraph(SampleInputSchema)
@@ -24,20 +24,23 @@ def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData
 	builder.add_node("node1", node1).set_entry_point("node1").set_finish_point("node1")
 	graph = builder.compile()
 
-	TextStreamData = AssistantData.create_model({"content": TextStream})
+	TextStreamData = AssistantData.create_model({"content": TextStream}, doc="Data tokens stream")
 
 	async def streamer(data: AssistantData):
+		assert data is not None
 		# async for chunk in graph.astream(data,stream_mode=):
 		async for chunk, meta in graph.astream(data, stream_mode="messages"):
 			if isinstance(chunk, str):
-				yield TextStreamData(content=TextStream(id=meta["langgraph_node"], chunk=chunk))
+				yield TextStreamData(content=TextStream(id=meta["langgraph_node"], chunk=chunk),
+				                     status=Status(code=AssistantStatusCode.PROCESSING))
 
 	return streamer
 
-streamer = get_streamer()
+def foo(a):
+	return "a"+str(a)
 
 class SampleAssistant(BaseAssistant):
-	streamer: AssistantStreamer = streamer
+	streamer: AssistantStreamer = foo
 	input_schema: Type[AssistantData] = SampleInputSchema
 
 	async def handle_cancellation(self):

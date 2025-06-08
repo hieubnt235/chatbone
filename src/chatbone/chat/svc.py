@@ -181,7 +181,7 @@ class AssistantApp(BaseModel):
 # noinspection PyMethodMayBeStatic
 class ChatAssistantSVC(_DataSVC):
 	"""
-	This class support static check for validating current assistant apps, If something wrong, need to recreate to reinit.
+	This class support static check for validating current assistant apps, If something wrong, need to recreate to reinit (user refresh page)
 	"""
 	def __init__(self):
 		self.userdata: UserDataCache = None
@@ -193,22 +193,6 @@ class ChatAssistantSVC(_DataSVC):
 		obj.userdata = userdata
 		await obj._init_all_assistant_app()
 		await obj._init_user_data()
-
-	async def _init_all_assistant_app(self):
-		names = await AssistantInterface.get_assistant_names()
-		for name in names:
-			self.assistant_apps[name] = await AssistantApp.create(name)
-
-	async def _init_user_data(self):
-		await self.userdata.refresh(exclude={})
-		if not self.userdata.summaries:
-			user_summaries = await self._call_data_svc_method(self._get_user_summaries, UserSummarySVCGetLatest(token_id=self.token_id))
-
-			def _extract():
-				return [s.summary for s in user_summaries.summaries]
-
-			await self.userdata.append("summaries", await asyncio.to_thread(_extract))
-			await self.userdata.refresh(exclude={})
 
 	async def create_chat_session(self) -> UUID:
 		return (await self._call_data_svc_method(self._create_chat_session,ChatSVCBase(token_id=self.token_id))).id
@@ -238,11 +222,10 @@ class ChatAssistantSVC(_DataSVC):
 			await self.userdata.update("chat_sessions",await asyncio.to_thread(_extract))
 			return (await self.userdata.get_chat_sessions([chat_session_id]))[chat_session_id]
 
-
 	@asynccontextmanager
 	@handle_http_exception(ServerError)
 	async def chat(self, assistant_name:str, data: AssistantData, chat_session_id:UUID):
-		"""
+		""" TODO
 		Args:
 			assistant_name:
 			data:
@@ -284,6 +267,22 @@ class ChatAssistantSVC(_DataSVC):
 	@property
 	def token_id(self)->UUID:
 		return self.userdata.user_token.id
+
+	async def _init_all_assistant_app(self):
+		names = await AssistantInterface.get_assistant_names()
+		for name in names:
+			self.assistant_apps[name] = await AssistantApp.create(name)
+
+	async def _init_user_data(self):
+		await self.userdata.refresh(exclude={})
+		if not self.userdata.summaries:
+			user_summaries = await self._call_data_svc_method(self._get_user_summaries, UserSummarySVCGetLatest(token_id=self.token_id))
+
+			def _extract():
+				return [s.summary for s in user_summaries.summaries]
+
+			await self.userdata.append("summaries", await asyncio.to_thread(_extract))
+			await self.userdata.refresh(exclude={})
 
 	async def _call_data_svc_method[S,T](self,func:Callable[[S],Coroutine[...,...,T]], schema:S)->T:
 		assert hasattr(schema,"token_id")
