@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import asynccontextmanager, AsyncExitStack
+from contextlib import asynccontextmanager, AsyncExitStack, AbstractAsyncContextManager
 from typing import Callable, Coroutine, Self
 from uuid import UUID
 
@@ -10,7 +10,7 @@ from ray.serve.handle import DeploymentHandle
 from redis.exceptions import LockError
 
 from chatbone.assistant_interface import AssistantInterface, AssistantData
-from chatbone.broker import UserData as UserDataCache, UserToken, ChatSessionData, Message
+from chatbone.broker import UserData as UserDataCache, UserToken, ChatSessionData, Message, WriteStream, ReadStream
 from chatbone.chat.settings import DATASTORE, CONFIG, AUTH
 from utilities.exception import handle_http_exception
 from utilities.func import utc_now
@@ -178,12 +178,19 @@ class AssistantApp(BaseModel):
 		schema = await AssistantInterface.get_assistant_schema(assistant_name)
 		return cls(name=assistant_name,schema=schema)
 
+class ChatHandle(BaseModel):
+	model_config = ConfigDict(arbitrary_types_allowed=True)
+	write_stream: WriteStream
+	read_stream:ReadStream
+	task: asyncio.Task
+
 # noinspection PyMethodMayBeStatic
 class ChatAssistantSVC(_DataSVC):
 	"""
 	This class support static check for validating current assistant apps, If something wrong, need to recreate to reinit (user refresh page)
 	"""
 	def __init__(self):
+		# Capture data.
 		self.userdata: UserDataCache = None
 		self.assistant_apps: dict[str, AssistantApp] = {}
 
@@ -191,8 +198,12 @@ class ChatAssistantSVC(_DataSVC):
 	async def create(cls, userdata: UserDataCache):
 		obj = cls()
 		obj.userdata = userdata
-		await obj._init_all_assistant_app()
-		await obj._init_user_data()
+		await obj.refresh()
+
+	async def refresh(self):
+		"""Recapture all assistant apps and reload userdata."""
+		await self._init_all_assistant_app()
+		await self._init_user_data()
 
 	async def create_chat_session(self) -> UUID:
 		return (await self._call_data_svc_method(self._create_chat_session,ChatSVCBase(token_id=self.token_id))).id
@@ -223,8 +234,7 @@ class ChatAssistantSVC(_DataSVC):
 			return (await self.userdata.get_chat_sessions([chat_session_id]))[chat_session_id]
 
 	@asynccontextmanager
-	@handle_http_exception(ServerError)
-	async def chat(self, assistant_name:str, data: AssistantData, chat_session_id:UUID):
+	async def chat(self, assistant_name:str, data: AssistantData, chat_session_id:UUID)-> AbstractAsyncContextManager[ChatHandle]:
 		""" TODO
 		Args:
 			assistant_name:
@@ -244,29 +254,25 @@ class ChatAssistantSVC(_DataSVC):
 		except (KeyError, AssertionError) as e:
 			raise ValueError( f"Static check fail for assistant. {e}")
 
-		try:
-			cs = await self.get_chat_session(chat_session_id)
-			async with AsyncExitStack() as stack:
-				try:
-					streams = await stack.enter_async_context(cs.get_streams(write_streams_acquire_timeout=CONFIG.write_stream_accquire_timeout))
-				except LockError:
-					streams = await stack.enter_async_context(cs.get_streams(read_only=True))
-				task = await AssistantInterface.call(assistant_name, data,*streams["as2cs"])
-				async def _cancel_task():
-					task.cancel()
-					await task
+		cs = await self.get_chat_session(chat_session_id)
+		async with AsyncExitStack() as stack:
+			try:
+				streams = await stack.enter_async_context(cs.get_streams(write_streams_acquire_timeout=CONFIG.write_stream_accquire_timeout))
+			except LockError:
+				streams = await stack.enter_async_context(cs.get_streams(read_only=True))
 
-				yield streams["cs2as"], task # chat app uses these streams.
+			# todo: prepare context.
 
-		except asyncio.CancelledError:
-			raise
-		finally:
-			pass
+			task = await stack.enter_async_context( AssistantInterface.call(assistant_name, data,*streams["as2cs"]))
+			chat_handle = ChatHandle(write_stream=streams["cs2as"][0], read_stream=streams["cs2as"][1], task=task)
+			yield chat_handle # chat app uses these streams.
 
+			# todo: persist data.
 
 	@property
 	def token_id(self)->UUID:
 		return self.userdata.user_token.id
+
 
 	async def _init_all_assistant_app(self):
 		names = await AssistantInterface.get_assistant_names()

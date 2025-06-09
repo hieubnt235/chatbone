@@ -12,8 +12,9 @@
     <list default="true" id="be017e0f-2095-4070-b9b5-91ee5227dde7" name="Changes" comment="cache strategy">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/assistant_interface.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/assistant_interface.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/assistants/dummy.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/assistants/dummy.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/chatbone/assistants/sample.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/assistants/sample.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chatbone/broker.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/broker.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/chatbone/chat/svc.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/chatbone/chat/svc.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -61,7 +62,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/hieubnt235/chatbone.git&quot;,
-    &quot;accountId&quot;: &quot;680db644-4fee-441f-a3af-91ad08d65aa5&quot;
+    &quot;accountId&quot;: &quot;dc5a70b9-3634-4595-a4df-cca81e115910&quot;
   }
 }</component>
   <component name="HighlightingSettingsPerFile">
@@ -358,7 +359,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Python.sample">
+  <component name="RunManager" selected="Python.dummy">
     <configuration default="true" type="docker-deploy" factoryName="docker-compose.yml" temporary="true">
       <deployment type="docker-compose.yml">
         <settings />
@@ -410,6 +411,29 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/assistant_interface.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="dummy" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="chatbone" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone/assistants" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/assistants/dummy.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -478,29 +502,6 @@
         </ENTRIES>
       </EXTENSION>
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/assistants/sample.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="streamblock" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="chatbone" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/src/chatbone/try" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/chatbone/try/streamblock.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -817,21 +818,21 @@
       <item itemvalue="Python.try_stream" />
       <item itemvalue="Python.test_settings" />
       <item itemvalue="Python.tools_client" />
+      <item itemvalue="Python.dummy" />
       <item itemvalue="Python.assistant_interface" />
       <item itemvalue="Python.sample" />
       <item itemvalue="Python.graph_stream" />
       <item itemvalue="Python.trycontext" />
-      <item itemvalue="Python.streamblock" />
       <item itemvalue="Python Debug Server.RemoteServer" />
       <item itemvalue="Python tests.pytest in chat_repo" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.dummy" />
         <item itemvalue="Python.sample" />
         <item itemvalue="Python.assistant_interface" />
         <item itemvalue="Python.graph_stream" />
         <item itemvalue="Python.trycontext" />
-        <item itemvalue="Python.streamblock" />
       </list>
     </recent_temporary>
   </component>
@@ -849,7 +850,7 @@
   </component>
   <component name="TamaCatBrowser">
     <tabPlacements>
-      <tabPlacement position="RIGHT_BOTTOM" url="file:///jbcefbrowser/1195742981#url=about:blank" />
+      <tabPlacement position="RIGHT_BOTTOM" url="file:///jbcefbrowser/2022306256#url=about:blank" />
       <tabPlacement position="RIGHT_BOTTOM" url="https://github.com/hieubnt235?tab=repositories" />
       <tabPlacement position="RIGHT_BOTTOM" url="https://github.com/hlf20010508/miniopy-async" />
     </tabPlacements>
@@ -1097,7 +1098,8 @@
       <workItem from="1749303807345" duration="1267000" />
       <workItem from="1749305235734" duration="2503000" />
       <workItem from="1749311936438" duration="11289000" />
-      <workItem from="1749366632251" duration="5492000" />
+      <workItem from="1749366632251" duration="9739000" />
+      <workItem from="1749428809814" duration="1396000" />
     </task>
     <task id="LOCAL-00001" summary="general architecture">
       <option name="closed" value="true" />
@@ -1295,8 +1297,8 @@
     <SUITE FILE_PATH="coverage/chatbone$assistant_interface.coverage" NAME="assistant_interface Coverage Results" MODIFIED="1749293588767" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$broker.coverage" NAME="broker Coverage Results" MODIFIED="1746715430801" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$rpcsv.coverage" NAME="rpcsv Coverage Results" MODIFIED="1745977716376" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
-    <SUITE FILE_PATH="coverage/chatbone$dummy.coverage" NAME="dummy_app Coverage Results" MODIFIED="1745496474512" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools/experiment" />
     <SUITE FILE_PATH="coverage/chatbone$ray_flet.coverage" NAME="ray_flet Coverage Results" MODIFIED="1747671344941" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/drafts" />
+    <SUITE FILE_PATH="coverage/chatbone$dummy.coverage" NAME="dummy Coverage Results" MODIFIED="1749430160478" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone/assistants" />
     <SUITE FILE_PATH="coverage/chatbone$clients.coverage" NAME="clients Coverage Results" MODIFIED="1744391711511" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone_utils/datastore" />
     <SUITE FILE_PATH="coverage/chatbone$try.coverage" NAME="try Coverage Results" MODIFIED="1747144437743" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/chatbone" />
     <SUITE FILE_PATH="coverage/chatbone$tool_client.coverage" NAME="tool_client Coverage Results" MODIFIED="1745505869733" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/tools" />

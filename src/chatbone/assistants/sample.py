@@ -3,14 +3,16 @@ from typing import AsyncGenerator, Callable, Type
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph
 from pydantic import Field
+from typing_extensions import Annotated
 
 from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer, ManyMessages, \
-	Status, AssistantStatusCode
+	Status, AssistantStatusCode, ImageObject, VideoObject
 from utilities.logger import logger
 
 
 class SampleInputSchema(AssistantData):
 	messages: ManyMessages = Field(default_factory=list)
+	images: list[ImageObject]|VideoObject|None=None
 
 def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData, None]]:
 	builder = StateGraph(SampleInputSchema)
@@ -36,11 +38,9 @@ def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData
 
 	return streamer
 
-def foo(a):
-	return "a"+str(a)
 
 class SampleAssistant(BaseAssistant):
-	streamer: AssistantStreamer = foo
+	streamer: AssistantStreamer = get_streamer()
 	input_schema: Type[AssistantData] = SampleInputSchema
 
 	async def handle_cancellation(self):

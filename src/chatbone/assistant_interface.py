@@ -1,13 +1,13 @@
 import asyncio
 import os
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager, AbstractAsyncContextManager
 from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
-from types import NoneType
+from types import NoneType, UnionType
 from typing import AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union, Annotated, \
-	get_type_hints, get_origin, Coroutine
+	get_type_hints, get_origin, Coroutine, List
 from uuid import UUID
 
 import filetype
@@ -200,45 +200,54 @@ assistant_datatype_strings.append("ManyMessages")
 
 # TODO, support multiple files, with the count depend on user. Dont need to change this code, change media instead.
 class AssistantData(StreamData):
+	model_config = ConfigDict(validate_default=True, validate_assignment=True)
 	# T means tuple, U means Union
 	T:ClassVar[Any] = AssistantDataType_T
 	U:ClassVar[Any] = AssistantDataType_U
 
 	status: Status
 
-	def __init_subclass__(cls, **kwargs):
-		super().__init_subclass__(**kwargs)
-
-		# Note: __annotations__ does not work in ray replica, it will return {}, only work in driver. But it returns
-		# the full annotation, not like get_type_hints (return runtime type) or model_fields ( return baseclass annotations).
-		# So that we should loop through __annotations__, not directly call by keys.
-		type_hints = cls.__annotations__
-		for name, typehint in type_hints.items():
-			if get_origin(typehint)==ClassVar:
+	@classmethod
+	def __pydantic_init_subclass__(cls, **kwargs):
+		fields:dict[str,FieldInfo] = cls.model_fields
+		for name, field_info in fields.items():
+			ann = field_info.annotation
+			if get_origin(ann)==ClassVar:
 				continue
-			cls._validate_schema(name,typehint)
-	
-	def __init__(self,*args,**kwargs):
-		super().__init__(*args,**kwargs)
-		print("init assistant data",self.__class__.model_fields)
+			if field_info.metadata:
+				ann = Annotated[ann,*field_info.metadata]
+			cls._validate_schema(name,ann)
 
 	@classmethod
-	def _validate_schema(cls,name:str, ann:Any):
-		if get_origin(ann) == Annotated: # not have |, only standalone Annotated
-			args = [ann]
-		else:
-			args = get_args(ann)
-			args = list(args) if args else [ann]
-		for arg in args:
-			if arg == NoneType:
-				assert len(arg) > 1
-			elif not arg in cls.T:
-				m = f"Does not support field definition '{arg}' of name '{name}'.Type hint must be 'AssistantDataType'."
+	def get_data_fields(cls)->dict[str, FieldInfo]:
+		fields: dict[str,FieldInfo] = cls.__class__.model_fields
+		for name, field_info in fields.items():
+			if get_origin(field_info.annotation)==ClassVar:
+				fields.pop(name)
+		return fields
+
+	@classmethod
+	def _validate_schema(cls,name:str, ann:Type[Any]):
+		# General supported type examples: ManyMessages, ImageObject, list[ImageObject]|VideoObject, ImageObject|VideoObject|None
+		# validate recursively
+		org = get_origin(ann)
+		if org in (None, Annotated):
+			if not ann in cls.T:
+				m = f"Does not support field annotation '{ann}' of field name '{name}'.Type hint must be in {cls.T}."
 				raise ValueError(m)
-			elif arg==ManyMessages:
+			elif ann==ManyMessages:
 				if name!="messages":
 					m=f"Types 'ManyMessages' accept only key 'messages', got '{name}'."
 					raise ValueError(m)
+		else:
+			if issubclass(org,(list, UnionType)):
+				new_anns = list(get_args(ann))
+				if NoneType in new_anns:
+					assert len(new_anns)>1
+					new_anns.remove(NoneType)
+				for ann in new_anns:
+					cls._validate_schema(name,ann)
+
 
 	@classmethod
 	def _get_model_name(cls):
@@ -379,20 +388,25 @@ class BaseAssistant(BaseModel):
 
 	assistant_classes:ClassVar[list["BaseAssistant"]]=[]
 
-	def __init_subclass__(cls, **kwargs):
-		super().__init_subclass__(**kwargs)
+	@classmethod
+	def __pydantic_init_subclass__(cls, **kwargs):
 		type_hints = get_type_hints(cls)
-		if (st:=type_hints["streamer"]) != AssistantStreamer:
+		fields = cls.model_fields
+
+		if (st:=fields["streamer"].annotation) != AssistantStreamer:
 			m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
 			raise TypeError(m)
-		if (it:=type_hints["input_schema"])!=Type[AssistantData]:
+		if (it:=fields["input_schema"].annotation)!=Type[AssistantData]:
 			m = f"Typehint of 'input_schema' must be 'Type[AssistantData]'. Got '{it}'."
 			raise TypeError(m)
 		cls.assistant_classes.append(cls)
 
 
 	def __init__(self):
-		"""Does not accept any arguments, so all arguments must initialize as default"""
+		"""
+		Because type hint compare of callable in init_subclass does not check for internal, now check it.
+		Does not accept any arguments, so all arguments must initialize as default.
+		"""
 		super().__init__()
 		if not isinstance(sr:=self.streamer(None), AsyncGenerator):
 			m = f"streamer return type must be type AsyncGenerator[AssistantData,None], got {type(sr)}."
@@ -408,7 +422,7 @@ class BaseAssistant(BaseModel):
 
 	async def handle_cancellation(self):
 		"""Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
-		raise NotImplementedError
+		pass
 
 	async def _stream(self, data: AssistantData)->AsyncGenerator[AssistantData, None]:
 		async for chunk in self.streamer(data):
@@ -423,28 +437,25 @@ class BaseAssistant(BaseModel):
 			with _stream_cm(write_stream, read_stream) as token:
 				async for data in self._stream(data_input):
 					await write_stream.write(data)
-
+			await self._write_status(code=AssistantStatusCode.SUCCESS)
 		except asyncio.CancelledError as e:
-			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.CANCELING)))
+			await self._write_status(code=AssistantStatusCode.CANCELING)
 			try:
 				await self.handle_cancellation()
-			except NotImplementedError:
-				pass
 			except Exception as e:
-				await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.ERROR, detail=str(e))))
-			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.CANCELED)))
+				await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
+			await self._write_status(code=AssistantStatusCode.CANCELED)
 		except Exception as e:
-			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.ERROR, detail=str(e))))
+			await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
 		finally:
-			await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.DONE)))
+			await self._write_status(AssistantStatusCode.DONE)
+
+	async def _write_status(self,code: AssistantStatusCode, detail:str|None=None ):
+		write_stream = assistant_streams.get()[0]
+		await write_stream.write(AssistantData(status=Status(code=AssistantStatusCode.DONE,detail=detail)))
 
 class AssistantInterface:
-	"""Chat app uses this class to communicate with assistant app.
-	"""
-	def __init__(self):
-		self._handle: DeploymentHandle = None
-		self._assistant_name: str = None
-
+	"""Chat app uses this class to communicate with assistant app."""
 	@staticmethod
 	async def get_assistant_names() -> list[str]:
 		"""
@@ -465,7 +476,8 @@ class AssistantInterface:
 		return await asyncio.to_thread(AssistantInterface._get_assistant_app_handle, assistant_name)
 
 	@staticmethod
-	async def call(name, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream) -> asyncio.Task:
+	@asynccontextmanager
+	async def call(name, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream) -> AbstractAsyncContextManager[asyncio.Task]:
 		"""
 		Call assistant and return the asyncio.Task
 		Args:
@@ -478,8 +490,10 @@ class AssistantInterface:
 			asyncio.Task: This can be used for cancel the call task.
 		"""
 		handle = await AssistantInterface.get_assistant_app_handle(name)
-		task = asyncio.create_task(AssistantInterface._call_task(handle, write_stream, read_stream))
-		return task
+		task = asyncio.create_task(AssistantInterface._call_task(handle, data, write_stream, read_stream))
+		yield task
+		task.cancel()
+		await task
 
 	@staticmethod
 	async def _call_task(handle: DeploymentHandle, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream):
