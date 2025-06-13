@@ -507,24 +507,10 @@ class StreamData(BaseModel):
 
     def _encode(self) -> dict[FieldT, EncodableT]:
         return {f"{StreamData}": cloudpickle.dumps(self)}
-        # encoder_data:dict[str,int|float|str|bytes] = {}
-        # for field,value in self.model_dump(mode='json',exclude_none=True,exclude_defaults=True).items():
-        # 	if not isinstance(value, (bytes, str, int, float)):
-        # 		encoder_data[field] = json.dumps(value)
-        # 	else:
-        # 		encoder_data[field] = value
-        # return encoder_data
 
     @classmethod
     def _decode(cls, data: dict[FieldT, EncodableT]) -> Self:
         return cloudpickle.loads(data[f"{cls}".encode()])
-        # return cls.model_validate()
-        # for k,value in data.items():
-        # 	try:
-        # 		decode_data[k] = json.loads(value)
-        # 	except JSONDecodeError:
-        # 		decode_data[k] = value
-        # return cls.model_validate(decode_data)
 
     async def encode(self) -> dict[str, int | float | str | bytes]:
         return await asyncio.to_thread(self._encode)
