@@ -1,17 +1,20 @@
 import logging
-import os
 import sys
 
 from loguru import logger
 
-LOG_LEVEL = os.getenv("CHATBONE_LOG_LEVEL") or "DEBUG"
+# LOG_LEVEL = os.getenv("CHATBONE_LOG_LEVEL") or "DEBUG"
+# LOG_LEVEL = "INFO"
+LOG_LEVEL = "DEBUG"
 
 logger.remove()
 
-logger.add(sys.stderr,
+logger.add(
+    sys.stderr,
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    level=LOG_LEVEL  # Set the level Loguru itself will handle
+    level=LOG_LEVEL,  # Set the level Loguru itself will handle
 )
+
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
@@ -31,6 +34,7 @@ class InterceptHandler(logging.Handler):
             level, record.getMessage()
         )
 
+
 logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
 
@@ -38,7 +42,6 @@ logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 #     _logger = logging.getLogger(logger_name)
 #     _logger.propagate = False
 #     _logger.handlers = [InterceptHandler()]
-
 
 
 __all__ = ["logger"]

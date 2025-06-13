@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 authors = [
-    {name = "Hieu", email = "hieu.buinguyen2352001@gmail.com"}
+    { name = "Hieu", email = "hieu.buinguyen2352001@gmail.com" }
 ]
 name = "chatbone"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "aiofiles>=24.1.0",
     "aiohttp>=3.11.13",
@@ -22,7 +22,8 @@ dependencies = [
     "fastapi[standard]==0.115.12",
     "fastmcp>=2.2.0",
     "filetype>=1.2.0",
-    "flet[all]==0.28.3",
+    "flet-audio>=0.1.0",
+    "flet[all]>=0.28.3",
     "ipywidgets>=8.1.5",
     "langchain>=0.3.19",
     "langchain-google-genai>=2.1.5",
@@ -58,17 +59,17 @@ where = ["src"]
 include = ["*"]
 
 [tool.pytest.ini_options]
-asyncio_default_fixture_loop_scope="session"
-asyncio_default_test_loop_scope="session"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 asyncio_mode = "strict"
-testpaths="tests"
-addopts="-v"
+testpaths = "tests"
+addopts = "-v"
 
 
-markers=[
-    "unit", "auth", "utils","repo","workflows"
+markers = [
+    "unit", "auth", "utils", "repo", "workflows"
 ]
-env=[
-#    "LOGURU_LEVEL=INFO",
+env = [
+    #    "LOGURU_LEVEL=INFO",
     "LOGURU_LEVEL=DEBUG",
 ]
