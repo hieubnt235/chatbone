@@ -60,9 +60,13 @@ def assistant_datatype(cls_type):
 
 
 class BaseAssistantType(BaseModel):
+    output_only: ClassVar[bool] = False
+    """This data type only be used for output (AS2CS). User cannot provide this class has output_only=True."""
+
     to_user: bool = True
     """Data hold this status is intentionally for user. Set it false if data is just use to saved, not to show.
     This attribute only has affect in AS2CS, will be ignore in CS2AS."""
+
 
 class MediaType(str, Enum):
     IMAGE = "IMAGE"
@@ -236,6 +240,7 @@ class DocumentObject(MediaObject):
 @assistant_datatype
 class TextStream(BaseAssistantType):
     """For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id."""
+    output_only = True
     id: UUID | int | str
     chunk: str
 
@@ -249,10 +254,14 @@ class Text(BaseAssistantType):
     """role of Text sent from chat session always be "user" and only role "assistant" will be shown in main dialog. """
     content: str
 
-@assistant_datatype
-class Context(BaseModel):
-    """Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,..."""
 
+@assistant_datatype
+class Context(BaseAssistantType):
+    """Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,...
+    This is the input of assistant, but given by app, not by user.
+    """
+
+    to_user: bool = False
     model_config = ConfigDict(arbitrary_types_allowed=True)
     context: dict[str, str] = None
     context_loader: Callable[[], Coroutine[None, None, dict[str, Any]]] = None
@@ -272,7 +281,7 @@ class Context(BaseModel):
 
 
 @assistant_datatype
-class BaseSelection(BaseModel):
+class BaseSelection(BaseAssistantType):
     """This type is for querying user selections."""
 
     @classmethod
@@ -293,9 +302,10 @@ class AssistantStatusCode(str, Enum):
 
 
 @assistant_datatype
-class Status(BaseModel):
-    code: AssistantStatusCode
+class Status(BaseAssistantType):
+    output_only = True
 
+    code: AssistantStatusCode
     detail: str | None = None
 
 
@@ -303,16 +313,17 @@ assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
 class AssistantData(StreamData):
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
+    input_schema: ClassVar[bool] = False
+
     # T means tuple, U means Union
     T: ClassVar[Any] = AssistantDataType_T
     U: ClassVar[Any] = AssistantDataType_U
 
     created_at: datetime = Field(default_factory=utc_now)
 
-    status: Status
 
     @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs):
+    def __pydantic_init_subclass__(cls):
         fields: dict[str, FieldInfo] = cls.model_fields
         for name, field_info in fields.items():
             ann = field_info.annotation
@@ -339,6 +350,11 @@ class AssistantData(StreamData):
             if not issubclass(ann,cls.T):
                 m = f"Does not support field annotation '{ann.__name__}' of field name '{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
+            if cls.input_schema:
+                assert issubclass(ann, BaseAssistantType)
+                if ann.output_only:
+                    m = f"Input schema can not contain output-only type '{ann.__name__}' of field name '{name}'."
+                    raise ValueError(m)
         else:
             if issubclass(org, (list, UnionType)):
                 new_anns = list(get_args(ann))
@@ -402,13 +418,19 @@ class AssistantData(StreamData):
         return RequestInput(id=uid, data_type=request_model)
 
 
+class AssistantInputData(AssistantData):
+    input_schema = True
+
+class AssistantOutputData(AssistantData):
+    status: Status
+
 class RequestInput(StreamData):
     """This class is used for request input from user. User also send this class instance as response."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
     id: UUID = Field(frozen=True)
-    data_type: Type[AssistantData] = Field(frozen=True)
-    data: AssistantData | None = None
+    data_type: Type[AssistantInputData] = Field(frozen=True)
+    data: AssistantInputData | None = None
 
     @model_validator(mode="after")
     def check_data(self) -> Self:
@@ -518,7 +540,7 @@ async def request_user_input(
         return None
 
 
-AssistantStreamer = Callable[[AssistantData], AsyncGenerator[AssistantData, None]]
+AssistantStreamer = Callable[[AssistantInputData], AsyncGenerator[AssistantOutputData, None]]
 
 
 class BaseAssistant(BaseModel):
@@ -528,7 +550,7 @@ class BaseAssistant(BaseModel):
         arbitrary_types_allowed=True, validate_default=True, frozen=True
     )
     streamer: AssistantStreamer
-    input_schema: Type[AssistantData]
+    input_schema: Type[AssistantInputData]
 
     name: str
     """assistant name that will be shown to user frontend."""
@@ -543,9 +565,10 @@ class BaseAssistant(BaseModel):
         if (st := fields["streamer"].annotation) != AssistantStreamer:
             m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
             raise TypeError(m)
-        if (it := fields["input_schema"].annotation) != Type[AssistantData]:
-            m = f"Typehint of 'input_schema' must be 'Type[AssistantData]'. Got '{it}'."
+        if (it := fields["input_schema"].annotation) != Type[AssistantInputData]:
+            m = f"Typehint of 'input_schema' must be 'Type[AssistantInputData]'. Got '{it}'."
             raise TypeError(m)
+
         cls.assistant_classes.append(cls)
 
     def __init__(self):
@@ -555,7 +578,7 @@ class BaseAssistant(BaseModel):
         """
         super().__init__()
         if not isinstance(sr := self.streamer(None), AsyncGenerator):
-            m = f"streamer return type must be type AsyncGenerator[AssistantData,None], got {type(sr)}."
+            m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
             raise ValueError(m)
         logger.info(
             f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): {self.__class__.__name__} was initialized."
@@ -577,17 +600,17 @@ class BaseAssistant(BaseModel):
         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
         pass
 
-    async def _stream(self, data: AssistantData) -> AsyncGenerator[AssistantData, None]:
+    async def _stream(self, data: AssistantInputData) -> AsyncGenerator[AssistantOutputData, None]:
         async for chunk in self.streamer(data):
-            if not isinstance(chunk, AssistantData):
+            if not isinstance(chunk, AssistantOutputData):
                 raise ValueError(
-                    "The returned of graph is not the instance of 'AssistantData'."
+                    "The returned of graph is not the instance of 'AssistantOutputData'."
                 )
             yield chunk
 
     async def __call__(
         self,
-        data_input: AssistantData,
+        data_input: AssistantInputData,
         write_stream: WriteStream,
         read_stream: ReadStream,
     ):

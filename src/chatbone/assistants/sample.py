@@ -5,8 +5,19 @@ from langgraph.graph import StateGraph, MessagesState
 from pydantic import Field
 from typing_extensions import Annotated
 
-from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer, Status, \
-	AssistantStatusCode, ImageObject, VideoObject, Text, BaseSelection
+from chatbone.assistant_interface import (
+    BaseAssistant,
+    AssistantData,
+    TextStream,
+    AssistantStreamer,
+    Status,
+    AssistantStatusCode,
+    ImageObject,
+    VideoObject,
+    Text,
+    BaseSelection,
+    AssistantInputData,
+)
 from utilities.logger import logger
 
 
@@ -16,10 +27,11 @@ class Selection(BaseSelection):
 	c:bool
 	d:str
 
-class SampleInputSchema(AssistantData):
+class SampleInputSchema(AssistantInputData):
 	text: Text
 	images: list[ImageObject]|VideoObject|None=None
 	selection: Selection
+	# textstream:TextStream
 
 def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData, None]]:
 	builder = StateGraph(SampleInputSchema)
@@ -48,7 +60,7 @@ def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData
 
 class SampleAssistant(BaseAssistant):
 	streamer: AssistantStreamer = get_streamer()
-	input_schema: Type[AssistantData] = SampleInputSchema
+	input_schema: Type[AssistantInputData] = SampleInputSchema
 	name:str = "Sample Assistant"
 
 	async def handle_cancellation(self):

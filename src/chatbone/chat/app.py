@@ -1,27 +1,22 @@
+import asyncio
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from enum import Enum
 from math import floor
 from pathlib import Path
+from types import UnionType
 from typing import Literal, Any, get_origin, get_args, List, Type, Sequence
 from uuid import UUID
 
 import flet as ft
+from flet.core.dropdown import DropdownOption
 from pydantic import Field
 from pydantic.fields import FieldInfo
 from ray import serve
 from uuid_extensions import uuid7
 
-from chatbone.assistant_interface import (
-    ImageObject,
-    VideoObject,
-    AudioObject,
-    DocumentObject,
-    TextStream,
-    Selection,
-    MediaObject,
-    AnyMediaObject,
-)
+from chatbone.assistant_interface import (ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection,
+                                          MediaObject, AnyMediaObject, )
 from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError
 from chatbone.chat.svc import *
 from utilities.logger import logger
@@ -307,38 +302,36 @@ class MainView(ChatboneView):
                 ]
             )
 
-    class InputControlStack(ft.Stack):
+    class InputOptions(ft.Column):
         """For input format stack, provide visible only one mechanism.
-        Note: Must create instance through create method.
+        Note: Must create instance through create method.  For UNion...
         """
+        def __init__(self, controls: dict[str,ft.Control], **kwargs):
+            for control in controls:
+                control.visible = False
 
-        def __init__(self, controls: Sequence[ft.Control], **kwargs):
-            self._current_visible_index = None
-            super().__init__(controls, **kwargs)
+            self._controls = controls
+            self._keys: list[str] = list(self._controls.items())
+            self._current_visible_key:str = self._keys[0]
 
-        @classmethod
-        async def create(cls, controls: Sequence[ft.Control], **kwargs):
-            def _dis_visible():
-                for control in controls:
-                    control.visible = False
+            self._dropdown = ft.Dropdown(label="Input type",
+                                         options=[DropdownOption(k) for k in self._keys] ,
+                                         on_change=self._change_visible)
 
-            await asyncio.to_thread(_dis_visible)
+            self._stack = ft.Stack(self._controls, kwargs.pop("stack_kwargs",{}))
+            super().__init__(kwargs.pop("column_kwargs",{}))
 
-            stack = cls(controls, **kwargs)
-            stack._current_visible_index = 0
-            stack.change_visible(0)
-            return stack
+            self.controls = [self._dropdown,self._stack]
 
-        def change_visible(self, index: int):
-            assert index >= 0
-            try:
-                self.controls[self._current_visible_index].visible = False
-            except TypeError:  # raise because _current_visible_index is None.
-                raise NotImplementedError(
-                    "Does not support create InputStack by constructor, use 'create' method instead."
-                )
-            self.controls[index].visible = True
-            self._current_visible_index = index
+        @property
+        def keys(self):
+            return self._keys
+
+        def _change_visible(self, e: ft.ControlEvent):
+            key = e.control.value
+            self._controls[self._current_visible_key].visible = False
+            self._controls[key].visible = True
+            self._current_visible_key = key
 
     class SelectedFiles:
         """"""
@@ -391,6 +384,28 @@ class MainView(ChatboneView):
             with self._lock:
                 return self.preview_fields[self.file_names.index(file_name)]
 
+    class InputField(ft.ListView):
+        def __init__(self,**kwargs):
+            super().__init__([],**kwargs)
+
+        def get(self)->dict[str,Any]:
+            """This assistant data will call .model_validate to output of this method."""
+            pass
+
+        def add(self, name:str, field:FieldInfo, control: ft.Control):
+            title = name.title()
+            if field.is_required():
+                title += " (REQUIRE)"
+            self.controls.append(
+                ft.Column(
+                    [
+                        ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Description: {field.description}", size=10),
+                        control
+                    ]
+                )
+            )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -425,59 +440,54 @@ class MainView(ChatboneView):
 
         pass
 
-    async def _get_chat_input_fields(
+    def _get_input_fields(
         self, assistant_schema: Type[AssistantData]
-    ) -> ft.ListView:
-        lv = ft.ListView()
+    ) -> "MainView.InputField":
+        lv = MainView.InputField()
 
-        data_fields: dict[str, FieldInfo] = await asyncio.to_thread(
-            assistant_schema.get_data_fields
-        )
+        data_fields: dict[str, FieldInfo] = assistant_schema.get_data_fields()
 
         for name, field in data_fields.items():
-            input_field: ft.Control = self._get_chat_input_field(field)
-            title = name.title()
-            if field.is_required():
-                title += " (REQUIRE)"
-            lv.controls.append(
-                ft.Column(
-                    [
-                        ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
-                        ft.Text(f"Description: {field.description}", size=10),
-                        await self._get_media_input_field(field.annotation),
-                    ]
-                )
-            )
+            lv.add(name,field, self._get_input_field())
         return lv
 
-    async def _get_chat_input_field(self, ann: type[Any] ) -> ft.Control:
-        args = get_args(ann)
+    def _get_input_field(self, ann: type[Any] ) -> ft.Control:
+        args = list(get_args(ann)).remove(None)
         origin = get_origin(ann)
 
         if origin is None:
-            pass
-        elif origin == list:
-            pass
+            if issubclass(ann,MediaObject):
+                return self._get_media_input_field(ann)
+            elif issubclass(Selection):
+
+            elif issubclass(ann,Text)
+
+
+
+        elif origin is UnionType: # Outer most union.
+            union_controls: list[ft.Control] = []
+            for t in args:
+                if get_origin(t) is not None:
+                    union_controls.append(self._get_input_field(t))
+                else:
+                    if issubclass(t,MediaObject):
+                        union_controls.append(self._get_media_input_field(t))
+                    elif
+            return MainView.InputOptions(union_controls)
+
+        elif origin is list:
+            for t in args:
+                if get_origin(t) is not None:
+
+
         else:
             logger.error(f"Fail when making input field from type hint '{ann}'")
             return ft.Text("Assistant error, cannot parse assistant schema to show input fields.")
 
-
-
-
-
-    # async def _make_input_controls.
-
-    async def _get_media_input_field(
+    def _get_media_input_field(
         self, datatype: type[MediaObject | List[AnyMediaObject]]
-    ) -> ft.Stack:
+    ) -> ft.Control:
         """
-
-
-        list[list[Image]]|list[Video]
-
-        list[list[Image|Document] | list[Video|Audio] ]
-
         Args:
                 datatype: the type hint class, must be MediaObject or  List[AnyMediaObject] class, not instance.
         Returns:
