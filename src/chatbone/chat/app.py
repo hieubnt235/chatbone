@@ -1,10 +1,8 @@
-import asyncio
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from enum import Enum
 from math import floor
 from pathlib import Path
-from types import UnionType
 from typing import Literal, Any, get_origin, get_args, List, Type, Sequence
 from uuid import UUID
 
@@ -231,7 +229,6 @@ message: textfield
 """
 
 class FilePickerCancelUploadFile(BaseModel):
-    id: UUID
     filename:str
     object_name: str
 
@@ -310,6 +307,90 @@ class MainView(ChatboneView):
                 ]
             )
 
+    class InputControlStack(ft.Stack):
+        """For input format stack, provide visible only one mechanism.
+        Note: Must create instance through create method.
+        """
+
+        def __init__(self, controls: Sequence[ft.Control], **kwargs):
+            self._current_visible_index = None
+            super().__init__(controls, **kwargs)
+
+        @classmethod
+        async def create(cls, controls: Sequence[ft.Control], **kwargs):
+            def _dis_visible():
+                for control in controls:
+                    control.visible = False
+
+            await asyncio.to_thread(_dis_visible)
+
+            stack = cls(controls, **kwargs)
+            stack._current_visible_index = 0
+            stack.change_visible(0)
+            return stack
+
+        def change_visible(self, index: int):
+            assert index >= 0
+            try:
+                self.controls[self._current_visible_index].visible = False
+            except TypeError:  # raise because _current_visible_index is None.
+                raise NotImplementedError(
+                    "Does not support create InputStack by constructor, use 'create' method instead."
+                )
+            self.controls[index].visible = True
+            self._current_visible_index = index
+
+    class SelectedFiles:
+        """"""
+
+        def __init__(self):
+            self.upload_files: list[ft.FilePickerUploadFile] = []
+            """List of selected files ready to upload."""
+            self.preview_fields: list[ft.Row] = []
+            """List of selected file rows. Each row controls has Tuple[ft.Button, ft.ProcessRing|ft.Button, ft.Text]."""
+            self.file_names: list[str] = []
+            """User for hold index to easy access."""
+
+            self._lock = UniversalLock()
+
+        def add_new_file(self, file: ft.FilePickerUploadFile):
+            with self._lock:
+                preview_field = ft.Row(
+                    [
+                        ft.IconButton(
+                            ft.Icons.CANCEL_OUTLINED,
+                            tooltip="Unselect file",
+                            on_click=lambda _: self.remove_file(file.name, update=True),
+                        ),
+                        ft.ProgressRing(0.0),
+                        ft.Text(file.name),
+                    ]
+                )
+
+                if file.name in self.file_names:
+                    index = self.file_names.index(file.name)
+                    self.upload_files[index] = file
+                    self.preview_fields[index] = preview_field
+                else:
+                    self.upload_files.append(file)
+                    self.preview_fields.append(preview_field)
+                    self.file_names.append(file.name)
+
+        async def remove_file(self, file_name: str, update: bool = False):
+            with self._lock:
+                index = self.file_names.index(file_name)
+                self.file_names.remove(file_name)
+                self.preview_fields.pop(index)
+                self.upload_files.pop(index)
+
+        def get_upload_file(self, file_name: str):
+            with self._lock:
+                return self.upload_files[self.file_names.index(file_name)]
+
+        def get_preview_field(self, file_name: str):
+            with self._lock:
+                return self.preview_fields[self.file_names.index(file_name)]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -341,49 +422,70 @@ class MainView(ChatboneView):
 
     async def _init_chat_ui(self):
         # Todo
+
         pass
 
     async def _get_chat_input_fields(
-        self, data_fields: dict[str, FieldInfo]
-    ) -> tuple[ft.Control, Callable]:
-        """"""
-        for name, field_info in data_fields.items():
-            if get_origin(field_info.annotation) == UnionType:
-                pass
+        self, assistant_schema: Type[AssistantData]
+    ) -> ft.ListView:
+        lv = ft.ListView()
 
-        # if isinstance(datatype, MediaObject):
-        # 	selected_file = ft.Text()
-        # 	async def _on_result(e:ft.FilePickerResultEvent):
-        # 		if e.files is not None:
-        # 			selected_file.value = str(e.files[0])
-        # 		self.page.update()
-        # 	control = ft.Column([ft.Row([ft.FilePicker(on_result=_on_result), selected_file],
-        # 	                            )])
-        #
-        # 	async def on_send(e):
-        # 		if file_picker.result is not None and file_picker.result.files is not None:
-        # 			filename = file_picker.result.files[0].name
-        # 			put_url = await OBJ_STORAGE.get_upload_url(f"objectname_{filename}")
-        # 			file_picker.upload([FilePickerUploadFile(name=filename, upload_url=put_url)])
-        # 			get_url = await OBJ_STORAGE.get_download_url(f"objectname_{filename}")
-        #
-        # 			img = ft.Image(get_url, fit=ft.ImageFit, height=100, width=100)
-        # 			page.add(img)
-        # 			page.add(ft.Text(f"put:{put_url}", selectable=True), ft.Text(f"get:{get_url}", selectable=True))
-        #
-        # 	return file_picker, on_send
-        # else:
-        # 	raise ValueError(f"Got '{datatype}' and it's not the supported one. Supported types :{AssistantDataType_T}.  ")
-        pass
+        data_fields: dict[str, FieldInfo] = await asyncio.to_thread(
+            assistant_schema.get_data_fields
+        )
 
-    async def _get_media_input_fields(
-        self, datatype: Type[MediaObject | List[AnyMediaObject]]
-    ):
+        for name, field in data_fields.items():
+            input_field: ft.Control = self._get_chat_input_field(field)
+            title = name.title()
+            if field.is_required():
+                title += " (REQUIRE)"
+            lv.controls.append(
+                ft.Column(
+                    [
+                        ft.Text(title, size=15, weight=ft.FontWeight.BOLD),
+                        ft.Text(f"Description: {field.description}", size=10),
+                        await self._get_media_input_field(field.annotation),
+                    ]
+                )
+            )
+        return lv
+
+    async def _get_chat_input_field(self, ann: type[Any] ) -> ft.Control:
+        args = get_args(ann)
+        origin = get_origin(ann)
+
+        if origin is None:
+            pass
+        elif origin == list:
+            pass
+        else:
+            logger.error(f"Fail when making input field from type hint '{ann}'")
+            return ft.Text("Assistant error, cannot parse assistant schema to show input fields.")
+
+
+
+
+
+    # async def _make_input_controls.
+
+    async def _get_media_input_field(
+        self, datatype: type[MediaObject | List[AnyMediaObject]]
+    ) -> ft.Stack:
         """
+
+
+        list[list[Image]]|list[Video]
+
+        list[list[Image|Document] | list[Video|Audio] ]
+
         Args:
                 datatype: the type hint class, must be MediaObject or  List[AnyMediaObject] class, not instance.
         Returns:
                 ft.Control with layout:
+
+        Notes:
+            1. Does not support container inside container.
+            2. List of Union ?
         """
 
         is_list: bool = False
@@ -391,76 +493,21 @@ class MainView(ChatboneView):
         object_types: Sequence[AnyMediaObject] = ()
         """All objects type that requested."""
 
-        if get_origin(datatype) == list:
-            object_types = get_args(datatype)
-            is_list = True
-        else:
-            object_types = [datatype]
-        for dt in object_types:
-            assert issubclass(dt, MediaObject)
+        file_picker = ft.Ref[FilePicker]()
+        select_button = ft.Ref[ft.ElevatedButton]()
 
-        # Trackers for all uploading selected files. Hold data structure to easy access.
-        class SelectedFiles:
-            page = self.page
+        def _validate():
+            if get_origin(datatype) == list:
+                object_types = get_args(datatype)
+                is_list = True
+            else:
+                object_types = [datatype]
+            for dt in object_types:
+                assert issubclass(dt, MediaObject)
 
-            def __init__(self):
-                self.upload_files: list[ft.FilePickerUploadFile] = []
-                """List of selected files ready to upload."""
-                self.preview_fields: list[ft.Row] = []
-                """List of selected file rows. Each row controls has Tuple[ft.Button, ft.ProcessRing|ft.Button, ft.Text]."""
-                self.file_names: list[str] = []
-                """User for hold index to easy access."""
+        await asyncio.to_thread(_validate)
 
-                self._lock = UniversalLock()
-
-            def add_new_file(self, file: ft.FilePickerUploadFile, update: bool = False):
-                with self._lock:
-                    preview_field = ft.Row(
-                        [
-                            ft.IconButton(
-                                ft.Icons.CANCEL_OUTLINED,
-                                tooltip="Unselect file",
-                                on_click=lambda _: self.remove_file(
-                                    file.name, update=True
-                                ),
-                            ),
-                            ft.ProgressRing(0.0),
-                            ft.Text(file.name),
-                        ]
-                    )
-
-                    if file.name in self.file_names:
-                        index = self.file_names.index(file.name)
-                        self.upload_files[index] = file
-                        self.preview_fields[index] = preview_field
-                    else:
-                        self.upload_files.append(file)
-                        self.preview_fields.append(preview_field)
-                        self.file_names.append(file.name)
-                if update:
-                    self._update()
-
-            async def remove_file(self, file_name: str, update: bool = False):
-                with self._lock:
-                    index = self.file_names.index(file_name)
-                    self.file_names.remove(file_name)
-                    self.preview_fields.pop(index)
-                    self.upload_files.pop(index)
-                if update:
-                    self._update()
-
-            def get_upload_file(self, file_name: str):
-                with self._lock:
-                    return self.upload_files[self.file_names.index(file_name)]
-
-            def get_preview_field(self, file_name: str):
-                with self._lock:
-                    return self.preview_fields[self.file_names.index(file_name)]
-
-            def _update(self):
-                self.__class__.page.update()
-
-        selected_files = SelectedFiles()
+        selected_files = MainView.SelectedFiles()
         self.page.add(ft.Column(selected_files.preview_fields))
 
         async def on_result(e: ft.FilePickerResultEvent):
@@ -485,10 +532,9 @@ class MainView(ChatboneView):
         async def on_upload(e: ft.FilePickerUploadEvent):
             preview_field = selected_files.get_preview_field(e.file_name).controls
             if floor(e.progress) == 1:
-                await asyncio.sleep(0.05)  # sleep for ensure loaded.
-                object = datatype.validate_object()
-
-        file_picker = FilePicker(on_result)
+                await asyncio.sleep(
+                    0.05
+                )  # sleep for ensure loaded.  # object = datatype.validate_object()
 
         button_name = "Select " + datatype.type.lower()
         if is_list:
@@ -517,8 +563,10 @@ class MainView(ChatboneView):
                 allow_multiple=is_list,
             ),
         }
-        select_button = ft.ElevatedButton(**select_button_kwargs)
-        self.page.add(select_button)
+        self.page.add(
+            FilePicker(ref=file_picker, on_result=on_result, on_upload=on_upload),
+            ft.ElevatedButton(ref=select_button, **select_button_kwargs),
+        )
 
     async def chat_session_change(self):
         pass

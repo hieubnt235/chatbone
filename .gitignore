@@ -5,3 +5,7 @@ __pycache__
 ./.pytest_cache
 ./.mypy_cache
 /src/chatbone.egg-info!/tests/
+/.todo/
+/.ropeproject/
+
+/.*

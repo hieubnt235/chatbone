@@ -3,7 +3,8 @@ import os
 import threading
 from contextlib import contextmanager, asynccontextmanager, AbstractAsyncContextManager
 from contextvars import ContextVar
-from datetime import datetime, timedelta
+from copy import deepcopy
+from datetime import timedelta, datetime
 from enum import Enum
 from types import NoneType, UnionType
 from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union, Annotated,
@@ -15,8 +16,6 @@ import ray
 import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
-from langchain_core.messages.utils import AnyMessage
-from langgraph.graph import add_messages
 from pydantic import BaseModel, ConfigDict, model_validator, create_model, Field
 from pydantic.fields import FieldInfo
 from ray import serve
@@ -60,6 +59,11 @@ def assistant_datatype(cls_type):
     return cls_type
 
 
+class BaseAssistantType(BaseModel):
+    to_user: bool = True
+    """Data hold this status is intentionally for user. Set it false if data is just use to saved, not to show.
+    This attribute only has affect in AS2CS, will be ignore in CS2AS."""
+
 class MediaType(str, Enum):
     IMAGE = "IMAGE"
     VIDEO = "VIDEO"
@@ -67,7 +71,7 @@ class MediaType(str, Enum):
     DOCUMENT = "DOCUMENT"
 
 
-class MediaObject(BaseModel):
+class MediaObject(BaseAssistantType):
     """Assistant input is the collection of these objects. User must give all required media object to call assistant.
     Notes:
             1. The get_upload_url
@@ -75,8 +79,8 @@ class MediaObject(BaseModel):
 
     type: ClassVar[MediaType] = None
     matchers: ClassVar[Sequence[filetype.Type]] = None
-    mimes: ClassVar[list[str]] = [m.mime for m in matchers]
-    extensions: ClassVar[list[str]] = [m.extension for m in matchers]
+    mimes: ClassVar[list[str]] = None
+    extensions: ClassVar[list[str]] = None
 
     model_config = ConfigDict(frozen=True)
     object_name: str
@@ -85,7 +89,12 @@ class MediaObject(BaseModel):
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         assert cls.type in MediaType
-        assert [isinstance(m, filetype.Type) for m in cls.matchers]
+        cls.mimes = []
+        cls.extensions = []
+        for m in cls.matchers:
+            assert isinstance(m, filetype.Type)
+            cls.mimes.append(m.mime)
+            cls.extensions.append(m.extension)
 
     @classmethod
     async def get_upload_url(
@@ -225,13 +234,20 @@ class DocumentObject(MediaObject):
 
 
 @assistant_datatype
-class TextStream(BaseModel):
+class TextStream(BaseAssistantType):
     """For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id."""
-
     id: UUID | int | str
-    created_at: datetime = Field(default_factory=utc_now)
     chunk: str
 
+    state: Literal["start", "end", "stream"]
+    """Stream only saved if there is start and end text stream, otherwise, it just show the stream to user."""
+
+
+@assistant_datatype
+class Text(BaseAssistantType):
+    role: str
+    """role of Text sent from chat session always be "user" and only role "assistant" will be shown in main dialog. """
+    content: str
 
 @assistant_datatype
 class Context(BaseModel):
@@ -256,11 +272,14 @@ class Context(BaseModel):
 
 
 @assistant_datatype
-class Selection(BaseModel):
+class BaseSelection(BaseModel):
     """This type is for querying user selections."""
 
-    options: dict[str, str]
-    """name:description"""
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        for field in cls.model_fields.values():
+            if not issubclass(field.annotation,(str,int,float,bool)):
+                raise ValueError(f"Selection options only accept type int, str, float, bool. Got '{field.annotation.__name__}'.")
 
 
 class AssistantStatusCode(str, Enum):
@@ -276,22 +295,19 @@ class AssistantStatusCode(str, Enum):
 @assistant_datatype
 class Status(BaseModel):
     code: AssistantStatusCode
+
     detail: str | None = None
 
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
-
-# noinspection PyTypeHints
-ManyMessages = Annotated[list[AnyMessage], add_messages]
-assistant_datatype(ManyMessages)
-assistant_datatype_strings.append("ManyMessages")
-
 
 class AssistantData(StreamData):
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
     # T means tuple, U means Union
     T: ClassVar[Any] = AssistantDataType_T
     U: ClassVar[Any] = AssistantDataType_U
+
+    created_at: datetime = Field(default_factory=utc_now)
 
     status: Status
 
@@ -300,7 +316,7 @@ class AssistantData(StreamData):
         fields: dict[str, FieldInfo] = cls.model_fields
         for name, field_info in fields.items():
             ann = field_info.annotation
-            if get_origin(ann) == ClassVar:
+            if get_origin(ann) == ClassVar or name == "created_at":
                 continue
             if field_info.metadata:
                 ann = Annotated[ann, *field_info.metadata]
@@ -308,25 +324,21 @@ class AssistantData(StreamData):
 
     @classmethod
     def get_data_fields(cls) -> dict[str, FieldInfo]:
-        fields: dict[str, FieldInfo] = cls.__class__.model_fields
+        fields: dict[str, FieldInfo] = deepcopy(cls.__class__.model_fields)
         for name, field_info in fields.items():
-            if get_origin(field_info.annotation) == ClassVar:
+            if get_origin(field_info.annotation) == ClassVar or name == "created_at":
                 fields.pop(name)
         return fields
 
     @classmethod
     def _validate_schema(cls, name: str, ann: Type[Any]):
-        # General supported type examples: ManyMessages, ImageObject, list[ImageObject]|VideoObject, ImageObject|VideoObject|None
-        # validate recursively
+        # General supported type examples: ImageObject, list[ImageObject]|VideoObject, ImageObject|VideoObject|None
+        # validate recursively through list.
         org = get_origin(ann)
         if org in (None, Annotated):
-            if not ann in cls.T:
-                m = f"Does not support field annotation '{ann}' of field name '{name}'.Type hint must be in {cls.T}."
+            if not issubclass(ann,cls.T):
+                m = f"Does not support field annotation '{ann.__name__}' of field name '{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
-            elif ann == ManyMessages:
-                if name != "messages":
-                    m = f"Types 'ManyMessages' accept only key 'messages', got '{name}'."
-                    raise ValueError(m)
         else:
             if issubclass(org, (list, UnionType)):
                 new_anns = list(get_args(ann))
@@ -517,6 +529,7 @@ class BaseAssistant(BaseModel):
     )
     streamer: AssistantStreamer
     input_schema: Type[AssistantData]
+
     name: str
     """assistant name that will be shown to user frontend."""
 
@@ -551,8 +564,8 @@ class BaseAssistant(BaseModel):
     def get_schema(self):
         return self.input_schema
 
-    def get_name(self):
-        return self.name
+    def get_name(self) -> str:
+        return str(self.name)
 
     @classmethod
     def get_app(cls) -> serve.Application:

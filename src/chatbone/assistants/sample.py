@@ -1,25 +1,32 @@
 from typing import AsyncGenerator, Callable, Type
 
 from langchain.chat_models import init_chat_model
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, MessagesState
 from pydantic import Field
 from typing_extensions import Annotated
 
-from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer, ManyMessages, \
-	Status, AssistantStatusCode, ImageObject, VideoObject
+from chatbone.assistant_interface import BaseAssistant, AssistantData, TextStream, AssistantStreamer, Status, \
+	AssistantStatusCode, ImageObject, VideoObject, Text, BaseSelection
 from utilities.logger import logger
 
 
+class Selection(BaseSelection):
+	a:int
+	b:float
+	c:bool
+	d:str
+
 class SampleInputSchema(AssistantData):
-	messages: ManyMessages = Field(default_factory=list)
+	text: Text
 	images: list[ImageObject]|VideoObject|None=None
+	selection: Selection
 
 def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData, None]]:
 	builder = StateGraph(SampleInputSchema)
 
 	async def node1(state: SampleInputSchema):
 		llm = init_chat_model(model="google_genai:gemini-2.0-flash")
-		llm_response = await llm.ainvoke(state.messages)
+		llm_response = await llm.ainvoke(state.text.content)
 		state.messages = llm_response
 		return state
 
@@ -42,6 +49,7 @@ def get_streamer() -> Callable[[SampleInputSchema], AsyncGenerator[AssistantData
 class SampleAssistant(BaseAssistant):
 	streamer: AssistantStreamer = get_streamer()
 	input_schema: Type[AssistantData] = SampleInputSchema
+	name:str = "Sample Assistant"
 
 	async def handle_cancellation(self):
 		logger.info(f"{self.__class__.__name__} handling cancellation.")
@@ -50,4 +58,4 @@ app = SampleAssistant.get_app()
 
 if __name__=="__main__":
 	from ray import serve
-	serve.run(app,blocking=True)
+	serve.run(app,blocking=False)
