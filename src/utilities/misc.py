@@ -1,6 +1,8 @@
 import asyncio
 import threading
 from contextlib import asynccontextmanager, contextmanager
+from copy import deepcopy
+from typing import Mapping
 
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,3 +79,73 @@ class UniversalLock:
 			raise TimeoutError(flag)
 		else:
 			yield flag
+
+class ReferableDict[KT, VT](Mapping[KT,VT]):
+	"""
+	A class that mimics a dictionary's key-value storage but keeps
+	keys and values in separate, synchronized lists.
+	The .values property provides a direct reference to the list of values.
+	"""
+	__NOT_DEFAULT__ = object()
+
+	def __iter__(self):
+		return deepcopy(self.keys)
+
+	def __init__(self, init_dict=None, **kwargs):
+		self._lock = UniversalLock()
+		init_dict = init_dict or {}
+		self._keys: list[KT] = []
+		self._values: list[VT] = []
+
+		for k,v in init_dict.items():
+			self[k] = v
+		for k,v in kwargs.items():
+			self[k] = v
+		print(self)
+
+	@property
+	def values(self)->list[VT]:
+		return self._values
+
+	@property
+	def keys(self):
+		return self._keys
+
+	def __setitem__(self, key: KT, value: VT):
+		with self._lock:
+			if key in self._keys:
+				index = self._keys.index(key)
+				self._values[index] = value
+			else:
+				self._keys.append(key)
+				self._values.append(value)
+
+	def __getitem__(self, key: KT):
+		"""Handles the access syntax: x = my_mimic[key]"""
+		if key in self._keys:
+			index = self._keys.index(key)
+			return self._values[index]
+		else:
+			# If key is not found, raise a KeyError, just like a real dict
+			raise KeyError(f"Key '{key}' not found.")
+
+	def __len__(self):
+		return len(self._keys)
+
+	def __repr__(self):
+		if not self._keys:
+			return "{}"
+		items = [f"'{k}': '{v}'" for k, v in zip(self._keys, self._values)]
+		return "{" + ", ".join(items) + "}"
+
+	def pop(self,key: KT, default = __NOT_DEFAULT__):
+		with self._lock:
+			try:
+				index = self._keys.index(key)
+				self._keys.pop(index)
+				return self._values.pop(index)
+			except ValueError:
+				if default is self.__NOT_DEFAULT__:
+					raise KeyError(f"Invalid key {key} .")
+				else:
+					return default

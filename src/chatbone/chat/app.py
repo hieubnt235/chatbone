@@ -5,7 +5,7 @@ from enum import Enum
 from math import floor
 from pathlib import Path
 from types import UnionType
-from typing import Literal, Any, get_origin, get_args, List, Type, Sequence
+from typing import Literal, Any, get_origin, get_args, List, Type, Sequence, Dict
 from uuid import UUID
 
 import flet as ft
@@ -18,6 +18,7 @@ from uuid_extensions import uuid7
 from chatbone.assistant_interface import (ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection,
                                           MediaObject, AnyMediaObject, )
 from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError
+from chatbone.chat.controls import BaseUI
 from chatbone.chat.svc import *
 from utilities.logger import logger
 from utilities.misc import UniversalLock
@@ -243,23 +244,6 @@ class FilePicker(ft.FilePicker):
             await self._clean_storage(file.object_name)
 
 
-class BaseUI(ft.Container, BaseModel, ABC):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.content = self._get_content()
-
-    @abstractmethod
-    def _get_content(self) -> ft.Control:
-        pass
-
-
-class MediaIcons(Enum):
-    IMAGE = ft.Icons.IMAGE_OUTLINED
-    VIDEO = ft.Icons.VIDEO_FILE_OUTLINED
-    AUDIO = ft.Icons.AUDIO_FILE_OUTLINED
-    DOCUMENT = ft.Icons.DOCUMENT_SCANNER_OUTLINED
 
 
 class MainView(ChatboneView):
@@ -302,10 +286,20 @@ class MainView(ChatboneView):
                 ]
             )
 
-    class InputOptions(ft.Column):
-        """For input format stack, provide visible only one mechanism.
-        Note: Must create instance through create method.  For UNion...
-        """
+    class BaseInputField(ABC):
+
+        @abstractmethod
+        def get_value(self)->dict[str,Any]:
+            """Value for model_validate"""
+            pass
+
+        @abstractmethod
+        def get_control(self)->ft.Control:
+            pass
+
+    class SelectionInputField(BaseInputField):
+        """This class is for select exclusively type of input to be used."""
+
         def __init__(self, controls: dict[str,ft.Control], **kwargs):
             for control in controls:
                 control.visible = False
@@ -321,7 +315,13 @@ class MainView(ChatboneView):
             self._stack = ft.Stack(self._controls, kwargs.pop("stack_kwargs",{}))
             super().__init__(kwargs.pop("column_kwargs",{}))
 
-            self.controls = [self._dropdown,self._stack]
+            self.controls:list[ft.Control] = [self._dropdown,self._stack]
+
+        def get_value(self) -> dict[str,Any]:
+            pass
+
+        def get_control(self) -> ft.Control:
+            return ft.Column(self.controls)
 
         @property
         def keys(self):
@@ -333,9 +333,7 @@ class MainView(ChatboneView):
             self._controls[key].visible = True
             self._current_visible_key = key
 
-    class SelectedFiles:
-        """"""
-
+    class SelectedFiles(BaseInputField):
         def __init__(self):
             self.upload_files: list[ft.FilePickerUploadFile] = []
             """List of selected files ready to upload."""
@@ -353,7 +351,7 @@ class MainView(ChatboneView):
                         ft.IconButton(
                             ft.Icons.CANCEL_OUTLINED,
                             tooltip="Unselect file",
-                            on_click=lambda _: self.remove_file(file.name, update=True),
+                            on_click=lambda _: self.remove_file(file.name),
                         ),
                         ft.ProgressRing(0.0),
                         ft.Text(file.name),
@@ -369,7 +367,7 @@ class MainView(ChatboneView):
                     self.preview_fields.append(preview_field)
                     self.file_names.append(file.name)
 
-        async def remove_file(self, file_name: str, update: bool = False):
+        async def remove_file(self, file_name: str):
             with self._lock:
                 index = self.file_names.index(file_name)
                 self.file_names.remove(file_name)
@@ -383,6 +381,7 @@ class MainView(ChatboneView):
         def get_preview_field(self, file_name: str):
             with self._lock:
                 return self.preview_fields[self.file_names.index(file_name)]
+
 
     class InputField(ft.ListView):
         def __init__(self,**kwargs):
@@ -458,10 +457,12 @@ class MainView(ChatboneView):
         if origin is None:
             if issubclass(ann,MediaObject):
                 return self._get_media_input_field(ann)
-            elif issubclass(Selection):
+            elif issubclass(ann, Selection):
 
-            elif issubclass(ann,Text)
 
+
+            elif issubclass(ann,Text):
+                pass
 
 
         elif origin is UnionType: # Outer most union.

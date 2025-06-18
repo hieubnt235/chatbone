@@ -110,4 +110,4 @@ class ObjectStorageSettings(BaseModel):
         )
 
     async def remove_object(self, object_name: str) -> None:
-        await self.client.remove_object(object_name)
+        await self.client.remove_object(self.bucket, object_name)

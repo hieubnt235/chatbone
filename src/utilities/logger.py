@@ -1,11 +1,11 @@
 import logging
 import sys
-
+import os
 from loguru import logger
 
 # LOG_LEVEL = os.getenv("CHATBONE_LOG_LEVEL") or "DEBUG"
-# LOG_LEVEL = "INFO"
-LOG_LEVEL = "DEBUG"
+LOG_LEVEL = "INFO"
+# LOG_LEVEL = "DEBUG"
 
 logger.remove()
 

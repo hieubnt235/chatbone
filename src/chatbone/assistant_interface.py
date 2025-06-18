@@ -16,6 +16,7 @@ import ray
 import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
+from filetype.types.image import Jpeg
 from pydantic import BaseModel, ConfigDict, model_validator, create_model, Field
 from pydantic.fields import FieldInfo
 from ray import serve
@@ -27,17 +28,19 @@ from chatbone.broker import WriteStream, ReadStream, StreamData
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
 from utilities.logger import logger
+from utilities.settings.objest_storage import ObjectStorageSettings
 
 CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 
-AssistantDataType_T: tuple[type] = ()
+AssistantDataType_T: tuple[Type["MediaObject"] | Type[Any]] = ()
 """Assistant datatype in tuple format, use this to test with isinstance()."""
 
-AssistantDataType_U: Type[Union[type]] = None
+AssistantDataType_U: Union[Type["MediaObject"] | Type[Any]] = None
 """Assistant datatype in union format."""
 
-AnyMediaObject: Type[Union["MediaType"]] = None
+AnyMediaObject: Union[Type["MediaObject"]] = None
 """Media object union."""
+
 
 def assistant_datatype(cls_type):
     """Decorator to assign assistant datatype.
@@ -80,7 +83,7 @@ class MediaObject(BaseAssistantType):
     Notes:
             1. The get_upload_url
     """
-
+    object_storage: ClassVar[ObjectStorageSettings] = OBJ_STORAGE
     type: ClassVar[MediaType] = None
     matchers: ClassVar[Sequence[filetype.Type]] = None
     mimes: ClassVar[list[str]] = None
@@ -127,7 +130,10 @@ class MediaObject(BaseAssistantType):
             if extension is None:
                 if "." in object_name:
                     ex = object_name.rsplit(".", 1)[-1]
-                raise ValueError("Cannot infer extension from object name.")
+                else:
+                    raise ValueError(
+                        f"Cannot infer extension from object name. There is no separator '.' "
+                    )
             else:
                 assert isinstance(extension, str)
                 ex = extension
@@ -138,7 +144,7 @@ class MediaObject(BaseAssistantType):
 
         mime = await asyncio.to_thread(_validate_extension)
         response_headers = {"response-content-type": "image/png"}
-        await OBJ_STORAGE.get_upload_url(
+        return await OBJ_STORAGE.get_upload_url(
             object_name,
             expires,
             response_headers=response_headers,
@@ -198,6 +204,16 @@ class MediaObject(BaseAssistantType):
             raise TypeError(f"Object is not instance of type {cls.type}.")
         return m.mime
 
+    async def get_preview_url(self, expires: timedelta = timedelta(days=7)):
+        return await OBJ_STORAGE.get_download_url(
+            self.object_name,
+            expires,
+            response_headers={  # DEFAULT disposition is inline.
+                "response-content-disposition": "inline",
+                "response-content-type": self.mime,
+            },
+        )
+
     async def get_object(self) -> bytes:
         """Get the binary object from server."""
         return await OBJ_STORAGE.get_object(self.object_name)
@@ -209,8 +225,20 @@ class MediaObject(BaseAssistantType):
 
 @assistant_datatype
 class ImageObject(MediaObject):
+    # TODO: the filetype library is broke, should fork and make a new one.
+    class _Jpeg(filetype.Type):
+        EXTENSION = "jpeg"
+        MIME = "image/jpeg"
+
+        def __init__(self):
+            self._jpeg = Jpeg()
+            super().__init__(self.MIME, self.EXTENSION)
+
+        def match(self, buf):
+            return self._jpeg.match(buf)
+
     type = MediaType.IMAGE
-    matchers = IMAGE
+    matchers = IMAGE + (_Jpeg(),)
 
 
 @assistant_datatype
@@ -287,8 +315,13 @@ class BaseSelection(BaseAssistantType):
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         for field in cls.model_fields.values():
-            if not issubclass(field.annotation,(str,int,float,bool)):
-                raise ValueError(f"Selection options only accept type int, str, float, bool. Got '{field.annotation.__name__}'.")
+            if (
+                not issubclass(field.annotation, (str, int, float, bool))
+                and not get_origin(field.annotation) == Literal
+            ):
+                raise ValueError(
+                    f"Selection options only accept type int, str, float, bool, Literal[...]. Got '{field.annotation.__name__}'."
+                )
 
 
 class AssistantStatusCode(str, Enum):
