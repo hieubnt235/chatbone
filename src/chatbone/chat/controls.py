@@ -9,10 +9,19 @@ from typing import Any, Callable, List
 from uuid import UUID
 
 import flet as ft
-from flet.core.file_picker import (FilePickerResultEvent, FilePickerUploadEvent, FilePickerFile, )
+from flet.core.file_picker import (
+    FilePickerResultEvent,
+    FilePickerUploadEvent,
+    FilePickerFile,
+)
 from pydantic import BaseModel, ConfigDict
 
-from chatbone.assistant_interface import (AssistantDataType_U, AnyMediaObject, MediaObject, ImageObject, )
+from chatbone.assistant_interface import (
+    AssistantDataType_U,
+    AnyMediaObject,
+    MediaObject,
+    ImageObject,
+)
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock
@@ -121,6 +130,7 @@ class _FilePicker(ft.FilePicker):
     def _make_object_name(self, file_name: str):
         return self._username + "_" + str(self._user_id) + "/" + file_name
 
+
 class MediaInputField(BaseInputField, ft.Container):
     """Preview field for one file."""
 
@@ -140,8 +150,12 @@ class MediaInputField(BaseInputField, ft.Container):
                     tooltip=f"Unselect file: {filename}",
                     on_click=self._unselect,
                 ),
-                ft.ProgressRing(0.0,scale=0.8),
-                ft.Text(f"{filename[:10]}+...+{filename[-10:]}",size=12,text_align=ft.TextAlign.LEFT),
+                ft.ProgressRing(0.0, scale=0.8),
+                ft.Text(
+                    f"{filename[:10]}+...+{filename[-10:]}",
+                    size=12,
+                    text_align=ft.TextAlign.LEFT,
+                ),
             ]
 
             self._filename = filename
@@ -201,28 +215,34 @@ class MediaInputField(BaseInputField, ft.Container):
             on_click=self._file_picker.pick_files,
             icon=icon,
             tooltip=tooltip,
-            scale = 0.8
+            scale=0.8,
         )
         self._unselect_all_button = ft.IconButton(
             ft.Icons.CANCEL_PRESENTATION_OUTLINED,
             tooltip="Unselect all",
             on_click=self._unselect_all,
-            disabled=True,visible=False,
+            disabled=True,
+            visible=False,
         )
         self._file_index_lock = UniversalLock()
         self._file_names: list[str] = []
-        self._file_list = ft.ListView([],height=250,width=320)
+        self._file_list = ft.ListView([], height=250, width=320)
 
-        column = ft.Column([
-            ft.Row([self._select_button, self._unselect_all_button],alignment=ft.MainAxisAlignment.START,spacing=0),
-            self._file_list,
-        ],
+        column = ft.Column(
+            [
+                ft.Row(
+                    [self._select_button, self._unselect_all_button],
+                    alignment=ft.MainAxisAlignment.START,
+                    spacing=0,
+                ),
+                self._file_list,
+            ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,
-            width=320
+            width=320,
         )
 
-        super().__init__(column,border=ft.border.all(5))
+        super().__init__(column, border=ft.border.all(5))
 
     async def get_assistant_data(
         self,
@@ -233,13 +253,22 @@ class MediaInputField(BaseInputField, ft.Container):
         """
         if self._allow_multiple:
             assert len(self._file_names) <= 1
-            return (await self.get_file_preview_row(self._file_names[0])).media_object if len(self._file_names) == 1 else None
+            return (
+                (await self.get_file_preview_row(self._file_names[0])).media_object
+                if len(self._file_names) == 1
+                else None
+            )
 
         async with self._file_index_lock:
             if not self._file_names:
                 return []
             else:
-                return [ f.media_object for f in self._file_list.controls if isinstance(f, MediaInputField._FilePreviewRow) and f.media_object is not None ]
+                return [
+                    f.media_object
+                    for f in self._file_list.controls
+                    if isinstance(f, MediaInputField._FilePreviewRow)
+                    and f.media_object is not None
+                ]
 
     def build(self):
         self.page.overlay.append(self._file_picker)
@@ -309,11 +338,11 @@ class MediaInputField(BaseInputField, ft.Container):
 
     async def update_progress(self, filename: str, progress: float, media_object=None):
         async with self._file_index_lock:
-            row = await self.get_file_preview_row(filename,lock=False)
+            row = await self.get_file_preview_row(filename, lock=False)
             await row.update_progress(progress, media_object)
 
     async def get_file_preview_row(
-        self, filename: str, lock:bool=True
+        self, filename: str, lock: bool = True
     ) -> "MediaInputField._FilePreviewRow":
         async with AsyncExitStack() as stack:
             if lock:
@@ -339,6 +368,7 @@ class MediaInputField(BaseInputField, ft.Container):
                 )
                 self._file_names.append(file.name)
                 self._change_unselect_all_button_state()
+
 
 if __name__ == "__main__":
 
