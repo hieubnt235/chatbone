@@ -24,6 +24,7 @@ dependencies = [
     "fastmcp>=2.2.0",
     "filetype>=1.2.0",
     "flet-audio>=0.1.0",
+    "flet-toast>=0.6.0",
     "flet[all]>=0.28.3",
     "ipywidgets>=8.1.5",
     "langchain>=0.3.19",

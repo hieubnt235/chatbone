@@ -9,19 +9,12 @@ from typing import Any, Callable, List
 from uuid import UUID
 
 import flet as ft
-from flet.core.file_picker import (
-    FilePickerResultEvent,
-    FilePickerUploadEvent,
-    FilePickerFile,
-)
+from flet.core.buttons import RoundedRectangleBorder
+from flet.core.file_picker import (FilePickerResultEvent, FilePickerUploadEvent, FilePickerFile, )
 from pydantic import BaseModel, ConfigDict
 
-from chatbone.assistant_interface import (
-    AssistantDataType_U,
-    AnyMediaObject,
-    MediaObject,
-    ImageObject,
-)
+from chatbone.assistant_interface import (AssistantDataType_U, AnyMediaObject, MediaObject, ImageObject, BaseSelection,
+                                          InvalidFileExtension, InvalidBinaryFile, )
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock
@@ -84,21 +77,30 @@ class _FilePicker(ft.FilePicker):
             allow_multiple=self._allow_multiple,
         )
 
-    async def upload(self, picked_files: List[FilePickerFile]):
+    async def upload(
+        self, picked_files: List[FilePickerFile]
+    ) -> tuple[list[ft.FilePickerUploadFile], list[InvalidFileExtension]]:
         """
+        Upload the correct files.
         Args:
-                picked_files: It should input as name, but use FilePickerFile because of Flet convention.
-
+            picked_files: It should input as name, but use FilePickerFile because of Flet convention.
         Returns:
+            List of correct files and list of exceptions.
         """
 
-        files: list[ft.FilePickerUploadFile] = []
+        upload_files: list[ft.FilePickerUploadFile] = []
+        file_exceptions: list[InvalidFileExtension] = []
         for file in picked_files:
-            url = await self._create_upload_url(file.name)
-            files.append(
-                ft.FilePickerUploadFile(file.name, url)
-            )  # todo: wtf FilePickerUploadFile.id used for?
-        super().upload(files)
+            try:
+                url = await self._create_upload_url(file.name)
+                upload_files.append(
+                    ft.FilePickerUploadFile(file.name, url)
+                )  # todo: wtf FilePickerUploadFile.id used for?
+            except InvalidFileExtension as e:
+                e.filename = file.name
+                file_exceptions.append(e)
+        super().upload(upload_files)
+        return upload_files, file_exceptions
 
     async def cancel(self, filename: str):
         """
@@ -242,7 +244,9 @@ class MediaInputField(BaseInputField, ft.Container):
             width=320,
         )
 
-        super().__init__(column, border=ft.border.all(5))
+        super().__init__(column, border=ft.border.all(1))
+
+        self._snackbar: ft.SnackBar = None
 
     async def get_assistant_data(
         self,
@@ -251,7 +255,7 @@ class MediaInputField(BaseInputField, ft.Container):
         Returns:
             If allow_multiple, return a list of MediaObject or a blank list. Else return only one MediaObject or None.
         """
-        if self._allow_multiple:
+        if not self._allow_multiple:
             assert len(self._file_names) <= 1
             return (
                 (await self.get_file_preview_row(self._file_names[0])).media_object
@@ -281,15 +285,33 @@ class MediaInputField(BaseInputField, ft.Container):
                 assert len(self._file_names) <= 1
                 await self._unselect_all()
 
-            # If filename already available, unselect the old and load the new.
+            # If filename already available, unselect the old and load the new (override).
             for file in e.files:
                 if file.name in self._file_names:
                     await self._unselect(file.name)
 
-            await self._file_picker.upload(e.files)
-            await asyncio.to_thread(self.make_file_preview_rows, e.files)
-        self._change_unselect_all_button_state()
-        self.page.update()
+            # Upload the correct files, and dismiss others.
+            async with self._file_index_lock:
+                uploaded_files, file_exceptions = await self._file_picker.upload(
+                    e.files
+                )
+                await self.make_file_preview_rows(uploaded_files, lock=False)
+                self._change_unselect_all_button_state()
+                self.page.update()
+
+            def _log():
+                filenames = [e.filename for e in file_exceptions]
+                if filenames:
+                    logger.info(
+                        f"User '{self._file_picker._username}' uploaded {len(filenames)} incorrect extension files: {filenames}\n"
+                        f"Allowed extensions: {file_exceptions[0].al_ex}"
+                    )
+                    self._notice_user(
+                        f"Files: {filenames} have incorrect extensions and were unselected.\n"
+                        f"Allowed extensions: {file_exceptions[0].al_ex}"
+                    )
+
+            await asyncio.to_thread(_log)
 
     async def _on_upload(self, e: ft.FilePickerUploadEvent):
         if e.error:
@@ -306,16 +328,36 @@ class MediaInputField(BaseInputField, ft.Container):
                         self._file_picker._make_object_name(e.file_name)
                     )
                     await self.update_progress(e.file_name, e.progress, media_object)
-                except TypeError:
+                except InvalidBinaryFile:
                     await self._unselect(e.file_name, update=False)
+                    m = "Uploaded file has the correct extension but wrong magic binary."
+                    logger.info(m)
                     self._notice_user(
-                        f"File type must the '{self._datatype.type.title()}'. Unselect file '{e.file_name}'."
+                        f"{m}. Make sure your extension of the file matches with binary structure. Unselect file '{e.file_name}'."
                     )
             else:
                 await self.update_progress(e.file_name, e.progress, media_object)
 
     def _notice_user(self, text: str):
-        self.page.open(ft.SnackBar(ft.Text(text)))
+        l = len(self.page.overlay)
+        if self._snackbar:
+            self._snackbar.content = ft.Text(text,size=10)
+        else:
+            self._snackbar = ft.SnackBar(
+                ft.Text(text),
+                behavior=ft.SnackBarBehavior.FLOATING,
+                dismiss_direction=ft.DismissDirection.VERTICAL,
+                width=1000,
+                duration=10000,
+                show_close_icon=True,
+                shape=RoundedRectangleBorder(radius=10),
+            )
+            l+=1
+        self.page.open(self._snackbar)
+        assert len(self.page.overlay) == l # Ensure snackbar not accumulate.
+        # TODO: flet-toast available is not a good code, rewrite new toast library, use simple snackbar for now.
+        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=10)
+        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=15)
 
     async def _unselect_all(self, e=None):
         for filename in deepcopy(self._file_names):
@@ -360,15 +402,43 @@ class MediaInputField(BaseInputField, ft.Container):
             self._change_unselect_all_button_state()
             return fr
 
-    def make_file_preview_rows(self, picked_files: list[FilePickerFile]):
-        for file in picked_files:
-            with self._file_index_lock:  # with for run in another thread.
-                self._file_list.controls.append(
-                    MediaInputField._FilePreviewRow(file.name, self)
-                )
-                self._file_names.append(file.name)
-                self._change_unselect_all_button_state()
+    async def make_file_preview_rows(
+        self, uploaded_files: list[ft.FilePickerUploadFile], lock: bool = True
+    ):
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._file_index_lock)
 
+            def _do():
+                for file in uploaded_files:
+                    self._file_list.controls.append(
+                        MediaInputField._FilePreviewRow(file.name, self)
+                    )
+                    self._file_names.append(file.name)
+
+            await asyncio.to_thread(_do)
+            self._change_unselect_all_button_state()
+
+
+class TextInputField(BaseInputField, ft.TextField):
+    def get_assistant_data(
+        self,
+    ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        return self.value
+
+
+class SelectionInputField(BaseInputField):
+
+    def __init__(self, selection_type: type[BaseSelection]):
+        self._datatype = selection_type
+
+    def get_assistant_data(
+        self,
+    ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        pass
+
+
+# class InputFieldCreator
 
 if __name__ == "__main__":
 
@@ -386,6 +456,12 @@ if __name__ == "__main__":
             allow_multiple=True,
         )
         page.add(media_input_field)
+
+        async def on_click(e):
+            for i in await media_input_field.get_assistant_data():
+                print(i)
+
+        page.add(ft.Button("Select all file", on_click=on_click))
 
     app = ft.app(main, export_asgi_app=True)
     import uvicorn

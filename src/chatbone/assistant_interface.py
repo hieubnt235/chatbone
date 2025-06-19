@@ -61,10 +61,14 @@ def assistant_datatype(cls_type):
 
     return cls_type
 
+class Only(str,Enum):
+    OUTPUT="output"
+    INPUT="input"
+    NONE="none"
 
 class BaseAssistantType(BaseModel):
-    output_only: ClassVar[bool] = False
-    """This data type only be used for output (AS2CS). User cannot provide this class has output_only=True."""
+    only: ClassVar[Only] = Only.NONE
+    """User cannot provide the class has only = "output". Or assistant developer cannot send the class with only="input". """
 
     to_user: bool = True
     """Data hold this status is intentionally for user. Set it false if data is just use to saved, not to show.
@@ -77,6 +81,23 @@ class MediaType(str, Enum):
     AUDIO = "AUDIO"
     DOCUMENT = "DOCUMENT"
 
+class InvalidFileTypeException(Exception):
+    pass
+
+class InvalidFileExtension(InvalidFileTypeException):
+    def __init__(self, m="", allowed_ex=None, received_ex=None, filename=None):
+        self.al_ex = allowed_ex
+        self.re_ex = received_ex
+        self.filename=filename
+        if self.al_ex:
+            m+=f"Allowed extension: {allowed_ex}. "
+        if self.re_ex:
+            m+=f"Got {received_ex}. "
+        super().__init__(m)
+
+
+class InvalidBinaryFile(InvalidFileTypeException):
+    pass
 
 class MediaObject(BaseAssistantType):
     """Assistant input is the collection of these objects. User must give all required media object to call assistant.
@@ -121,7 +142,7 @@ class MediaObject(BaseAssistantType):
                 extension:
                 tagging:
         Raises:
-                ValueError: When cannot infer extension or extension is not supported.
+                InvalidFileExtension: When cannot infer extension or extension is not supported.
         Returns:
                 Upload url. Call 'PUT' to push object to storage server
         """
@@ -131,7 +152,7 @@ class MediaObject(BaseAssistantType):
                 if "." in object_name:
                     ex = object_name.rsplit(".", 1)[-1]
                 else:
-                    raise ValueError(
+                    raise InvalidFileExtension(
                         f"Cannot infer extension from object name. There is no separator '.' "
                     )
             else:
@@ -140,7 +161,7 @@ class MediaObject(BaseAssistantType):
             for i, ext in enumerate(cls.extensions):
                 if ex == ext:
                     return cls.mimes[i]
-            raise ValueError(f"Does not support extension '{ex}'.")
+            raise InvalidFileExtension("Extension is not supported. ",cls.extensions,ex)
 
         mime = await asyncio.to_thread(_validate_extension)
         response_headers = {"response-content-type": "image/png"}
@@ -162,14 +183,14 @@ class MediaObject(BaseAssistantType):
                 object_name:
                 remove_if_validate_fail:
         Raises:
-                TypeError: If the object's type is not a correct type.
+                InvalidBinaryFile: If the object's type is not a correct type.
         Returns: MediaObject instance
         """
         magic = await OBJ_STORAGE.get_object(object_name, length=8192)
         try:
             mime = await cls.get_mime(magic)
             return cls(object_name=object_name, mime=mime)
-        except TypeError as e:
+        except InvalidBinaryFile as e:
             if remove_if_validate_fail:
                 await OBJ_STORAGE.remove_object(object_name)
             raise
@@ -182,7 +203,7 @@ class MediaObject(BaseAssistantType):
                 object_name:
                 data:
         Raises:
-                TypeError: If the object is not supported type.
+                InvalidBinaryFile: If the object is not supported type.
         Returns: MediaObject instance
         """
         mime = await cls.get_mime(data)
@@ -196,12 +217,12 @@ class MediaObject(BaseAssistantType):
         Args:
                 data:
         Raises:
-                TypeError: If data is not supported.
+                InvalidBinaryFile: If data is not supported.
         Returns:
                 mime string.
         """
         if (m := await asyncio.to_thread(match, data, cls.matchers)) is None:
-            raise TypeError(f"Object is not instance of type {cls.type}.")
+            raise InvalidBinaryFile(f"Binary object is not instance of type {cls.type}. No matter of its extension.")
         return m.mime
 
     async def get_preview_url(self, expires: timedelta = timedelta(days=7)):
@@ -268,7 +289,7 @@ class DocumentObject(MediaObject):
 @assistant_datatype
 class TextStream(BaseAssistantType):
     """For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id."""
-    output_only = True
+    only = Only.OUTPUT
     id: UUID | int | str
     chunk: str
 
@@ -311,6 +332,7 @@ class Context(BaseAssistantType):
 @assistant_datatype
 class BaseSelection(BaseAssistantType):
     """This type is for querying user selections."""
+    only = Only.INPUT # TODO, check for create output model.
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
@@ -336,7 +358,7 @@ class AssistantStatusCode(str, Enum):
 
 @assistant_datatype
 class Status(BaseAssistantType):
-    output_only = True
+    only = Only.OUTPUT
 
     code: AssistantStatusCode
     detail: str | None = None
@@ -370,7 +392,7 @@ class AssistantData(StreamData):
     def get_data_fields(cls) -> dict[str, FieldInfo]:
         fields: dict[str, FieldInfo] = deepcopy(cls.__class__.model_fields)
         for name, field_info in fields.items():
-            if get_origin(field_info.annotation) == ClassVar or name == "created_at":
+            if get_origin(field_info.annotation) == ClassVar or name in ["created_at", "to_user"]:
                 fields.pop(name)
         return fields
 
@@ -385,7 +407,7 @@ class AssistantData(StreamData):
                 raise ValueError(m)
             if cls.input_schema:
                 assert issubclass(ann, BaseAssistantType)
-                if ann.output_only:
+                if ann.only == Only.OUTPUT:
                     m = f"Input schema can not contain output-only type '{ann.__name__}' of field name '{name}'."
                     raise ValueError(m)
         else:

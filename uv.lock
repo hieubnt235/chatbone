@@ -480,6 +480,7 @@ dependencies = [
     { name = "filetype" },
     { name = "flet", extra = ["all"] },
     { name = "flet-audio" },
+    { name = "flet-toast" },
     { name = "ipywidgets" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
@@ -522,6 +523,7 @@ requires-dist = [
     { name = "filetype", specifier = ">=1.2.0" },
     { name = "flet", extras = ["all"], specifier = ">=0.28.3" },
     { name = "flet-audio", specifier = ">=0.1.0" },
+    { name = "flet-toast", specifier = ">=0.6.0" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "langchain", specifier = ">=0.3.19" },
     { name = "langchain-google-genai", specifier = ">=2.1.5" },
@@ -918,6 +920,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/06/a21078e117408519e4ea27f18d3826cf067d069d92e684a683261da1ab54/flet_desktop_light-0.28.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f3dc473aae8d6cf4270e59bbb51e819068c343a49a8836cced2d17fb0359a7f5", size = 15579831 },
     { url = "https://files.pythonhosted.org/packages/c0/83/195152cc264b37426c8595418d52d51a30ef55d55db9e1c3c22818c01e47/flet_desktop_light-0.28.3-py3-none-musllinux_1_2_aarch64.whl", hash = "sha256:d45647d68ce0aaf5418c938e8e02f404bbb8814ece504f7242730520c3697c47", size = 14978756 },
     { url = "https://files.pythonhosted.org/packages/07/03/6b44479989b55994c14a88c41b1bdc0635ee19509453d301b7caaff8e1af/flet_desktop_light-0.28.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:3090ca7c07392c76bd47ef29f79744c7d114edda466be5f675abc5f65f1f5be7", size = 15579821 },
+]
+
+[[package]]
+name = "flet-toast"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/b0/ff559a2711bfd2ff4fe20cf8c15f8a830375d5ffd36b735c3a5e2b02fb73/flet_toast-0.6.0.tar.gz", hash = "sha256:186d546889e26c265485e9e8747f8b8971d18a46ac51417c251d60f4fc31b85e", size = 7307 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/52/e5950dcdda542f8a227de631b59331d42ce8e278f68d5a9a7533957a5e19/flet_toast-0.6.0-py3-none-any.whl", hash = "sha256:dc189a0b1c9918779192340b521a2294a5c577b51e9bb5b673cbf0004ed7d0b7", size = 6847 },
 ]
 
 [[package]]
