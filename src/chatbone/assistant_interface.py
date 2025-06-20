@@ -7,8 +7,8 @@ from copy import deepcopy
 from datetime import timedelta, datetime
 from enum import Enum
 from types import NoneType, UnionType
-from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Union, Annotated,
-                    get_type_hints, get_origin, Coroutine, )
+from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Annotated,
+                    get_type_hints, get_origin, Coroutine, Generator, )
 from uuid import UUID
 
 import filetype
@@ -17,7 +17,7 @@ import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
 from filetype.types.image import Jpeg
-from pydantic import BaseModel, ConfigDict, model_validator, create_model, Field
+from pydantic import (BaseModel, ConfigDict, model_validator, create_model, Field, )
 from pydantic.fields import FieldInfo
 from ray import serve
 from ray.exceptions import RayTaskError, TaskCancelledError
@@ -35,10 +35,10 @@ CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 AssistantDataType_T: tuple[Type["MediaObject"] | Type[Any]] = ()
 """Assistant datatype in tuple format, use this to test with isinstance()."""
 
-AssistantDataType_U: Union[Type["MediaObject"] | Type[Any]] = None
+AssistantDataType_U: Type["MediaObject"] | Type[Any] = NoneType
 """Assistant datatype in union format."""
 
-AnyMediaObject: Union[Type["MediaObject"]] = None
+AnyMediaObject: Type["MediaObject"] = NoneType
 """Media object union."""
 
 
@@ -52,7 +52,7 @@ def assistant_datatype(cls_type):
     type_list.append(cls_type)
     AssistantDataType_T = tuple(type_list)
     AssistantDataType_U = (
-        AssistantDataType_U | cls_type if AssistantDataType_U is not None else cls_type
+        AssistantDataType_U | cls_type if AssistantDataType_U!=NoneType else cls_type
     )
     if issubclass(cls_type, MediaObject):
         AnyMediaObject = (
@@ -328,22 +328,62 @@ class Context(BaseAssistantType):
             return self.context
         return await self.context_loader()
 
+# todo, only media object can wrap into a list. only three types remain Media object, selection, text.
+#  Context => Assistant Data.getcontext. context will be json string.
+#  Decoupling Assistant app with dev interface, dev should not use StreamData directly.
+
 
 @assistant_datatype
-class BaseSelection(BaseAssistantType):
-    """This type is for querying user selections."""
-    only = Only.INPUT # TODO, check for create output model.
+class BaseForm(BaseAssistantType):
+    """For all arbitrary basic type (int, float,str,bool) and their container, nesting,..."""
+
+    Supported_T: ClassVar[Any] = (
+        str,
+        int,
+        float,
+        bool,
+    )
+
+    @classmethod
+    def fields(cls) -> Generator[tuple[str, FieldInfo], None, None]:
+        for name, field in cls.model_fields.items():
+            if get_origin(field.annotation) == ClassVar or name == "to_user":
+                continue
+            else:
+                yield name, field
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        for field in cls.model_fields.values():
-            if (
-                not issubclass(field.annotation, (str, int, float, bool))
-                and not get_origin(field.annotation) == Literal
-            ):
+        for name, field in cls.model_fields.items():
+            ann = field.annotation
+            if get_origin(ann) == ClassVar or name == "to_user":
+                continue
+            if field.metadata:
+                ann = Annotated[ann, *field.metadata]
+            cls._validate_type(ann)
+
+    @classmethod
+    def _validate_type(cls, ann):
+        org = get_origin(ann)
+        if org == Annotated:
+            cls._validate_type(get_args(ann)[0])
+        if org is None:
+            if ann is None:
                 raise ValueError(
-                    f"Selection options only accept type int, str, float, bool, Literal[...]. Got '{field.annotation.__name__}'."
+                    f"Does not support standalone None like 'list[None]', should be 'list[int|None]' for example."
                 )
+            if ann not in cls.Supported_T:
+                raise ValueError(
+                    f"Only accept types {cls.Supported_T} or composition of them. Got '{ann}'."
+                )
+        elif org in (list, UnionType, Literal, tuple, dict):
+            new_anns = list(get_args(ann))
+            if NoneType in new_anns:
+                assert len(new_anns) > 1
+                new_anns.remove(NoneType)
+            for new_ann in new_anns:
+                new_ann = type(new_ann) if org == Literal else new_ann
+                cls._validate_type(new_ann)
 
 
 class AssistantStatusCode(str, Enum):
@@ -376,7 +416,6 @@ class AssistantData(StreamData):
 
     created_at: datetime = Field(default_factory=utc_now)
 
-
     @classmethod
     def __pydantic_init_subclass__(cls):
         fields: dict[str, FieldInfo] = cls.model_fields
@@ -390,8 +429,8 @@ class AssistantData(StreamData):
 
     @classmethod
     def get_data_fields(cls) -> dict[str, FieldInfo]:
-        fields: dict[str, FieldInfo] = deepcopy(cls.__class__.model_fields)
-        for name, field_info in fields.items():
+        fields: dict[str, FieldInfo] = deepcopy(cls.model_fields)
+        for name, field_info in cls.model_fields.items():
             if get_origin(field_info.annotation) == ClassVar or name in ["created_at", "to_user"]:
                 fields.pop(name)
         return fields
@@ -401,8 +440,11 @@ class AssistantData(StreamData):
         # General supported type examples: ImageObject, list[ImageObject]|VideoObject, ImageObject|VideoObject|None
         # validate recursively through list.
         org = get_origin(ann)
-        if org in (None, Annotated):
-            if not issubclass(ann,cls.T):
+        if org in (
+            None,
+            Annotated,
+        ):  # Annotated is only supported for the annotation type in cls.T
+            if not ann in cls.T:
                 m = f"Does not support field annotation '{ann.__name__}' of field name '{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
             if cls.input_schema:
@@ -688,6 +730,7 @@ class BaseAssistant(BaseModel):
         finally:
             await self._write_status(AssistantStatusCode.DONE)
 
+    # noinspection PyMethodMayBeStatic
     async def _write_status(self, code: AssistantStatusCode, detail: str | None = None):
         write_stream = assistant_streams.get()[0]
         await write_stream.write(

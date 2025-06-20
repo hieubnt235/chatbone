@@ -5,16 +5,32 @@ from copy import deepcopy
 from datetime import timedelta
 from enum import Enum
 from math import floor
-from typing import Any, Callable, List
+from types import NoneType, UnionType
+from typing import Any, Callable, List, get_origin, Literal, get_args, Annotated, Self
 from uuid import UUID
 
 import flet as ft
 from flet.core.buttons import RoundedRectangleBorder
 from flet.core.file_picker import (FilePickerResultEvent, FilePickerUploadEvent, FilePickerFile, )
-from pydantic import BaseModel, ConfigDict
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    TypeAdapter,
+    field_validator,
+)
 
-from chatbone.assistant_interface import (AssistantDataType_U, AnyMediaObject, MediaObject, ImageObject, BaseSelection,
-                                          InvalidFileExtension, InvalidBinaryFile, )
+from chatbone.assistant_interface import (
+    AssistantDataType_U,
+    AnyMediaObject,
+    MediaObject,
+    ImageObject,
+    InvalidFileExtension,
+    InvalidBinaryFile,
+    AssistantInputData,
+    Text,
+    BaseForm,
+    DocumentObject,
+)
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock
@@ -32,13 +48,33 @@ class BaseUI(ft.Container, BaseModel, ABC):
         """This method return a content as ft.Control to pass it to ft.Container.content"""
 
 
-class BaseInputField(ABC):
+class BaseInputField(ABC, ft.Container):
+
+    def __init__(self, *args, **kwargs):
+        self._able_lock = UniversalLock()
+        super().__init__(*args, **kwargs)
 
     @abstractmethod
-    def get_assistant_data(
+    async def get_assistant_data(
         self,
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         pass
+
+    @abstractmethod
+    async def refresh(self) -> Self:
+        return self
+
+    def disable(self) -> Self:
+        with self._able_lock:
+            self.disabled = True
+            self.visible = False
+            return self
+
+    def enable(self) -> Self:
+        with self._able_lock:
+            self.disabled = False
+            self.visible = True
+            return self
 
 
 class _FilePicker(ft.FilePicker):
@@ -133,7 +169,7 @@ class _FilePicker(ft.FilePicker):
         return self._username + "_" + str(self._user_id) + "/" + file_name
 
 
-class MediaInputField(BaseInputField, ft.Container):
+class MediaInputField(BaseInputField):
     """Preview field for one file."""
 
     class MediaIcons(Enum):
@@ -244,9 +280,10 @@ class MediaInputField(BaseInputField, ft.Container):
             width=320,
         )
 
-        super().__init__(column, border=ft.border.all(1))
+        super().__init__(column, border=ft.border.all(1), **kwargs)
 
         self._snackbar: ft.SnackBar = None
+        self._button_state_lock = UniversalLock()
 
     async def get_assistant_data(
         self,
@@ -371,12 +408,13 @@ class MediaInputField(BaseInputField, ft.Container):
             self.page.update()
 
     def _change_unselect_all_button_state(self):
-        if self._file_names:
-            self._unselect_all_button.disabled = False
-            self._unselect_all_button.visible = True
-        else:
-            self._unselect_all_button.disabled = True
-            self._unselect_all_button.visible = False
+        with self._button_state_lock:
+            if self._file_names:
+                self._unselect_all_button.disabled = False
+                self._unselect_all_button.visible = True
+            else:
+                self._unselect_all_button.disabled = True
+                self._unselect_all_button.visible = False
 
     async def update_progress(self, filename: str, progress: float, media_object=None):
         async with self._file_index_lock:
@@ -419,26 +457,161 @@ class MediaInputField(BaseInputField, ft.Container):
             await asyncio.to_thread(_do)
             self._change_unselect_all_button_state()
 
+    async def refresh(self) -> None:
+        await self._unselect_all()
+        return self
 
-class TextInputField(BaseInputField, ft.TextField):
-    def get_assistant_data(
+
+class TextInputField(BaseInputField):
+
+    def __init__(self):
+        self._textfield = ft.TextField()
+        super().__init__(self._textfield, border=ft.border.all(1))
+
+    @property
+    def value(self) -> str | None:
+        return self._textfield.value
+
+    async def get_assistant_data(
         self,
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
-        return self.value
+        return Text(role="user", content=self.value) if self.value else None
+
+    async def refresh(self) -> None:
+        self._textfield.value = None
+        self.page.update()
+        return self
 
 
-class SelectionInputField(BaseInputField):
+class InputFieldOption(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    input_field: BaseInputField
+    description: str | None = None
 
-    def __init__(self, selection_type: type[BaseSelection]):
+    @field_validator("input_field", mode="after")
+    @classmethod
+    def _disable_all_fields(cls, field: BaseInputField) -> BaseInputField:
+        field.disable()
+        return field
+
+
+class SelectionInputFields(BaseInputField):
+
+    def __init__(
+        self, input_field_options: dict[str, InputFieldOption], *args, **kwargs
+    ):
+        self._keys: list[str] = []
+        self._stack = ft.Stack([])
+        self._dropdown = ft.Dropdown(
+            label="Options", options=[], on_change=self._on_change
+        )
+        self._desc = ft.Text()
+
+        self._input_field_lock = UniversalLock()
+        """This lock is used to sync stack and dropdown."""
+
+        with self._input_field_lock:
+            for key, opt in input_field_options.items():
+                self._keys.append(key)
+                self._stack.controls.append(opt.input_field)
+                self._dropdown.options.append(ft.DropdownOption(key))
+            self._input_field_options = input_field_options
+
+        self._enable_lock = UniversalLock()
+        self._current_enable_idx = None
+
+        content = ft.Column(
+            [
+                ft.Row([ft.Text("Input type option:"), self._dropdown]),
+                self._desc,
+                self._stack,
+            ],
+            width=320,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
+
+        super().__init__(content, *args, border=ft.border.all(1), **kwargs)
+
+    async def _on_change(self, e):
+        async with self._input_field_lock:
+            async with self._enable_lock:
+                new_key = self._dropdown.value
+                idx = self._keys.index(new_key)
+                if self._current_enable_idx is not None:
+                    (
+                        await self.input_fields[self._current_enable_idx].refresh()
+                    ).disable()
+                self.input_fields[idx].enable()
+                self._desc.value = self._input_field_options[new_key].description
+                self._current_enable_idx = idx
+                self.page.update()
+
+    @property
+    def input_fields(self) -> list[BaseInputField]:
+        return self._stack.controls
+
+    async def get_assistant_data(
+        self,
+    ) -> dict[str, AssistantDataType_U | list[AssistantDataType_U | None] | None]:
+        r = {}
+        async with self._input_field_lock:
+            for k, f in zip(self._keys, self.input_fields):
+                r[k] = await f.get_assistant_data()
+            return r
+
+    async def refresh(self) -> Self:
+        return self
+
+# TODO: form
+class FormInputField(BaseInputField):
+
+    def __init__(self, selection_type: type[BaseForm]):
         self._datatype = selection_type
+        self._fields: dict[str, ft.Control] = {}
 
-    def get_assistant_data(
+        super().__init__(self._make_fields())
+
+    def _make_fields(self) -> ft.Control:
+        for name, field in self._datatype.fields():
+            control = self._make_field(field.annotation)
+
+    def _make_field(self, ann) -> ft.Control:
+        org = get_origin(ann)
+        if org == Annotated:
+            return self._make_field(get_args(ann)[0])
+
+        if org is None:
+            if ann in (str, int, float):
+                ta = TypeAdapter
+                return ft.Text(filter)
+
+        elif org in (list, UnionType, Literal, tuple, dict):
+            new_anns = list(get_args(ann))
+            if NoneType in new_anns:
+                assert len(new_anns) > 1
+                new_anns.remove(NoneType)
+            for new_ann in new_anns:
+                new_ann = type(new_ann) if org == Literal else new_ann
+                self._make_field(new_ann, get_origin(new_ann))
+
+    async def get_assistant_data(
         self,
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         pass
 
 
-# class InputFieldCreator
+class AssistantInputfield(ft.Container):
+
+    def __init___(self, input_datatype: type[AssistantInputData]):
+        pass
+
+    async def get_data(self) -> AssistantInputData:
+        pass
+
+    async def get_data_nowait(self) -> AssistantInputData:
+        pass
+
 
 if __name__ == "__main__":
 
@@ -449,17 +622,34 @@ if __name__ == "__main__":
         page.vertical_alignment = ft.MainAxisAlignment.CENTER
         page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-        media_input_field = MediaInputField(
+        image_input_field = MediaInputField(
             "hieu",
             uuid,
             ImageObject,
             allow_multiple=True,
         )
-        page.add(media_input_field)
+
+        document_input_field = MediaInputField("hieu", uuid, DocumentObject)
+
+        text_input_field = TextInputField()
+
+        selections = SelectionInputFields(
+            dict(
+                document=InputFieldOption(
+                    input_field=document_input_field, description="Choose one document"
+                ),
+                image=InputFieldOption(
+                    input_field=image_input_field, description="Choose many image."
+                ),
+                text=InputFieldOption(input_field=text_input_field),
+            )
+        )
+
+        page.add(selections)
 
         async def on_click(e):
-            for i in await media_input_field.get_assistant_data():
-                print(i)
+            for k, v in (await selections.get_assistant_data()).items():
+                print(f"{k}: {v}")
 
         page.add(ft.Button("Select all file", on_click=on_click))
 
