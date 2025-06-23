@@ -11,6 +11,8 @@ SESSION = Session | AsyncSession
 SESSION_CONTEXTMANAGER = ContextManager[Session] | AsyncContextManager[AsyncSession]
 SESSION_GENERATOR = Generator[Session, ..., ...] | AsyncGenerator[AsyncSession, ...]
 FUNCTYPE = Callable | Callable[..., Coroutine]
+BASIC_TYPE = int|str|float|bool
+
 
 __all__ = ['ENGINE', 'SESSION_MAKER', 'SESSION_GENERATOR', 'SESSION', 'SESSION_CONTEXTMANAGER', 'SESSION_GENERATOR',
-           'FUNCTYPE']
+           'FUNCTYPE','BASIC_TYPE']

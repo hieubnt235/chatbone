@@ -2,21 +2,37 @@ import asyncio
 from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
 from copy import deepcopy
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from enum import Enum
+from inspect import iscoroutinefunction
 from math import floor
 from types import NoneType, UnionType
-from typing import Any, Callable, List, get_origin, Literal, get_args, Annotated, Self
+from typing import (
+    Any,
+    Callable,
+    List,
+    get_origin,
+    Literal,
+    get_args,
+    Annotated,
+    Self,
+    Awaitable,
+)
 from uuid import UUID
 
 import flet as ft
 from flet.core.buttons import RoundedRectangleBorder
-from flet.core.file_picker import (FilePickerResultEvent, FilePickerUploadEvent, FilePickerFile, )
+from flet.core.file_picker import (
+    FilePickerResultEvent,
+    FilePickerUploadEvent,
+    FilePickerFile,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
     TypeAdapter,
     field_validator,
+    Field,
 )
 
 from chatbone.assistant_interface import (
@@ -33,7 +49,7 @@ from chatbone.assistant_interface import (
 )
 from utilities.func import utc_now
 from utilities.logger import logger
-from utilities.misc import UniversalLock
+from utilities.misc import UniversalLock, SyncList
 
 
 class BaseUI(ft.Container, BaseModel, ABC):
@@ -58,10 +74,28 @@ class BaseInputField(ABC, ft.Container):
     async def get_assistant_data(
         self,
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        """Should only get VALID data, invalid data should be treated as no data and return None."""
         pass
 
     @abstractmethod
-    async def refresh(self) -> Self:
+    async def _refresh(self):
+        pass
+
+    @abstractmethod
+    @property
+    def input_fields(self) -> list["BaseInputField"]:
+        return []
+
+    @property
+    def preview_control(self) -> ft.Control:
+        """Control that should be shown for preview. This is optional for overriding."""
+        return self
+
+    async def cleanup(self) -> Self:
+        """Refresh self and all children, which is got by input_fields property."""
+        await self._refresh()
+        for input_field in self.input_fields:
+            await input_field.cleanup()
         return self
 
     def disable(self) -> Self:
@@ -166,7 +200,13 @@ class _FilePicker(ft.FilePicker):
         )
 
     def _make_object_name(self, file_name: str):
-        return self._username + "_" + str(self._user_id) + "/" + file_name
+        return "/".join(
+            [
+                self._username + "_" + str(self._user_id),
+                str(datetime.now(timezone.utc).date()),
+                file_name,
+            ]
+        )
 
 
 class MediaInputField(BaseInputField):
@@ -378,7 +418,7 @@ class MediaInputField(BaseInputField):
     def _notice_user(self, text: str):
         l = len(self.page.overlay)
         if self._snackbar:
-            self._snackbar.content = ft.Text(text,size=10)
+            self._snackbar.content = ft.Text(text, size=10)
         else:
             self._snackbar = ft.SnackBar(
                 ft.Text(text),
@@ -389,9 +429,9 @@ class MediaInputField(BaseInputField):
                 show_close_icon=True,
                 shape=RoundedRectangleBorder(radius=10),
             )
-            l+=1
+            l += 1
         self.page.open(self._snackbar)
-        assert len(self.page.overlay) == l # Ensure snackbar not accumulate.
+        assert len(self.page.overlay) == l  # Ensure snackbar not accumulate.
         # TODO: flet-toast available is not a good code, rewrite new toast library, use simple snackbar for now.
         # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=10)
         # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=15)
@@ -457,30 +497,74 @@ class MediaInputField(BaseInputField):
             await asyncio.to_thread(_do)
             self._change_unselect_all_button_state()
 
-    async def refresh(self) -> None:
+    async def _refresh(self) -> None:
         await self._unselect_all()
-        return self
+
+    @property
+    def preview_control(self) -> ft.Control:
+        return ft.ListView(
+            [m.controls[1:] for m in self._file_list.controls],
+            height=self._file_list.height,
+            width=self._file_list.width,
+        )
 
 
 class TextInputField(BaseInputField):
 
-    def __init__(self):
-        self._textfield = ft.TextField()
+    def __init__(
+        self,
+        input_filter: ft.InputFilter = None,
+        validator: Callable[[str], bool | Awaitable[bool]] = None,
+        **kwargs,
+    ):
+        self._textfield = ft.TextField(
+            input_filter=input_filter, on_change=self._on_change
+        )
+        self._validator = validator
+        self._is_valid: bool = True
+        self._preview_text = ft.Text(value=self._textfield.value)
+
         super().__init__(self._textfield, border=ft.border.all(1))
+
+    async def _on_change(self, e):
+        m = ""
+        if not callable(self._validator) or self.value is None or self.value == "":
+            self._is_valid = True
+        else:
+            try:
+                if iscoroutinefunction(self._validator):
+                    self._is_valid = await self._validator(self._textfield.value)
+                else:
+                    self._is_valid = await asyncio.to_thread(
+                        self._validator, self._textfield.value
+                    )
+            except Exception as e:
+                self._is_valid = False
+                m = f": {e}"
+        self._textfield.helper_text = f"Invalid input{m}" if not self.is_valid else None
+        self._preview_text.value = f"{self._textfield.value} {f"({self._textfield.helper_text})" if self._textfield.helper_text else ""} "
+        self.page.update()
+
+    @property
+    def is_valid(self) -> bool:
+        return self._is_valid
 
     @property
     def value(self) -> str | None:
         return self._textfield.value
 
+    @property
+    def preview_control(self) -> ft.Control:
+        return self._preview_text
+
     async def get_assistant_data(
         self,
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
-        return Text(role="user", content=self.value) if self.value else None
+        return Text(role="user", content=self.value) if self.is_valid else None
 
-    async def refresh(self) -> None:
+    async def _refresh(self) -> None:
         self._textfield.value = None
         self.page.update()
-        return self
 
 
 class InputFieldOption(BaseModel):
@@ -495,7 +579,8 @@ class InputFieldOption(BaseModel):
         return field
 
 
-class SelectionInputFields(BaseInputField):
+class MultiOptionsInputField(BaseInputField):
+    """User provide only one input according to only one options."""
 
     def __init__(
         self, input_field_options: dict[str, InputFieldOption], *args, **kwargs
@@ -526,12 +611,11 @@ class SelectionInputFields(BaseInputField):
                 self._desc,
                 self._stack,
             ],
-            width=320,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,
         )
 
-        super().__init__(content, *args, border=ft.border.all(1), **kwargs)
+        super().__init__(content, *args, **kwargs)
 
     async def _on_change(self, e):
         async with self._input_field_lock:
@@ -540,7 +624,7 @@ class SelectionInputFields(BaseInputField):
                 idx = self._keys.index(new_key)
                 if self._current_enable_idx is not None:
                     (
-                        await self.input_fields[self._current_enable_idx].refresh()
+                        await self.input_fields[self._current_enable_idx].cleanup()
                     ).disable()
                 self.input_fields[idx].enable()
                 self._desc.value = self._input_field_options[new_key].description
@@ -553,17 +637,80 @@ class SelectionInputFields(BaseInputField):
 
     async def get_assistant_data(
         self,
-    ) -> dict[str, AssistantDataType_U | list[AssistantDataType_U | None] | None]:
-        r = {}
+    ) -> tuple[str, AssistantDataType_U | list[AssistantDataType_U | None]] | None:
         async with self._input_field_lock:
             for k, f in zip(self._keys, self.input_fields):
-                r[k] = await f.get_assistant_data()
-            return r
+                if d := (await f.get_assistant_data()):
+                    return k, d
+            return None
 
-    async def refresh(self) -> Self:
-        return self
+    @property
+    def preview_control(self) -> ft.Control:
+        return ft.Stack([c.preview_control for c in self.input_fields])
 
-# TODO: form
+
+class InputFieldSchema(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    type: type[BaseInputField]
+    kwargs: dict = Field(default_factory=dict)
+
+
+class ListInputField(BaseInputField):
+
+    # TODO: Change all manual sync lists become SyncList (after write full testcases)
+    class _InputFieldList(SyncList):
+        input_fields: list[BaseInputField] = Field(default_factory=[])
+        remove_buttons: list[ft.IconButton] = Field(default_factory=[])
+        preview_buttons: list[ft.IconButton] = Field(default_factory=[])
+
+    def __init__(self, input_field_schema: InputFieldSchema, **kwargs):
+        self._input_field_schema = input_field_schema
+
+        self._input_field_list = ListInputField._InputFieldList()
+
+        self._new_input_field: BaseInputField = None
+        self._create_new_input_field()
+
+        self._add_button = ft.IconButton(
+            ft.Icons.ADD_CIRCLE_OUTLINE_OUTLINED, on_click=self._on_add
+        )
+
+        self._content_lock = UniversalLock()
+        self._content = [
+            ft.Row(
+                [ft.ListView(self._input_field_list, horizontal=True), self._add_button]
+            ),
+            self._create_new_input_field(),
+        ]
+        super().__init__(ft.Column(self._content), **kwargs)
+
+    async def _on_add(self, e):
+        if await self._new_input_field.get_assistant_data():
+            with self._content_lock:
+                self._input_field_list.append(
+                    input_fields=self._content.pop(),
+                    remove_buttons=ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE),
+                    preview_buttons=ft.IconButton(ft.Icons.PREVIEW_ROUNDED),
+                )
+                self._content.append(self._create_new_input_field())
+
+    async def _on_remove(self, index:int):
+        async def _pop():
+            self._input_field_list.pop()
+
+    def _create_new_input_field(self):
+        return self._input_field_schema.type(**self._input_field_schema.kwargs)
+
+    async def get_assistant_data(
+        self,
+    ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        pass
+
+
+class DictInputField(BaseInputField):
+    pass
+
+
 class FormInputField(BaseInputField):
 
     def __init__(self, selection_type: type[BaseForm]):
@@ -631,9 +778,13 @@ if __name__ == "__main__":
 
         document_input_field = MediaInputField("hieu", uuid, DocumentObject)
 
-        text_input_field = TextInputField()
+        def _val(v: str):
+            int(v)
+            return True
 
-        selections = SelectionInputFields(
+        text_input_field = TextInputField(validator=_val)
+
+        selections = MultiOptionsInputField(
             dict(
                 document=InputFieldOption(
                     input_field=document_input_field, description="Choose one document"
@@ -642,14 +793,15 @@ if __name__ == "__main__":
                     input_field=image_input_field, description="Choose many image."
                 ),
                 text=InputFieldOption(input_field=text_input_field),
-            )
+            ),
+            width=500,
+            border=ft.border.all(1),
+            padding=ft.padding.all(20),
         )
-
         page.add(selections)
 
         async def on_click(e):
-            for k, v in (await selections.get_assistant_data()).items():
-                print(f"{k}: {v}")
+            print(await selections.get_assistant_data() or "NOTHING")
 
         page.add(ft.Button("Select all file", on_click=on_click))
 

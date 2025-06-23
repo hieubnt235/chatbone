@@ -329,7 +329,7 @@ class Context(BaseAssistantType):
         return await self.context_loader()
 
 # todo, only media object can wrap into a list. only three types remain Media object, selection, text.
-#  Context => Assistant Data.getcontext. context will be json string.
+#  Context => Assistant Data.getcontext. context will be json string. for later, not now.
 #  Decoupling Assistant app with dev interface, dev should not use StreamData directly.
 
 
