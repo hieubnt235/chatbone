@@ -4,7 +4,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from copy import deepcopy
-from typing import Mapping, ClassVar, Any, get_origin, Callable, get_args
+from typing import Mapping, ClassVar, Any, get_origin, Callable, get_args, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_core import PydanticUndefinedType
@@ -70,6 +70,12 @@ class UniversalLock:
         else:
             yield flag
 
+    async def aacqurie(self,blocking: bool = True, timeout: float = -1):
+        return await asyncio.to_thread(self._tlock.acquire,blocking, timeout)
+
+    async def arelease(self):
+        return await asyncio.to_thread(self._tlock.release)
+
     def __enter__(self):
         self._tlock.acquire()
 
@@ -89,6 +95,12 @@ class UniversalLock:
             raise TimeoutError(flag)
         else:
             yield flag
+
+    def acqurie(self,blocking: bool = True, timeout: float = -1):
+        return self._tlock.acquire(blocking, timeout)
+
+    def release(self):
+        return self._tlock.release()
 
 
 class ReferableDict[KT, VT](Mapping[KT, VT]):
@@ -278,8 +290,27 @@ class SyncList(BaseModel):
         }
 
     @property
+    def list_keys(self):
+        return self.adapters.keys()
+
+    @property
     def list_names(self):
-        return list(self.adapters.keys())
+        return list(self.list_keys)
+
+    def get_all_lists(self, mode:Literal["list","tuple","dict"] = "list"):
+        match mode:
+            case "list":
+                return [getattr(self,name) for name in self.list_keys]
+            case "tuple":
+                return (getattr(self,name) for name in self.list_keys)
+            case "dict":
+                return {name:getattr(self,name) for name in self.list_keys}
+        raise ValueError(mode)
+
+    @property
+    def zipped_lists(self):
+        lists = [getattr(self,name) for name in self.list_keys]
+        return zip(*lists)
 
     def call_sync(
         self,
@@ -300,12 +331,12 @@ class SyncList(BaseModel):
         else:
             return super().__getattr__(item)
 
-    def __getitem__(self, item) -> tuple[...]:
+    def __getitem__(self, item) -> dict[str,Any]:
         with self.lock:
-            return tuple(getattr(self, l)[item] for l in self.list_names)
+            return {ln:getattr(self, ln)[item] for ln in self.list_names}
 
     def __setitem__(self, key, value):
-        data = self.validate_data(value)
+        data = self.validate_data(value, length_included=False) # data aren't provided will be hold the old.
         with self.lock:
             for name, v in data.items():
                 getattr(self, name)[key] = v

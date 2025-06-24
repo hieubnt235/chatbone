@@ -1,12 +1,14 @@
 import asyncio
+import threading
 from abc import ABC, abstractmethod
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager, AbstractAsyncContextManager
 from copy import deepcopy
 from datetime import timedelta, datetime, timezone
 from enum import Enum
+from functools import partial
 from inspect import iscoroutinefunction
 from math import floor
-from types import NoneType, UnionType
+from types import NoneType, UnionType, FunctionType, MethodType
 from typing import (
     Any,
     Callable,
@@ -17,6 +19,9 @@ from typing import (
     Annotated,
     Self,
     Awaitable,
+    AsyncContextManager,
+    AsyncGenerator,
+    AsyncIterator,
 )
 from uuid import UUID
 
@@ -49,7 +54,7 @@ from chatbone.assistant_interface import (
 )
 from utilities.func import utc_now
 from utilities.logger import logger
-from utilities.misc import UniversalLock, SyncList
+from utilities.misc import UniversalLock
 
 
 class BaseUI(ft.Container, BaseModel, ABC):
@@ -68,22 +73,31 @@ class BaseInputField(ABC, ft.Container):
 
     def __init__(self, *args, **kwargs):
         self._able_lock = UniversalLock()
+
+        self._snackbar: ft.SnackBar = None
+        """For notice user"""
+
         super().__init__(*args, **kwargs)
 
     @abstractmethod
     async def get_assistant_data(
-        self,
+        self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         """Should only get VALID data, invalid data should be treated as no data and return None."""
         pass
 
     @abstractmethod
     async def _refresh(self):
+        """Refresh for this InputField class only, will be call by cleanup(). Clean all pending state.
+        Should not inplement logic for sub InputField, which will be done by cleanup() method instead.
+        """
         pass
 
-    @abstractmethod
     @property
-    def input_fields(self) -> list["BaseInputField"]:
+    @abstractmethod
+    def sub_input_fields(self) -> list["BaseInputField"]:
+        """This property return sub input fields (not self), used to cleanup.
+        If class does not have input field, explicitly return []"""
         return []
 
     @property
@@ -94,7 +108,7 @@ class BaseInputField(ABC, ft.Container):
     async def cleanup(self) -> Self:
         """Refresh self and all children, which is got by input_fields property."""
         await self._refresh()
-        for input_field in self.input_fields:
+        for input_field in self.sub_input_fields:
             await input_field.cleanup()
         return self
 
@@ -109,6 +123,27 @@ class BaseInputField(ABC, ft.Container):
             self.disabled = False
             self.visible = True
             return self
+
+    def notice_user(self, text: str):
+        l = len(self.page.overlay)
+        if self._snackbar:
+            self._snackbar.content = ft.Text(text, size=10)
+        else:
+            self._snackbar = ft.SnackBar(
+                ft.Text(text),
+                behavior=ft.SnackBarBehavior.FLOATING,
+                dismiss_direction=ft.DismissDirection.VERTICAL,
+                width=1000,
+                duration=10000,
+                show_close_icon=True,
+                shape=RoundedRectangleBorder(radius=10),
+            )
+            l += 1
+        self.page.open(self._snackbar)
+        assert len(self.page.overlay) == l  # Ensure snackbar not accumulate.
+        # TODO: flet-toast available is not a good code, rewrite new toast library, use simple snackbar for now.
+        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=10)
+        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=15)
 
 
 class _FilePicker(ft.FilePicker):
@@ -305,6 +340,7 @@ class MediaInputField(BaseInputField):
         self._file_index_lock = UniversalLock()
         self._file_names: list[str] = []
         self._file_list = ft.ListView([], height=250, width=320)
+        """controls attribute is list[_FilePreviewRow]"""
 
         column = ft.Column(
             [
@@ -322,11 +358,10 @@ class MediaInputField(BaseInputField):
 
         super().__init__(column, border=ft.border.all(1), **kwargs)
 
-        self._snackbar: ft.SnackBar = None
         self._button_state_lock = UniversalLock()
 
     async def get_assistant_data(
-        self,
+        self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         """
         Returns:
@@ -352,7 +387,8 @@ class MediaInputField(BaseInputField):
                 ]
 
     def build(self):
-        self.page.overlay.append(self._file_picker)
+        if not self._file_picker in self.page.overlay:
+            self.page.overlay.append(self._file_picker)
 
     async def _on_result(self, e: ft.FilePickerResultEvent):
         """Add files to selected file list. Do not override."""
@@ -383,7 +419,7 @@ class MediaInputField(BaseInputField):
                         f"User '{self._file_picker._username}' uploaded {len(filenames)} incorrect extension files: {filenames}\n"
                         f"Allowed extensions: {file_exceptions[0].al_ex}"
                     )
-                    self._notice_user(
+                    self.notice_user(
                         f"Files: {filenames} have incorrect extensions and were unselected.\n"
                         f"Allowed extensions: {file_exceptions[0].al_ex}"
                     )
@@ -394,7 +430,7 @@ class MediaInputField(BaseInputField):
         if e.error:
             await self._unselect(e.file_name, update=False)
             logger.info(f"Error happened during uploading file: '{e.error}'")
-            self._notice_user(
+            self.notice_user(
                 f"There is an server error while uploading file '{e.file_name}'."
             )
         else:
@@ -409,41 +445,26 @@ class MediaInputField(BaseInputField):
                     await self._unselect(e.file_name, update=False)
                     m = "Uploaded file has the correct extension but wrong magic binary."
                     logger.info(m)
-                    self._notice_user(
+                    self.notice_user(
                         f"{m}. Make sure your extension of the file matches with binary structure. Unselect file '{e.file_name}'."
                     )
             else:
                 await self.update_progress(e.file_name, e.progress, media_object)
 
-    def _notice_user(self, text: str):
-        l = len(self.page.overlay)
-        if self._snackbar:
-            self._snackbar.content = ft.Text(text, size=10)
-        else:
-            self._snackbar = ft.SnackBar(
-                ft.Text(text),
-                behavior=ft.SnackBarBehavior.FLOATING,
-                dismiss_direction=ft.DismissDirection.VERTICAL,
-                width=1000,
-                duration=10000,
-                show_close_icon=True,
-                shape=RoundedRectangleBorder(radius=10),
-            )
-            l += 1
-        self.page.open(self._snackbar)
-        assert len(self.page.overlay) == l  # Ensure snackbar not accumulate.
-        # TODO: flet-toast available is not a good code, rewrite new toast library, use simple snackbar for now.
-        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=10)
-        # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=15)
-
     async def _unselect_all(self, e=None):
-        for filename in deepcopy(self._file_names):
-            await self._unselect(filename, update=False)
-        self.page.update()
+        async with self._file_index_lock:
+            for filename in deepcopy(self._file_names):
+                await self._unselect(filename, update=False, lock=False)
+            self.page.update()
 
-    async def _unselect(self, filename, update: bool = True):
+    async def _unselect(self, filename, update: bool = True, lock: bool = True):
+        should_lock = lock
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._file_index_lock)
+                should_lock = False
         await self._file_picker.cancel(filename)
-        await self.remove_file_review_row(filename)
+        await self.remove_file_review_row(filename, should_lock)
         if update:
             self.page.update()
 
@@ -471,9 +492,11 @@ class MediaInputField(BaseInputField):
             return self._file_list.controls[index]
 
     async def remove_file_review_row(
-        self, filename: str
+        self, filename: str, lock: bool = True
     ) -> "MediaInputField._FilePreviewRow":
-        async with self._file_index_lock:
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._file_index_lock)
             index = self._file_names.index(filename)
             self._file_names.pop(index)
             fr = self._file_list.controls.pop(index)
@@ -499,6 +522,13 @@ class MediaInputField(BaseInputField):
 
     async def _refresh(self) -> None:
         await self._unselect_all()
+        if self._file_picker in self.page.overlay:
+            self.page.overlay.remove(self._file_picker)
+            self.page.update()
+
+    @property
+    def sub_input_fields(self) -> list["BaseInputField"]:
+        return []
 
     @property
     def preview_control(self) -> ft.Control:
@@ -523,27 +553,30 @@ class TextInputField(BaseInputField):
         self._validator = validator
         self._is_valid: bool = True
         self._preview_text = ft.Text(value=self._textfield.value)
-
+        self._init = True  # check for newest text
         super().__init__(self._textfield, border=ft.border.all(1))
 
     async def _on_change(self, e):
+        if self._init:
+            self._init = False
         m = ""
-        if not callable(self._validator) or self.value is None or self.value == "":
-            self._is_valid = True
-        else:
-            try:
-                if iscoroutinefunction(self._validator):
-                    self._is_valid = await self._validator(self._textfield.value)
-                else:
-                    self._is_valid = await asyncio.to_thread(
-                        self._validator, self._textfield.value
-                    )
-            except Exception as e:
-                self._is_valid = False
-                m = f": {e}"
+        try:
+            await self._validate()
+        except Exception as e:
+            self._is_valid = False
+            m = f": {e}"
         self._textfield.helper_text = f"Invalid input{m}" if not self.is_valid else None
         self._preview_text.value = f"{self._textfield.value} {f"({self._textfield.helper_text})" if self._textfield.helper_text else ""} "
         self.page.update()
+
+    async def _validate(self):
+        if not callable(self._validator):
+            self._is_valid = True if self.value is not None else False
+        else:
+            if iscoroutinefunction(self._validator):
+                self._is_valid = await self._validator(self.value)
+            else:
+                self._is_valid = await asyncio.to_thread(self._validator, self.value)
 
     @property
     def is_valid(self) -> bool:
@@ -558,13 +591,28 @@ class TextInputField(BaseInputField):
         return self._preview_text
 
     async def get_assistant_data(
-        self,
+        self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
-        return Text(role="user", content=self.value) if self.is_valid else None
+        if self._init:
+            # noinspection PyBroadException
+            try:
+                await self._validate()
+                self._init = False
+            except Exception:
+                self._is_valid = False
+                self._init = False
+                return None
+        r = Text(role="user", content=self.value) if self.is_valid else None
+        return r
 
     async def _refresh(self) -> None:
+        self._is_valid = False
         self._textfield.value = None
         self.page.update()
+
+    @property
+    def sub_input_fields(self) -> list["BaseInputField"]:
+        return []
 
 
 class InputFieldOption(BaseModel):
@@ -624,87 +672,309 @@ class MultiOptionsInputField(BaseInputField):
                 idx = self._keys.index(new_key)
                 if self._current_enable_idx is not None:
                     (
-                        await self.input_fields[self._current_enable_idx].cleanup()
+                        await self.sub_input_fields[self._current_enable_idx].cleanup()
                     ).disable()
-                self.input_fields[idx].enable()
+                self.sub_input_fields[idx].enable()
                 self._desc.value = self._input_field_options[new_key].description
                 self._current_enable_idx = idx
                 self.page.update()
 
     @property
-    def input_fields(self) -> list[BaseInputField]:
+    def sub_input_fields(self) -> list[BaseInputField]:
         return self._stack.controls
 
     async def get_assistant_data(
         self,
-    ) -> tuple[str, AssistantDataType_U | list[AssistantDataType_U | None]] | None:
+        return_meta: bool = False,
+    ) -> AssistantDataType_U | list[AssistantDataType_U] | None:
+        """
+        Returns:
+            A tuple of key and data if return_meta is True else return just data.
+        """
         async with self._input_field_lock:
-            for k, f in zip(self._keys, self.input_fields):
+            for k, f in zip(self._keys, self.sub_input_fields):
                 if d := (await f.get_assistant_data()):
-                    return k, d
+                    if return_meta:
+                        return k, d
+                    return d
             return None
 
     @property
     def preview_control(self) -> ft.Control:
-        return ft.Stack([c.preview_control for c in self.input_fields])
+        return ft.Stack([c.preview_control for c in self.sub_input_fields])
+
+    async def _refresh(self):
+        pass
 
 
-class InputFieldSchema(BaseModel):
+class InputFieldFactory(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    type: type[BaseInputField]
-    kwargs: dict = Field(default_factory=dict)
+    factory: Callable[..., BaseInputField | Awaitable[BaseInputField]]
+    args: list[Any] = Field(default_factory=list)
+    kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
 class ListInputField(BaseInputField):
 
-    # TODO: Change all manual sync lists become SyncList (after write full testcases)
-    class _InputFieldList(SyncList):
-        input_fields: list[BaseInputField] = Field(default_factory=[])
-        remove_buttons: list[ft.IconButton] = Field(default_factory=[])
-        preview_buttons: list[ft.IconButton] = Field(default_factory=[])
+    class _SavedField(ft.Row):
+        def __init__(
+            self,
+            input_field: BaseInputField,
+            list_input_field: "ListInputField",
+            **kwargs,
+        ):
 
-    def __init__(self, input_field_schema: InputFieldSchema, **kwargs):
-        self._input_field_schema = input_field_schema
+            self._input_field = input_field.disable()
+            self._list_input_field = list_input_field
 
-        self._input_field_list = ListInputField._InputFieldList()
+            self._edit_button = ft.IconButton(
+                ft.Icons.EDIT,
+                on_click=partial(
+                    list_input_field._on_open_edit_sheet, current_saved_field=self
+                ),
+            )
+            self._remove_button = ft.IconButton(
+                ft.Icons.CANCEL_OUTLINED,
+                on_click=partial(
+                    list_input_field._on_remove_saved_field, current_saved_field=self
+                ),
+            )
 
-        self._new_input_field: BaseInputField = None
-        self._create_new_input_field()
+            super().__init__(
+                controls=[self._edit_button, self._remove_button, self._input_field],
+                **kwargs,
+            )
 
-        self._add_button = ft.IconButton(
-            ft.Icons.ADD_CIRCLE_OUTLINE_OUTLINED, on_click=self._on_add
+        @property
+        def input_field(self):
+            return self._input_field
+
+    def __init__(self, input_field_factory: InputFieldFactory, **kwargs):
+        if not iscoroutinefunction(input_field_factory):
+            f = input_field_factory.factory
+
+            async def _factory(*args, **kwargs):
+                return await asyncio.to_thread(f, *args, **kwargs)
+
+            input_field_factory.factory = _factory
+        self._input_field_factory: InputFieldFactory = input_field_factory
+
+        self._add_new_button = ft.IconButton(
+            ft.Icons.ADD_CIRCLE_OUTLINE_OUTLINED,
+            on_click=self._on_open_input_sheet,
+            tooltip="Add new input",
+        )
+
+        self._remove_all_button = ft.IconButton(
+            ft.Icons.CANCEL_PRESENTATION_OUTLINED,
+            on_click=self._on_remove_all,
+            tooltip="Remove all data",
         )
 
         self._content_lock = UniversalLock()
-        self._content = [
-            ft.Row(
-                [ft.ListView(self._input_field_list, horizontal=True), self._add_button]
-            ),
-            self._create_new_input_field(),
-        ]
-        super().__init__(ft.Column(self._content), **kwargs)
+        """Lock for manipulate input field."""
 
-    async def _on_add(self, e):
-        if await self._new_input_field.get_assistant_data():
-            with self._content_lock:
-                self._input_field_list.append(
-                    input_fields=self._content.pop(),
-                    remove_buttons=ft.IconButton(ft.Icons.REMOVE_CIRCLE_OUTLINE),
-                    preview_buttons=ft.IconButton(ft.Icons.PREVIEW_ROUNDED),
+        self._listview = ft.ListView([], height=250, width=320)
+
+        content = ft.Column(
+            [
+                self._listview,
+                ft.Row([self._add_new_button, self._remove_all_button]),
+            ]
+        )
+        super().__init__(content=content, **kwargs)
+
+        self._sheet_input_field: BaseInputField | None = None
+        self._sheet_index_field = ft.TextField(
+            label="Index", input_filter=ft.NumbersOnlyInputFilter()
+        )
+
+        self._sheet = ft.BottomSheet(ft.Container(), on_dismiss=self._on_dismiss_sheet)
+
+    def build(self):
+        if not self._sheet in self.page.overlay:
+            self.page.overlay.append(self._sheet)
+
+    @property
+    def _saved_field_list(self) -> list[_SavedField]:
+        return self._listview.controls
+
+    @property
+    def _sheet_content(self):
+        return self._sheet.content.content
+
+    @_sheet_content.setter
+    def _sheet_content(self, value: ft.Control):
+        self._sheet.content.content = value
+
+    async def _on_dismiss_sheet(self, e=None):
+        assert not await self._content_lock.aacqurie(blocking=False)
+        if self._sheet_input_field:
+            await self._sheet_input_field.cleanup()
+            self._sheet_input_field = None
+            self._sheet_content = None
+            self._sheet_index_field.value = None
+        self.update()
+        await self._content_lock.arelease()
+
+        print([p.__class__.__name__ for p in self.page.overlay])
+        print(self._saved_field_list)
+
+    async def _on_open_input_sheet(self, e):
+        await self._content_lock.aacqurie()  # Lock until dismiss
+        try:
+            self._sheet_input_field = await self._input_field_factory.factory(
+                *self._input_field_factory.args, **self._input_field_factory.kwargs
+            )
+            self._sheet_index_field.value = None
+            self._sheet_content = ft.Column(
+                [
+                    self._sheet_index_field,
+                    self._sheet_input_field,
+                    ft.Button(
+                        "Save",
+                        on_click=self._on_save_input_sheet,
+                    ),
+                ]
+            )
+            self.page.open(self._sheet)
+
+        except Exception as e:
+            logger.exception(e)
+            self.page.close(self._sheet)
+            self.notice_user("Server error when open input sheet.")
+
+    async def _on_open_edit_sheet(self, e, *, current_saved_field: _SavedField):
+        await self._content_lock.aacqurie()  # Lock until dismiss
+        try:
+            # todo: deep copy is dump. construct and do get_state instead.
+            #  For now just construct entirely new. Every thing go right
+            self._sheet_input_field = await self._input_field_factory.factory(
+                *self._input_field_factory.args, **self._input_field_factory.kwargs
+            )
+            index = self._saved_field_list.index(current_saved_field)
+            self._sheet_content = ft.Column(
+                [
+                    ft.Text(f"Edit input at index {index}"),
+                    self._sheet_input_field,
+                    ft.Button(
+                        "Update",
+                        on_click=partial(
+                            self._on_save_edit_sheet,
+                            index=index,
+                        ),
+                    ),
+                ]
+            )
+            self.page.open(self._sheet)
+
+        except Exception as e:
+            logger.exception(e)
+            self.page.close(self._sheet)
+            self.notice_user("Server error when open edit sheet.")
+
+    async def _on_save_input_sheet(self, e):
+        async with self.__save_sheet_cm(
+            "Saved", "Cannot save, the input is wrong."
+        ) as input_field:
+            if isinstance(input_field, BaseInputField):
+                save_field = ListInputField._SavedField(input_field, self)
+                if (idx := self._sheet_index_field.value) and (i := int(idx)) < len(
+                    self._saved_field_list
+                ):
+                    self._saved_field_list.insert(i, save_field)
+                else:
+                    self._saved_field_list.append(save_field)
+
+    async def _on_save_edit_sheet(self, e, *, index: int):
+        async with self.__save_sheet_cm(
+            "Updated", "Cannot Update, the input is wrong. Still hold the current one."
+        ) as input_field:
+            if isinstance(input_field, BaseInputField):
+                # IMPORTANT: CLEAN UP BEFORE REMOVE.
+                await self._saved_field_list[index].input_field.cleanup()
+                self._saved_field_list.pop(index)
+                self._saved_field_list.insert(
+                    index, ListInputField._SavedField(input_field, self)
                 )
-                self._content.append(self._create_new_input_field())
 
-    async def _on_remove(self, index:int):
-        async def _pop():
-            self._input_field_list.pop()
+    @asynccontextmanager
+    async def __save_sheet_cm(
+        self, s_m: str, f_m: str
+    ) -> AsyncIterator[BaseInputField | None]:
+        # Check for already locked, acquire() return false and self._sheet_input_field is already created
+        assert (not await self._content_lock.aacqurie(blocking=False)) and (
+            self._sheet_input_field is not None
+        )
 
-    def _create_new_input_field(self):
-        return self._input_field_schema.type(**self._input_field_schema.kwargs)
+        if await self._sheet_input_field.get_assistant_data():
+            try:
+                yield self._sheet_input_field
+                # Do something.
+                self._sheet_input_field = None
+                self._sheet_index_field.value = None
+                self._sheet_content = None
+                self.page.close(self._sheet)
+                self.notice_user(s_m)  # success message
+            except Exception as e:
+                logger.exception(e)
+                self.page.close(self._sheet)
+                self.notice_user(
+                    "Internal server error. Cannot save or update new data."
+                )
+                raise
+        else:
+            yield None
+            self.notice_user(f_m)  # fail message
+
+    async def _on_remove_saved_field(
+        self,
+        e=None,
+        *,
+        current_saved_field: _SavedField,
+        lock: bool = True,
+        update: bool = True,
+    ):
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._content_lock)
+            await current_saved_field.input_field.cleanup()
+            self._saved_field_list.remove(current_saved_field)
+            if update:
+                self.page.update()
+
+    async def _on_remove_all(self, e):
+        async with self._content_lock:
+            while len(self._saved_field_list) > 0:
+                await self._on_remove_saved_field(
+                    current_saved_field=self._saved_field_list[0],
+                    lock=False,
+                    update=False,
+                )
+            self.page.update()
 
     async def get_assistant_data(
-        self,
+        self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        async with self._content_lock:
+            r = []
+            for f in self._saved_field_list:
+                data = await f.input_field.get_assistant_data()
+                if data is not None:
+                    r.append(data)
+                else:
+                    logger.warning(
+                        f"Unexpected behavior, should only save the valid input put field. Detect the field {f} in list but 'get_assistant_data return None'. "
+                    )
+        r = None if r == [] else r
+        return r
+
+    async def _refresh(self):
         pass
+
+    @property
+    def sub_input_fields(self) -> list["BaseInputField"]:
+        return []
 
 
 class DictInputField(BaseInputField):
@@ -712,7 +982,7 @@ class DictInputField(BaseInputField):
 
 
 class FormInputField(BaseInputField):
-
+# TODO
     def __init__(self, selection_type: type[BaseForm]):
         self._datatype = selection_type
         self._fields: dict[str, ft.Control] = {}
@@ -743,7 +1013,7 @@ class FormInputField(BaseInputField):
                 self._make_field(new_ann, get_origin(new_ann))
 
     async def get_assistant_data(
-        self,
+        self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         pass
 
@@ -769,39 +1039,53 @@ if __name__ == "__main__":
         page.vertical_alignment = ft.MainAxisAlignment.CENTER
         page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-        image_input_field = MediaInputField(
-            "hieu",
-            uuid,
-            ImageObject,
-            allow_multiple=True,
-        )
+        def factory(*args, **kwargs):
+            def _val(v: str):
+                int(v)
+                return True
 
-        document_input_field = MediaInputField("hieu", uuid, DocumentObject)
-
-        def _val(v: str):
-            int(v)
-            return True
-
-        text_input_field = TextInputField(validator=_val)
-
-        selections = MultiOptionsInputField(
-            dict(
-                document=InputFieldOption(
-                    input_field=document_input_field, description="Choose one document"
+            return MultiOptionsInputField(
+                dict(
+                    document=InputFieldOption(
+                        input_field=MediaInputField("hieu", uuid, DocumentObject),
+                        description="Choose one document",
+                    ),
+                    image=InputFieldOption(
+                        input_field=MediaInputField(
+                            "hieu",
+                            uuid,
+                            ImageObject,
+                            allow_multiple=True,
+                        ),
+                        description="Choose many image.",
+                    ),
+                    text=InputFieldOption(input_field=TextInputField(validator=_val)),
                 ),
-                image=InputFieldOption(
-                    input_field=image_input_field, description="Choose many image."
+                *args,
+                **kwargs,
+            )
+
+        list_input_field = ListInputField(
+            InputFieldFactory(
+                factory=factory,
+                kwargs=dict(
+                    border=ft.border.all(1),
+                    padding=ft.padding.all(20),
                 ),
-                text=InputFieldOption(input_field=text_input_field),
             ),
-            width=500,
             border=ft.border.all(1),
             padding=ft.padding.all(20),
+            width=500,
+            height=500,
         )
-        page.add(selections)
+        text = ft.Text()
+        page.add(list_input_field, text)
 
         async def on_click(e):
-            print(await selections.get_assistant_data() or "NOTHING")
+            if data := (await list_input_field.get_assistant_data()):
+                data = "\n".join([repr(d) for d in data])
+            text.value = data or "NOTHING"
+            page.update()
 
         page.add(ft.Button("Select all file", on_click=on_click))
 
