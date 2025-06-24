@@ -4,9 +4,15 @@ import sys
 import threading
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from copy import deepcopy
-from typing import Mapping, ClassVar, Any, get_origin, Callable, get_args, Literal
-
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from typing import Mapping, ClassVar, Any, get_origin, get_args, Self, Literal, Iterable
+from utilities.logger import logger
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    TypeAdapter,
+    model_validator,
+    PrivateAttr,
+)
 from pydantic_core import PydanticUndefinedType
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -70,8 +76,8 @@ class UniversalLock:
         else:
             yield flag
 
-    async def aacqurie(self,blocking: bool = True, timeout: float = -1):
-        return await asyncio.to_thread(self._tlock.acquire,blocking, timeout)
+    async def aacqurie(self, blocking: bool = True, timeout: float = -1):
+        return await asyncio.to_thread(self._tlock.acquire, blocking, timeout)
 
     async def arelease(self):
         return await asyncio.to_thread(self._tlock.release)
@@ -96,7 +102,7 @@ class UniversalLock:
         else:
             yield flag
 
-    def acqurie(self,blocking: bool = True, timeout: float = -1):
+    def acqurie(self, blocking: bool = True, timeout: float = -1):
         return self._tlock.acquire(blocking, timeout)
 
     def release(self):
@@ -175,8 +181,78 @@ class ReferableDict[KT, VT](Mapping[KT, VT]):
                     return default
 
 
+class SyncListObject[T](BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
+
+    adapter: ClassVar[TypeAdapter] = None
+    """List object adapter. Must provide when define class."""
+
+    object: T
+    list_attr: str
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        assert isinstance(cls.adapter, TypeAdapter)
+
+    @property
+    def list(self):
+        return getattr(self.object, self.list_attr)
+
+    @model_validator(mode="after")
+    def _check_list(self) -> Self:
+        assert isinstance(getattr(self.object, self.list_attr), list)
+        try:
+            # noinspection PyTypeHints
+            _ = TypeAdapter(list[self.adapter._type],config=ConfigDict(arbitrary_types_allowed=True)).validate_python(self.list)
+        except Exception as e:
+            logger.warning(e) # for adapter with defer rebuild.
+            [self.adapter.validate_python(e) for e in self.list]
+
+        return self
+
+
 class SyncList(BaseModel):
-    """Helper class to sync all lists. Used when others want to trace lists in this class, and these lists must be sync to other lists."""
+    """Helper class to sync all lists. Used when others want to trace lists in this class, and these lists must be sync to other lists.
+    Support sync object list, given typehint  as tuple[ObjectType, str, TypeAdapter].
+
+    Examples:
+            from pydantic import TypeAdapter
+
+            from utilities.misc import SyncList, SyncListObject
+            import time
+
+            class A:
+                    def __init__(self):
+                            self.mylist:list = []
+
+            class SyncListObjectA(SyncListObject):
+                    adapter = TypeAdapter(bool)
+
+            start = time.time()
+            class MySyncList(SyncList):
+                    a: list[int]
+                    b: list[str]
+                    c: SyncListObjectA[A]
+
+            a = A()
+            a.mylist= [True,True,True]
+
+            l  =MySyncList(a = [1,2,3], b = ["abc","xyz","3"], c= SyncListObjectA(object=a, list_attr="mylist"))
+
+
+            l.append(a=5,b="sss", c=False)
+            print(l)
+
+            print(l[0])
+            l[0] = dict(a=5,b="new")
+            print(l)
+
+            l.insert(3,a=5,b="insert value",c=False)
+            print(l)
+            print(time.time()-start)
+
+            print(a.mylist)
+    """
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -185,55 +261,62 @@ class SyncList(BaseModel):
     )
     adapters: ClassVar[dict[str, TypeAdapter]] = {}
 
-    lock: UniversalLock = Field(UniversalLock(), exclude=True)
+    _lock: UniversalLock = PrivateAttr(default_factory=UniversalLock)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         fields = cls.model_fields
-        fields.pop("lock")
 
-        default = next(iter(fields.values())).default
+        default: PydanticUndefinedType | int = None
+
+        def _check_default(v):
+            assert isinstance(v, list | PydanticUndefinedType)
+            if isinstance(default, PydanticUndefinedType):
+                assert v == default
+            elif isinstance(default, int):
+                assert len(v) == default
+            elif default is None:
+                default == v if isinstance(v, PydanticUndefinedType) else len(v)
+            else:
+                raise ValueError(
+                    f"All lists must have equal length or be all None as default. Diff: {v} and {default}."
+                )
+
         for name, field in fields.items():
-            if get_origin(field.annotation) == list:
+            if issubclass(ann := field.annotation, SyncListObject):
+                cls.adapters[name] = ann.adapter
+                _check_default(field.default)
+
+            elif get_origin(field.annotation) == list:
                 cls.adapters[name] = TypeAdapter(
                     get_args(field.annotation)[0],
-                    config=ConfigDict(arbitrary_types_allowed=True),
+                    config=ConfigDict(arbitrary_types_allowed=True, defer_build=True),
                 )
-
-                if isinstance(
-                    df := field.default, PydanticUndefinedType
-                ) and isinstance(default, PydanticUndefinedType):
-                    continue
-                if isinstance(df, list) and isinstance(default, list):
-                    if len(df) == len(default):
-                        continue
-                raise ValueError(
-                    f"All lists must have equal length or be all None as default. Diff: {df} and {default}."
-                )
+                _check_default(field.default)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        ref_l = len(getattr(self, self.list_names[0]))
+        ref_l = len(self.get_list(self.list_names[0]))
         for name in self.list_names:
-            if (ll := len(getattr(self, name))) != ref_l:
+            if (ll := len(self.get_list(name))) != ref_l:
                 raise ValueError(
                     f"All lists must have equal length at init. Got {ll} and {ref_l}."
                 )
 
-    # Note: because __getattr__ of pydantic does not accept method start with "__", so i just start with "_" but still ends with "__"
-    # for increase the level of private.
+    # Note: Pydantic __getattr__ does not regconisze like __append..., only __append__, but it can be override
+    # the predefine method like deepcopy, __index__,...use _append_ to avoid of that.
 
-    def _append__(self, **data):
+    def _append_(self, **data):
         data = self.validate_data(data, method="append")
-        return {name: getattr(self, name).append(data) for name, data in data.items()}
+        return {name: self.get_list(name).append(data) for name, data in data.items()}
 
-    def _insert__(self, index: int, **data):
+    def _insert_(self, index: int, **data):
         data = self.validate_data(data, method="insert")
         return {
-            name: getattr(self, name).insert(index, data) for name, data in data.items()
+            name: self.get_list(name).insert(index, data) for name, data in data.items()
         }
 
-    def _extend__(self, **data):
+    def _extend_(self, **data):
         if not len(data) == len(self.adapters):
             raise ValueError(f"Data for 'extend' method must be given for all lists.")
         ll = len(next(iter(data.values())))
@@ -243,37 +326,34 @@ class SyncList(BaseModel):
             r_data[name] = TypeAdapter(
                 self.__class__.model_fields[name].annotation
             ).validate_python(l)
-        return {name: getattr(self, name).extend(data) for name, data in r_data.items()}
+        return {name: self.get_list(name).extend(data) for name, data in r_data.items()}
 
-    def _remove__(self, **data):
-        return self.__pop(self.__index(data))
+    def _remove_(self, **data):
+        return self._pop_(self._index_(**data))
 
-    def _pop__(self, index: int):
-        return {name: getattr(self, name).pop(index) for name in self.adapters.keys()}
+    def _pop_(self, index: int):
+        return {name: self.get_list(name).pop(index) for name in self.adapters.keys()}
 
-    def _copy__(self):
-        return deepcopy(self)
-
-    def _count__(self, **data):
+    def _count_(self, **data):
         assert len(data) == 1
         data = self.validate_data(data, length_included=False)
         k, v = next(iter(data.items()))
-        return getattr(self, k).count(v)
+        return self.get_list(k).count(v)
 
-    def _clear__(self):
-        return [getattr(self, name).clear() for name in self.list_names]
+    def _clear_(self):
+        return [self.get_list(name).clear() for name in self.list_names]
 
-    def _index__(self, *, start=0, stop=sys.maxsize, **data):
+    def _index_(self, *, start=0, stop=sys.maxsize, **data):
         assert len(data) == 1
         data = self.validate_data(data, length_included=False)
         k, v = next(iter(data.items()))
-        return getattr(self, k).index(v, start, stop)
+        return self.get_list(k).index(v, start, stop)
 
-    def _sort__(self, key=None, reverse: bool = False):
-        return [getattr(self, name).sort(key, reverse) for name in self.list_names]
+    def _sort_(self, key=None, reverse: bool = False):
+        return [self.get_list(name).sort(key, reverse) for name in self.list_names]
 
-    def _reverse__(self):
-        return [getattr(self, name).reverse() for name in self.adaptelist_names]
+    def _reverse_(self):
+        return [self.get_list(name).reverse() for name in self.adaptelist_names]
 
     @classmethod
     def validate_data(
@@ -282,7 +362,8 @@ class SyncList(BaseModel):
         if length_included:
             if not len(data) == len(cls.adapters):
                 raise ValueError(
-                    f"Data for {f"'{method}'" if method else ""} method must be given for all lists."
+                    f"Data for {f"'{method}'" if method else ""} method must equal to number of lists. "
+                    f"Got data keys {list(data.keys())} and list keys {list(cls.adapters.keys())}"
                 )
         return {
             name: cls.adapters[name].validate_python(data)
@@ -297,20 +378,68 @@ class SyncList(BaseModel):
     def list_names(self):
         return list(self.list_keys)
 
-    def get_all_lists(self, mode:Literal["list","tuple","dict"] = "list"):
+    def get_list(self, name) -> list[Any]:
+        if isinstance(o := getattr(self, name), list):
+            return o
+        elif isinstance(o, SyncListObject):
+            return o.list
+        else:
+            raise ValueError(f"There is no list name '{name}'.")
+
+    def get_all_lists(
+        self, mode: Literal["list", "tuple", "dict"] = "list"
+    ) -> list | dict | tuple:
         match mode:
             case "list":
-                return [getattr(self,name) for name in self.list_keys]
+                return [self.get_list(name) for name in self.list_keys]
             case "tuple":
-                return (getattr(self,name) for name in self.list_keys)
+                return (self.get_list(name) for name in self.list_keys)
             case "dict":
-                return {name:getattr(self,name) for name in self.list_keys}
+                return {name: self.get_list(name) for name in self.list_keys}
         raise ValueError(mode)
+
+    def iter_lists_elements(self, list_names: list[str]):
+        lists = [self.get_list(name) for name in list_names]
+        for item in zip(*lists):
+            yield item
 
     @property
     def zipped_lists(self):
-        lists = [getattr(self,name) for name in self.list_keys]
+        lists = [self.get_list(name) for name in self.list_keys]
         return zip(*lists)
+
+    def get_values_by_index(
+        self, index: int, lists: Iterable[str] = None, *, _lock: bool = True
+    ) -> dict[str, Any]:
+        """
+        Get all value of given index for all lists
+        Args:
+                lists: the lists to get value
+                index: the index of values to get
+                _lock: private, should not set outside this class.
+        Returns: dict with keys are list name
+        """
+        with ExitStack() as stack:
+            if _lock:
+                stack.enter_context(self._lock)
+            keys = lists or self.list_keys
+            return {ln: self.get_list(ln)[index] for ln in keys}
+
+    def get_values_by_value(
+        self, list_name: str, value: str, lists: Iterable[str] = None
+    ):
+        """
+        Get all values for all lists given the values of one list.
+        Args:
+                list_name:
+                value:
+                lists: the lists to get value
+        Returns:
+        """
+        with self._lock:
+            keys = lists or self.list_keys
+            index = self.get_list(list_name).index(value)
+            return self.get_values_by_index(index, keys, _lock=False)
 
     def call_sync(
         self,
@@ -320,8 +449,8 @@ class SyncList(BaseModel):
         **data,
     ) -> list[Any]:
         method_kwargs = method_kwargs or {}
-        with self.lock:
-            return getattr(self, "_" + list_method + "__")(
+        with self._lock:
+            return getattr(self, "_" + list_method + "_")(
                 *method_args, **method_kwargs, **data
             )
 
@@ -331,12 +460,23 @@ class SyncList(BaseModel):
         else:
             return super().__getattr__(item)
 
-    def __getitem__(self, item) -> dict[str,Any]:
-        with self.lock:
-            return {ln:getattr(self, ln)[item] for ln in self.list_names}
+    def __getitem__(self, item) -> dict[str, Any]:
+        with self._lock:
+            return {ln: self.get_list(ln)[item] for ln in self.list_names}
 
     def __setitem__(self, key, value):
-        data = self.validate_data(value, length_included=False) # data aren't provided will be hold the old.
-        with self.lock:
+        data = self.validate_data(
+            value, length_included=False
+        )  # data aren't provided will be hold the old.
+        with self._lock:
             for name, v in data.items():
-                getattr(self, name)[key] = v
+                self.get_list(name)[key] = v
+
+    def __len__(self):
+        return len(self.get_list(next(iter(self.list_keys))))
+
+    def __str__(self):
+        s = ""
+        for k, v in self.get_all_lists(mode="dict").items():
+            s += f"{k}={v}\n"
+        return s

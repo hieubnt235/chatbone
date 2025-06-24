@@ -1,14 +1,14 @@
 import asyncio
-import threading
+import pprint
 from abc import ABC, abstractmethod
-from contextlib import AsyncExitStack, asynccontextmanager, AbstractAsyncContextManager
+from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta, datetime, timezone
 from enum import Enum
 from functools import partial
 from inspect import iscoroutinefunction
 from math import floor
-from types import NoneType, UnionType, FunctionType, MethodType
+from types import NoneType, UnionType
 from typing import (
     Any,
     Callable,
@@ -19,8 +19,6 @@ from typing import (
     Annotated,
     Self,
     Awaitable,
-    AsyncContextManager,
-    AsyncGenerator,
     AsyncIterator,
 )
 from uuid import UUID
@@ -54,7 +52,7 @@ from chatbone.assistant_interface import (
 )
 from utilities.func import utc_now
 from utilities.logger import logger
-from utilities.misc import UniversalLock
+from utilities.misc import UniversalLock, SyncList, SyncListObject
 
 
 class BaseUI(ft.Container, BaseModel, ABC):
@@ -276,7 +274,7 @@ class MediaInputField(BaseInputField):
             self.media_object: AnyMediaObject = None
 
         async def _unselect(self, e):
-            await self._media_field._unselect(self._filename, update=True)
+            await self._media_field._unselect(self._filename)
 
         async def update_progress(
             self, progress: float, media_object: AnyMediaObject = None
@@ -398,13 +396,15 @@ class MediaInputField(BaseInputField):
                 assert len(self._file_names) <= 1
                 await self._unselect_all()
 
-            # If filename already available, unselect the old and load the new (override).
-            for file in e.files:
-                if file.name in self._file_names:
-                    await self._unselect(file.name)
-
-            # Upload the correct files, and dismiss others.
             async with self._file_index_lock:
+
+                # If filename already available, unselect the old and load the new (override).
+                for file in e.files:
+                    if file.name in self._file_names:
+                        await self._unselect(file.name, lock=False, update=False)
+                self.page.update()
+
+                # Upload the correct files, and dismiss others.
                 uploaded_files, file_exceptions = await self._file_picker.upload(
                     e.files
                 )
@@ -428,7 +428,7 @@ class MediaInputField(BaseInputField):
 
     async def _on_upload(self, e: ft.FilePickerUploadEvent):
         if e.error:
-            await self._unselect(e.file_name, update=False)
+            await self._unselect(e.file_name)
             logger.info(f"Error happened during uploading file: '{e.error}'")
             self.notice_user(
                 f"There is an server error while uploading file '{e.file_name}'."
@@ -440,16 +440,16 @@ class MediaInputField(BaseInputField):
                     media_object = await self._datatype.validate_object(
                         self._file_picker._make_object_name(e.file_name)
                     )
-                    await self.update_progress(e.file_name, e.progress, media_object)
+                    await self._update_progress(e.file_name, e.progress, media_object)
                 except InvalidBinaryFile:
-                    await self._unselect(e.file_name, update=False)
+                    await self._unselect(e.file_name)
                     m = "Uploaded file has the correct extension but wrong magic binary."
                     logger.info(m)
                     self.notice_user(
                         f"{m}. Make sure your extension of the file matches with binary structure. Unselect file '{e.file_name}'."
                     )
             else:
-                await self.update_progress(e.file_name, e.progress, media_object)
+                await self._update_progress(e.file_name, e.progress, media_object)
 
     async def _unselect_all(self, e=None):
         async with self._file_index_lock:
@@ -477,10 +477,17 @@ class MediaInputField(BaseInputField):
                 self._unselect_all_button.disabled = True
                 self._unselect_all_button.visible = False
 
-    async def update_progress(self, filename: str, progress: float, media_object=None):
-        async with self._file_index_lock:
-            row = await self.get_file_preview_row(filename, lock=False)
-            await row.update_progress(progress, media_object)
+    async def _update_progress(self, filename: str, progress: float, media_object=None):
+        try:
+            async with self._file_index_lock:
+                row = await self.get_file_preview_row(filename, lock=False)
+                await row.update_progress(progress, media_object)
+        except ValueError as e:
+            logger.warning(
+                f"{e}.This error maybe occur because cancel now does not stop update progress at the frontend, "
+                f"so it keep updating. Will be fix in the future by rewrite FilePicker at front end to handle this."
+                f"Also note that for now, it still leak in the storage."
+            )
 
     async def get_file_preview_row(
         self, filename: str, lock: bool = True
@@ -772,9 +779,10 @@ class ListInputField(BaseInputField):
         )
 
         self._content_lock = UniversalLock()
-        """Lock for manipulate input field."""
+        """Lock for manipulate input field. (Not for sync some heaper attribute of fields)."""
 
         self._listview = ft.ListView([], height=250, width=320)
+        """Control of this ListView is _SavedField object, should access through _saved_field_list"""
 
         content = ft.Column(
             [
@@ -806,19 +814,6 @@ class ListInputField(BaseInputField):
     @_sheet_content.setter
     def _sheet_content(self, value: ft.Control):
         self._sheet.content.content = value
-
-    async def _on_dismiss_sheet(self, e=None):
-        assert not await self._content_lock.aacqurie(blocking=False)
-        if self._sheet_input_field:
-            await self._sheet_input_field.cleanup()
-            self._sheet_input_field = None
-            self._sheet_content = None
-            self._sheet_index_field.value = None
-        self.update()
-        await self._content_lock.arelease()
-
-        print([p.__class__.__name__ for p in self.page.overlay])
-        print(self._saved_field_list)
 
     async def _on_open_input_sheet(self, e):
         await self._content_lock.aacqurie()  # Lock until dismiss
@@ -874,22 +869,22 @@ class ListInputField(BaseInputField):
             self.notice_user("Server error when open edit sheet.")
 
     async def _on_save_input_sheet(self, e):
-        async with self.__save_sheet_cm(
-            "Saved", "Cannot save, the input is wrong."
-        ) as input_field:
+        async with self._save_sheet_cm() as (index, input_field):
             if isinstance(input_field, BaseInputField):
                 save_field = ListInputField._SavedField(input_field, self)
-                if (idx := self._sheet_index_field.value) and (i := int(idx)) < len(
-                    self._saved_field_list
-                ):
+
+                if index and (i := int(index)) < len(self._saved_field_list):
                     self._saved_field_list.insert(i, save_field)
                 else:
                     self._saved_field_list.append(save_field)
+                self._clean_sheet()  # IMPORTANT, clean sheet for not cleanup input field when close sheet.
+                self._close_sheet()
+                self.notice_user("Saved")
+            else:
+                self.notice_user("Cannot save, the input is wrong.")
 
     async def _on_save_edit_sheet(self, e, *, index: int):
-        async with self.__save_sheet_cm(
-            "Updated", "Cannot Update, the input is wrong. Still hold the current one."
-        ) as input_field:
+        async with self._save_sheet_cm() as (_, input_field):
             if isinstance(input_field, BaseInputField):
                 # IMPORTANT: CLEAN UP BEFORE REMOVE.
                 await self._saved_field_list[index].input_field.cleanup()
@@ -897,35 +892,55 @@ class ListInputField(BaseInputField):
                 self._saved_field_list.insert(
                     index, ListInputField._SavedField(input_field, self)
                 )
+                self.notice_user("Updated")
+                self._clean_sheet()
+                self._close_sheet()
+            else:
+                self.notice_user(
+                    "Cannot Update, the input is wrong. Still hold the current one."
+                )
 
     @asynccontextmanager
-    async def __save_sheet_cm(
-        self, s_m: str, f_m: str
-    ) -> AsyncIterator[BaseInputField | None]:
+    async def _save_sheet_cm(self) -> AsyncIterator[tuple[str, BaseInputField | None]]:
         # Check for already locked, acquire() return false and self._sheet_input_field is already created
         assert (not await self._content_lock.aacqurie(blocking=False)) and (
             self._sheet_input_field is not None
         )
+        try:
+            if await self._sheet_input_field.get_assistant_data():
+                yield self._sheet_index_field.value, self._sheet_input_field
+            else:
+                yield self._sheet_index_field.value, None
+            self.page.update()
+        except Exception as e:
+            logger.exception(e)
+            self._close_sheet()
+            self.notice_user("Internal server error. Cannot save or update new data.")
+            raise
 
-        if await self._sheet_input_field.get_assistant_data():
-            try:
-                yield self._sheet_input_field
-                # Do something.
-                self._sheet_input_field = None
-                self._sheet_index_field.value = None
-                self._sheet_content = None
-                self.page.close(self._sheet)
-                self.notice_user(s_m)  # success message
-            except Exception as e:
-                logger.exception(e)
-                self.page.close(self._sheet)
-                self.notice_user(
-                    "Internal server error. Cannot save or update new data."
-                )
-                raise
-        else:
-            yield None
-            self.notice_user(f_m)  # fail message
+    def _clean_sheet(self):
+        """IMPORTANT: This method MUST be called before close sheet if don't want to clean input field ( for success case).
+        And MUST NOT be called for case when input field is expected to clean (ex: close sheet without saving intentionally).
+         See _on_dismiss_sheet for details."""
+        self._sheet_input_field = None
+        self._sheet_index_field.value = None
+        self._sheet_content = None
+
+    def _close_sheet(self):
+        """The on_dismiss_sheet will be called after this method.
+        Note that if not _clean_sheet first, it will cleanup the input field."""
+        self.page.close(self._sheet)
+
+    async def _on_dismiss_sheet(self, e=None):
+        assert not await self._content_lock.aacqurie(blocking=False)
+        if self._sheet_input_field:
+            await self._sheet_input_field.cleanup()
+            self._clean_sheet()
+        self.update()
+        await self._content_lock.arelease()
+
+        logger.debug(f"Page overlay after dismiss sheet: {self.page.overlay}")
+        logger.debug(f"Listview after dismiss sheet: {self._saved_field_list}")
 
     async def _on_remove_saved_field(
         self,
@@ -977,12 +992,235 @@ class ListInputField(BaseInputField):
         return []
 
 
-class DictInputField(BaseInputField):
-    pass
+# Defined outside for TypeAdapter convenient
+class _DictInputFieldSavedField(ListInputField._SavedField):
 
+    def __init__(
+        self,
+        input_field: BaseInputField,
+        dict_input_field: "DictInputField",
+        *,
+        field_key: str,  # new compare to ListInputField
+        **kwargs,
+    ):
+        super().__init__(input_field, dict_input_field, **kwargs)
+        self._key = ft.Text(
+            value=field_key, weight=ft.FontWeight.BOLD, color=ft.Colors.RED
+        )
+        self.controls.insert(0, self._key)
+
+    @property
+    def field_key(self):
+        return self._key.value
+
+    @field_key.setter
+    def field_key(self, v: str):
+        self._key.value = v
+
+
+class _SyncListView(SyncListObject):
+    adapter = TypeAdapter(_DictInputFieldSavedField, config=ConfigDict(arbitrary_types_allowed=True))
+
+class DictInputField(ListInputField):
+
+    class _SavedFieldSyncList(SyncList):
+        field_keys: list[str]
+        saved_fields: _SyncListView[ft.ListView]
+
+    def __init__(self, input_field_factory: InputFieldFactory, **kwargs):
+
+        super().__init__(input_field_factory, **kwargs)
+
+        self._listview = ft.ListView(
+            controls=[], height=250, width=320
+        )
+        """Control of this ListView is _SavedField object, should access through _saved_field_list"""
+
+        # Override ListInputField
+        self._saved_field_sync_list = DictInputField._SavedFieldSyncList(
+            field_keys=[],
+            saved_fields=_SyncListView(object=self._listview,list_attr="controls")
+        )
+
+        content = ft.Column(
+            [
+                self._listview,
+                ft.Row([self._add_new_button, self._remove_all_button]),
+            ]
+        )
+        self.content = content
+
+        self._sheet_index_field = ft.TextField(label="Key", max_length=20)
+
+    @property
+    def _saved_field_list(self) -> _SavedFieldSyncList:
+        return self._saved_field_sync_list
+
+    async def _add_field(self, field: _DictInputFieldSavedField):
+        # Remove and clean up available key if exists.
+        if (k := field.field_key) in self._saved_field_list.field_keys:
+            current_saved_field = self._saved_field_list.get_values_by_value("field_keys",k)["saved_fields"]
+            assert isinstance(current_saved_field,_DictInputFieldSavedField)
+            await self._remove_field(current_saved_field)
+
+        self._saved_field_list.append(field_keys=k, saved_fields=field)
+
+    async def _remove_field(self, field: _DictInputFieldSavedField):
+        """Clean up field and remove"""
+        await field.input_field.cleanup()
+        self._saved_field_list.remove(field_keys=field.field_key)
+
+    @classmethod
+    def is_valid_key(cls, key: str):
+        if isinstance(key, str) and key != "":
+            return True
+        return False
+
+    async def get_assistant_data(
+        self, **kwargs
+    ) -> dict[str, AssistantDataType_U | List[AssistantDataType_U]] | None:
+        async with self._content_lock:
+            r = {}
+            for f in self._saved_field_list.get_list("saved_fields"):
+                assert isinstance(f,_DictInputFieldSavedField)
+                data = await f.input_field.get_assistant_data()
+                if data is not None:
+                    r[f.field_key] = data
+                else:
+                    logger.warning(
+                        f"Unexpected behavior, should only save the valid input put field. Detect the field {f.input_field.__class__} "
+                        f"in list but 'get_assistant_data return None'. "
+                    )
+        r = None if r == {} else r
+        return r
+
+    async def _on_open_edit_sheet(self, e, *, current_saved_field: _DictInputFieldSavedField):
+        # Almost like the base class with slightly change.
+        await self._content_lock.aacqurie()  # Lock until dismiss
+        try:
+            self._sheet_input_field = await self._input_field_factory.factory(
+                *self._input_field_factory.args, **self._input_field_factory.kwargs
+            )
+            self._sheet_index_field.value = current_saved_field.field_key
+            self._sheet_content = ft.Column(
+                [
+                    self._sheet_index_field,
+                    self._sheet_input_field,
+                    ft.Button(
+                        "Update",
+                        on_click=partial(
+                            self._on_save_edit_sheet,
+                            current_saved_field=current_saved_field,  # change this
+                        ),
+                    ),
+                ]
+            )
+            self.page.open(self._sheet)
+
+        except Exception as e:
+            logger.exception(e)
+            self.page.close(self._sheet)
+            self.notice_user("Server error when open edit sheet.")
+
+    async def _on_save_input_sheet(self, e):
+        async with self._save_sheet_cm() as (key, input_field):
+            if valid_key:=self.is_valid_key(key) and isinstance(input_field, BaseInputField):
+                await self._add_field(
+                    _DictInputFieldSavedField(input_field, self, field_key=key)
+                )
+                self._clean_sheet()
+                self._close_sheet()
+                self.notice_user("Saved")
+            else:
+                if not valid_key:
+                    self.notice_user(f"Cannot save. The key '{key}' is not the valid one.")
+                else:
+                    self.notice_user("Cannot save. Input is wrong.")
+
+    async def _on_save_edit_sheet(self, e, *, current_saved_field: _DictInputFieldSavedField):
+        update = []
+        async with self._save_sheet_cm() as (key, input_field):
+            if key != current_saved_field.field_key:
+                if self.is_valid_key(key):
+                    update.append("key")
+                else:
+                    self.notice_user(f"Cannot update. Key {key } is not a valid name. ")
+                    return
+
+                # Key belong to another saved field. Not support edit one field to override others. Use new instead.
+                if key in self._saved_field_list.field_keys:
+                    self.notice_user(
+                        f"Cannot Update. Key {key} already exists in another data field."
+                    )
+                    return
+
+            if isinstance(input_field, BaseInputField):
+                update.append("field")
+
+            if len(update) >0:
+                if len(update) == 2:
+                    await self._remove_field(current_saved_field)
+                    assert key not in self._saved_field_list.field_keys
+                    await self._add_field(
+                        _DictInputFieldSavedField(input_field, self, field_key=key)
+                    )
+
+                elif update[0] == "field":
+                    await self._add_field(
+                        _DictInputFieldSavedField(input_field, self,field_key= current_saved_field.field_key)
+                    )
+
+                elif update[0] == "key":
+                    # Thread safe change key, does not need to hard update and clean up.
+                    with self._saved_field_list._lock:
+                        idx = self._saved_field_list.field_keys.index(
+                            current_saved_field.field_key
+                        )
+                        self._saved_field_list.field_keys[idx] = key
+                        current_saved_field.field_key = key
+
+                self._clean_sheet()
+                self._close_sheet()
+                self.notice_user(f"Updated new {" and ".join(update)}.")
+
+            else:
+                self.notice_user(
+                    "Cannot Update, the input is wrong or key not change. Still hold the current one."
+                )
+
+    async def _on_remove_saved_field(
+        self,
+        e=None,
+        *,
+        current_saved_field: _DictInputFieldSavedField,
+        lock: bool = True,
+        update: bool = True,
+    ):
+        assert isinstance(current_saved_field,_DictInputFieldSavedField)
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._content_lock)
+            await self._remove_field(current_saved_field)  # already cleanup
+            if update:
+                self.page.update()
+
+    async def _on_remove_all(self, e):
+        async with self._content_lock:
+            while len(self._saved_field_list.saved_fields.list) > 0:
+                await self._on_remove_saved_field(
+                    current_saved_field=self._saved_field_list.saved_fields.list[0],
+                    lock=False,
+                    update=False,
+                )
+            self.page.update()
+
+# for ta in _DictInputFieldSavedFieldSyncList.adapters.values():
+#     ta.rebuild()
+# DictInputField._SyncListView.adapter.rebuild()
+# _DictInputFieldSavedFieldSyncList.model_rebuild()
 
 class FormInputField(BaseInputField):
-# TODO
+    # TODO, define exactly what form and do this
     def __init__(self, selection_type: type[BaseForm]):
         self._datatype = selection_type
         self._fields: dict[str, ft.Control] = {}
@@ -1078,12 +1316,42 @@ if __name__ == "__main__":
             width=500,
             height=500,
         )
+        dict_input_field = DictInputField(
+            InputFieldFactory(
+                factory=factory,
+                kwargs=dict(
+                    border=ft.border.all(1),
+                    padding=ft.padding.all(20),
+                ),
+            ),
+            border=ft.border.all(1),
+            padding=ft.padding.all(20),
+            width=500,
+            height=500,
+        )
+
+        option = MultiOptionsInputField(
+            dict(
+                list_input=InputFieldOption(
+                    input_field=list_input_field, description="this is list input field"
+                ),
+                dict_input=InputFieldOption(
+                    input_field=dict_input_field, description="this is dict input field"
+                ),
+            )
+        )
+
         text = ft.Text()
-        page.add(list_input_field, text)
+        page.add(option, text)
 
         async def on_click(e):
-            if data := (await list_input_field.get_assistant_data()):
-                data = "\n".join([repr(d) for d in data])
+            if data := (await option.get_assistant_data(return_meta=True)):
+                key = data[0]
+                if isinstance(data[1], list):
+                    data = "\n".join(repr(data[1]))
+                if isinstance(data[1], dict):
+                    pprint.pformat(data[1], indent=4)
+
             text.value = data or "NOTHING"
             page.update()
 
