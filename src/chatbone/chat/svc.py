@@ -1,13 +1,18 @@
 from contextlib import asynccontextmanager, AsyncExitStack, AbstractAsyncContextManager
 from typing import Callable, Coroutine, Self
 from uuid import UUID
+import asyncio
 
 import redis
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict
 from redis.exceptions import LockError
 
-from chatbone.assistant_interface import AssistantInterface, AssistantData
+from chatbone.assistant_interface import (
+    AssistantInterface,
+    AssistantData,
+    AssistantInputData,
+)
 from chatbone.broker import (UserData as UserDataCache, UserToken, ChatSessionData, Message, WriteStream, ReadStream, )
 from chatbone.chat.settings import DATASTORE, CONFIG, AUTH
 from utilities.exception import handle_http_exception
@@ -220,12 +225,14 @@ class AssistantApp(BaseModel):
     """Store captured of assistant apps at the creation time. This will be used for validating data.
     Notes:
             This class does not check the change of assistant app dynamically, should be refreshed and recreate if something wrong.
-
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    schema: type[AssistantInputData]
+    description: str | None = None
+
     app_name: str
-    schema: type[AssistantData]
+    """This is used to get deployment. User should not aware about it."""
 
     @classmethod
     async def create(cls, assistant_app_name) -> Self:

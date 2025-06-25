@@ -4,7 +4,8 @@ import sys
 import threading
 from contextlib import asynccontextmanager, contextmanager, ExitStack
 from copy import deepcopy
-from typing import Mapping, ClassVar, Any, get_origin, get_args, Self, Literal, Iterable
+from inspect import isclass
+from typing import Mapping, ClassVar, Any, get_origin, get_args, Self, Literal, Iterable, ForwardRef
 from utilities.logger import logger
 from pydantic import (
     BaseModel,
@@ -181,32 +182,46 @@ class ReferableDict[KT, VT](Mapping[KT, VT]):
                     return default
 
 
-class SyncListObject[T](BaseModel):
+class SyncListObject(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 
-    adapter: ClassVar[TypeAdapter] = None
-    """List object adapter. Must provide when define class."""
+    object_adapter: ClassVar[TypeAdapter] = None
+    """Adapter for object."""
 
-    object: T
-    list_attr: str
+    adapter: ClassVar[TypeAdapter] = None
+    """Adapter for validate list element of object' list. Must provide when define class."""
+
+    list_attr: ClassVar[str|list[str]] = None
+    """attribute that return a list in the object"""
+
+    object: Any
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         assert isinstance(cls.adapter, TypeAdapter)
+        assert isinstance(cls.object_adapter, TypeAdapter)
+        assert isinstance(cls.list_attr,str)
+        attrs = cls.list_attr.split(".")
+        assert attrs[0]!="" and attrs[-1]!= ""
+        cls.list_attr=attrs
 
     @property
     def list(self):
-        return getattr(self.object, self.list_attr)
+        o = self.object
+        for attr in self.list_attr:
+            o = getattr(o,attr)
+        return o
 
     @model_validator(mode="after")
     def _check_list(self) -> Self:
-        assert isinstance(getattr(self.object, self.list_attr), list)
+        assert isinstance(self.list, list)
         try:
             # noinspection PyTypeHints
             _ = TypeAdapter(list[self.adapter._type],config=ConfigDict(arbitrary_types_allowed=True)).validate_python(self.list)
         except Exception as e:
             logger.warning(e) # for adapter with defer rebuild.
             [self.adapter.validate_python(e) for e in self.list]
+        _= self.object_adapter.validate_python(self.object)
 
         return self
 
@@ -259,7 +274,7 @@ class SyncList(BaseModel):
         validate_default=True,
         validate_assignment=True,
     )
-    adapters: ClassVar[dict[str, TypeAdapter]] = {}
+    adapters: ClassVar[dict[str, TypeAdapter]] = None
 
     _lock: UniversalLock = PrivateAttr(default_factory=UniversalLock)
 
@@ -281,9 +296,11 @@ class SyncList(BaseModel):
                 raise ValueError(
                     f"All lists must have equal length or be all None as default. Diff: {v} and {default}."
                 )
-
+        assert cls.adapters is None
+        cls.adapters = {}
         for name, field in fields.items():
-            if issubclass(ann := field.annotation, SyncListObject):
+
+            if issubclass(ann := field.annotation, SyncListObject) :
                 cls.adapters[name] = ann.adapter
                 _check_default(field.default)
 
@@ -293,7 +310,7 @@ class SyncList(BaseModel):
                     config=ConfigDict(arbitrary_types_allowed=True, defer_build=True),
                 )
                 _check_default(field.default)
-
+        logger.info(f"list keys of {cls.__name__} are {cls.adapters.keys()}")
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         ref_l = len(self.get_list(self.list_names[0]))
@@ -427,7 +444,7 @@ class SyncList(BaseModel):
 
     def get_values_by_value(
         self, list_name: str, value: str, lists: Iterable[str] = None
-    ):
+    )->dict[str, Any]:
         """
         Get all values for all lists given the values of one list.
         Args:

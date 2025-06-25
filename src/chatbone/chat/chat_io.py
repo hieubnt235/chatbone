@@ -1,25 +1,28 @@
 import asyncio
 import pprint
 from abc import ABC, abstractmethod
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, ExitStack
 from copy import deepcopy
 from datetime import timedelta, datetime, timezone
 from enum import Enum
 from functools import partial
-from inspect import iscoroutinefunction
+from inspect import iscoroutinefunction, isclass
 from math import floor
+from pprint import pformat
 from types import NoneType, UnionType
 from typing import (
     Any,
     Callable,
     List,
     get_origin,
-    Literal,
-    get_args,
     Annotated,
     Self,
     Awaitable,
     AsyncIterator,
+    get_args,
+    Sequence,
+    Iterable,
+    Generator,
 )
 from uuid import UUID
 
@@ -36,6 +39,7 @@ from pydantic import (
     TypeAdapter,
     field_validator,
     Field,
+    ValidationError,
 )
 
 from chatbone.assistant_interface import (
@@ -47,16 +51,19 @@ from chatbone.assistant_interface import (
     InvalidBinaryFile,
     AssistantInputData,
     Text,
-    BaseForm,
     DocumentObject,
+    BaseSelection,
 )
+from chatbone.chat.svc import AssistantApp
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock, SyncList, SyncListObject
 
+arbitrary_types_allowed_config = ConfigDict(arbitrary_types_allowed=True)
+
 
 class BaseUI(ft.Container, BaseModel, ABC):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = arbitrary_types_allowed_config
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -93,7 +100,7 @@ class BaseInputField(ABC, ft.Container):
 
     @property
     @abstractmethod
-    def sub_input_fields(self) -> list["BaseInputField"]:
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
         """This property return sub input fields (not self), used to cleanup.
         If class does not have input field, explicitly return []"""
         return []
@@ -534,7 +541,7 @@ class MediaInputField(BaseInputField):
             self.page.update()
 
     @property
-    def sub_input_fields(self) -> list["BaseInputField"]:
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return []
 
     @property
@@ -547,83 +554,105 @@ class MediaInputField(BaseInputField):
 
 
 class TextInputField(BaseInputField):
-
     def __init__(
-        self,
-        input_filter: ft.InputFilter = None,
-        validator: Callable[[str], bool | Awaitable[bool]] = None,
+        self,text_type: type[Text],
         **kwargs,
     ):
+        self._text_type = text_type
         self._textfield = ft.TextField(
-            input_filter=input_filter, on_change=self._on_change
+            input_filter=text_type.input_filter, on_change=self._on_change
         )
-        self._validator = validator
-        self._is_valid: bool = True
-        self._preview_text = ft.Text(value=self._textfield.value)
-        self._init = True  # check for newest text
-        super().__init__(self._textfield, border=ft.border.all(1))
+        self._notice_text = ft.Text(value=self._textfield.value)
+        self._value = None
+
+        column = ft.Column([self._textfield,self._notice_text])
+        super().__init__(column, border=ft.border.all(1))
 
     async def _on_change(self, e):
-        if self._init:
-            self._init = False
-        m = ""
-        try:
-            await self._validate()
-        except Exception as e:
-            self._is_valid = False
-            m = f": {e}"
-        self._textfield.helper_text = f"Invalid input{m}" if not self.is_valid else None
-        self._preview_text.value = f"{self._textfield.value} {f"({self._textfield.helper_text})" if self._textfield.helper_text else ""} "
-        self.page.update()
+        val = await self._validate()
+        if val is None:
+            self._notice_text.value = "Invalid input"
+        else:
+            self._notice_text.value = None
+        self.value = val
+        self.page.update(self._textfield,self._notice_text)
 
     async def _validate(self):
-        if not callable(self._validator):
-            self._is_valid = True if self.value is not None else False
-        else:
-            if iscoroutinefunction(self._validator):
-                self._is_valid = await self._validator(self.value)
+        try:
+            if iscoroutinefunction(self._text_type.validator):
+                val = await self._text_type.validator(self._textfield.value)
             else:
-                self._is_valid = await asyncio.to_thread(self._validator, self.value)
-
-    @property
-    def is_valid(self) -> bool:
-        return self._is_valid
+                val = await asyncio.to_thread(self._text_type.validator, self._textfield.value)
+            if val is None:
+                return None
+            return str(val)
+        except Exception as e:
+            logger.warning(e)
+            return None
 
     @property
     def value(self) -> str | None:
-        return self._textfield.value
+        return self._value
 
-    @property
-    def preview_control(self) -> ft.Control:
-        return self._preview_text
+    @value.setter
+    def value(self, v: str | None):
+        self._value = v
 
     async def get_assistant_data(
         self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
-        if self._init:
-            # noinspection PyBroadException
-            try:
-                await self._validate()
-                self._init = False
-            except Exception:
-                self._is_valid = False
-                self._init = False
-                return None
-        r = Text(role="user", content=self.value) if self.is_valid else None
+        r = self._text_type(role="user", content=self.value) if self.value else None
         return r
 
     async def _refresh(self) -> None:
-        self._is_valid = False
         self._textfield.value = None
+        self._notice_text.value = None
+        self.value = None
         self.page.update()
 
     @property
-    def sub_input_fields(self) -> list["BaseInputField"]:
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
+        return []
+
+
+class SelectionInputField(BaseInputField):
+
+    def __init__(self, selection_type: type[BaseSelection], **kwargs):
+        """
+        Args:
+            options: dict with keys are option keys, values is the description.
+            **kwargs:
+        """
+        assert selection_type.options is not None
+        self._selection_type = selection_type
+
+        self._dd = ft.Dropdown(
+            options=[ft.DropdownOption(k, v) for k, v in selection_type.options.items()]
+        )
+
+        self._desc = ft.Text(pformat(selection_type.options))
+
+        content = ft.Column([self._dd, self._desc])
+
+        super().__init__(content, **kwargs)
+
+    async def get_assistant_data(
+        self, **kwargs
+    ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+        if (v := self._dd.value ) is None:
+            return None
+        return self._selection_type(selection=v)
+
+    async def _refresh(self):
+        pass
+
+    @property
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return []
 
 
 class InputFieldOption(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = arbitrary_types_allowed_config
     input_field: BaseInputField
     description: str | None = None
 
@@ -643,7 +672,7 @@ class MultiOptionsInputField(BaseInputField):
         self._keys: list[str] = []
         self._stack = ft.Stack([])
         self._dropdown = ft.Dropdown(
-            label="Options", options=[], on_change=self._on_change
+            label="Form options", options=[], on_change=self._on_change
         )
         self._desc = ft.Text()
 
@@ -715,9 +744,9 @@ class MultiOptionsInputField(BaseInputField):
 
 
 class InputFieldFactory(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = arbitrary_types_allowed_config
     factory: Callable[..., BaseInputField | Awaitable[BaseInputField]]
-    args: list[Any] = Field(default_factory=list)
+    args: Sequence[Any] = Field(default_factory=list)
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -988,7 +1017,7 @@ class ListInputField(BaseInputField):
         pass
 
     @property
-    def sub_input_fields(self) -> list["BaseInputField"]:
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return []
 
 
@@ -1018,28 +1047,31 @@ class _DictInputFieldSavedField(ListInputField._SavedField):
         self._key.value = v
 
 
-class _SyncListView(SyncListObject):
-    adapter = TypeAdapter(_DictInputFieldSavedField, config=ConfigDict(arbitrary_types_allowed=True))
+class _SyncListViewObject(SyncListObject):
+    object_adapter = TypeAdapter(ft.ListView, config=arbitrary_types_allowed_config)
+    adapter = TypeAdapter(
+        _DictInputFieldSavedField, config=arbitrary_types_allowed_config
+    )
+    list_attr = "controls"
+
 
 class DictInputField(ListInputField):
 
     class _SavedFieldSyncList(SyncList):
         field_keys: list[str]
-        saved_fields: _SyncListView[ft.ListView]
+        saved_fields: _SyncListViewObject
 
     def __init__(self, input_field_factory: InputFieldFactory, **kwargs):
 
         super().__init__(input_field_factory, **kwargs)
 
-        self._listview = ft.ListView(
-            controls=[], height=250, width=320
-        )
-        """Control of this ListView is _SavedField object, should access through _saved_field_list"""
+        self._listview = ft.ListView(controls=[], height=250, width=320)
+        """Control of this ListView is _DictInputFieldSavedField object, should access through _saved_field_list"""
 
         # Override ListInputField
         self._saved_field_sync_list = DictInputField._SavedFieldSyncList(
             field_keys=[],
-            saved_fields=_SyncListView(object=self._listview,list_attr="controls")
+            saved_fields=_SyncListViewObject(object=self._listview),
         )
 
         content = ft.Column(
@@ -1059,8 +1091,10 @@ class DictInputField(ListInputField):
     async def _add_field(self, field: _DictInputFieldSavedField):
         # Remove and clean up available key if exists.
         if (k := field.field_key) in self._saved_field_list.field_keys:
-            current_saved_field = self._saved_field_list.get_values_by_value("field_keys",k)["saved_fields"]
-            assert isinstance(current_saved_field,_DictInputFieldSavedField)
+            current_saved_field = self._saved_field_list.get_values_by_value(
+                "field_keys", k
+            )["saved_fields"]
+            assert isinstance(current_saved_field, _DictInputFieldSavedField)
             await self._remove_field(current_saved_field)
 
         self._saved_field_list.append(field_keys=k, saved_fields=field)
@@ -1082,7 +1116,7 @@ class DictInputField(ListInputField):
         async with self._content_lock:
             r = {}
             for f in self._saved_field_list.get_list("saved_fields"):
-                assert isinstance(f,_DictInputFieldSavedField)
+                assert isinstance(f, _DictInputFieldSavedField)
                 data = await f.input_field.get_assistant_data()
                 if data is not None:
                     r[f.field_key] = data
@@ -1094,7 +1128,9 @@ class DictInputField(ListInputField):
         r = None if r == {} else r
         return r
 
-    async def _on_open_edit_sheet(self, e, *, current_saved_field: _DictInputFieldSavedField):
+    async def _on_open_edit_sheet(
+        self, e, *, current_saved_field: _DictInputFieldSavedField
+    ):
         # Almost like the base class with slightly change.
         await self._content_lock.aacqurie()  # Lock until dismiss
         try:
@@ -1124,7 +1160,9 @@ class DictInputField(ListInputField):
 
     async def _on_save_input_sheet(self, e):
         async with self._save_sheet_cm() as (key, input_field):
-            if valid_key:=self.is_valid_key(key) and isinstance(input_field, BaseInputField):
+            if valid_key := self.is_valid_key(key) and isinstance(
+                input_field, BaseInputField
+            ):
                 await self._add_field(
                     _DictInputFieldSavedField(input_field, self, field_key=key)
                 )
@@ -1133,11 +1171,15 @@ class DictInputField(ListInputField):
                 self.notice_user("Saved")
             else:
                 if not valid_key:
-                    self.notice_user(f"Cannot save. The key '{key}' is not the valid one.")
+                    self.notice_user(
+                        f"Cannot save. The key '{key}' is not the valid one."
+                    )
                 else:
                     self.notice_user("Cannot save. Input is wrong.")
 
-    async def _on_save_edit_sheet(self, e, *, current_saved_field: _DictInputFieldSavedField):
+    async def _on_save_edit_sheet(
+        self, e, *, current_saved_field: _DictInputFieldSavedField
+    ):
         update = []
         async with self._save_sheet_cm() as (key, input_field):
             if key != current_saved_field.field_key:
@@ -1157,7 +1199,7 @@ class DictInputField(ListInputField):
             if isinstance(input_field, BaseInputField):
                 update.append("field")
 
-            if len(update) >0:
+            if len(update) > 0:
                 if len(update) == 2:
                     await self._remove_field(current_saved_field)
                     assert key not in self._saved_field_list.field_keys
@@ -1167,7 +1209,9 @@ class DictInputField(ListInputField):
 
                 elif update[0] == "field":
                     await self._add_field(
-                        _DictInputFieldSavedField(input_field, self,field_key= current_saved_field.field_key)
+                        _DictInputFieldSavedField(
+                            input_field, self, field_key=current_saved_field.field_key
+                        )
                     )
 
                 elif update[0] == "key":
@@ -1196,7 +1240,7 @@ class DictInputField(ListInputField):
         lock: bool = True,
         update: bool = True,
     ):
-        assert isinstance(current_saved_field,_DictInputFieldSavedField)
+        assert isinstance(current_saved_field, _DictInputFieldSavedField)
         async with AsyncExitStack() as stack:
             if lock:
                 await stack.enter_async_context(self._content_lock)
@@ -1214,58 +1258,411 @@ class DictInputField(ListInputField):
                 )
             self.page.update()
 
-# for ta in _DictInputFieldSavedFieldSyncList.adapters.values():
-#     ta.rebuild()
-# DictInputField._SyncListView.adapter.rebuild()
-# _DictInputFieldSavedFieldSyncList.model_rebuild()
 
-class FormInputField(BaseInputField):
-    # TODO, define exactly what form and do this
-    def __init__(self, selection_type: type[BaseForm]):
-        self._datatype = selection_type
-        self._fields: dict[str, ft.Control] = {}
+class TupleInputField(BaseInputField):
 
-        super().__init__(self._make_fields())
+    def __init__(self, input_fields: Sequence[BaseInputField], **kwargs):
+        super().__init__(**kwargs)
 
-    def _make_fields(self) -> ft.Control:
-        for name, field in self._datatype.fields():
-            control = self._make_field(field.annotation)
+        self.content = ft.ListView(list(input_fields))
 
-    def _make_field(self, ann) -> ft.Control:
-        org = get_origin(ann)
-        if org == Annotated:
-            return self._make_field(get_args(ann)[0])
-
-        if org is None:
-            if ann in (str, int, float):
-                ta = TypeAdapter
-                return ft.Text(filter)
-
-        elif org in (list, UnionType, Literal, tuple, dict):
-            new_anns = list(get_args(ann))
-            if NoneType in new_anns:
-                assert len(new_anns) > 1
-                new_anns.remove(NoneType)
-            for new_ann in new_anns:
-                new_ann = type(new_ann) if org == Literal else new_ann
-                self._make_field(new_ann, get_origin(new_ann))
+    @property
+    def input_fields(self) -> list[BaseInputField]:
+        return self.content.controls
 
     async def get_assistant_data(
         self, **kwargs
-    ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
+    ) -> tuple[AssistantDataType_U | List[AssistantDataType_U]] | None:
+        """Return tuple of all field data, or None if there is one that's lack of data."""
+        l = []
+        for field in self.input_fields:
+            if (data := await field.get_assistant_data()) is None:
+                return None
+            l.append(data)
+        return tuple(l)
+
+    async def _refresh(self):
+        pass
+
+    @property
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
+        return self.input_fields
+
+
+class InputFieldInfo(BaseModel):
+    model_config = arbitrary_types_allowed_config
+    input_field: BaseInputField
+    description: str | None = None
+
+
+class SchemaInputField(BaseInputField):
+    """Input field for key-value, where key and typehint of them are fix. This class act like pydantic model or TypeDict,
+    not allow to add more like DictInputField or normal dict.
+    """
+
+    def __init__(self, schema: dict[str, InputFieldInfo], **kwargs):
+        """
+        Args:
+            schema: keys are field name
+            **kwargs:
+        """
+        panels = []
+        for field_name, field_info in schema.items():
+            panels.append(
+                ft.ExpansionPanel(
+                    header=ft.Text(field_name),
+                    can_tap_header=True,
+                    content=ft.Column(
+                        [ft.Text(field_info.description), field_info.input_field]
+                    ),
+                )
+            )
+
+        panel_list = ft.ListView(
+            [ft.ExpansionPanelList(panels)]
+        )  # wrap to listview to scroll
+
+        self._lock= UniversalLock()
+
+        super().__init__(content=panel_list, **kwargs)
+
+    @property
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
+        """
+        Look at the ExpansionPanel creation for more details.
+        Returns:
+            Generator object instead of list for lazy access.
+        """
+        def _r():
+            for panel in self._iter_panels():
+                yield panel.content.controls[1]
+        return _r()
+
+    @property
+    def iter_input_fields(self) -> Generator[tuple[str, "BaseInputField"], None, None]:
+        def _r():
+            for panel in self._iter_panels():
+                yield panel.header.value, panel.content.controls[1]
+        return _r()
+
+    def _iter_panels(self)->Generator[ft.ExpansionPanel,None,None]:
+        with self._lock:
+            for c in self.content.controls[0].controls: # Look the layout for more details
+                assert isinstance(c, ft.ExpansionPanel)
+                yield c
+
+    async def get_assistant_data(
+        self, include_none: bool = True, **kwargs
+    ) -> dict[str, AssistantDataType_U | List[AssistantDataType_U] | None] | None:
+        """This output of this method is intentionally to be used to construct AssistantDataInput object.
+
+        Args:
+            include_none: If this is True, always return a dict. Else if return None if any values is None.
+            **kwargs:
+        Returns:
+            A dict with keys are field name and AssistantDataType object as values
+        """
+        r = {}
+        for field_name, input_field in self.iter_input_fields:
+            if (
+                data := await input_field.get_assistant_data()
+            ) is None and not include_none:
+                return None
+            r[field_name] = data
+
+        return r
+
+    async def _refresh(self):
         pass
 
 
-class AssistantInputfield(ft.Container):
+### Note: Belows are not BaseInputField
 
-    def __init___(self, input_datatype: type[AssistantInputData]):
-        pass
 
-    async def get_data(self) -> AssistantInputData:
-        pass
+class _ChatInputFieldSyncStackObject(SyncListObject):
+    object_adapter = TypeAdapter(ft.Stack, config=arbitrary_types_allowed_config)
+    adapter = TypeAdapter(ft.ExpansionTile, config=arbitrary_types_allowed_config)
+    list_attr = "controls"
 
-    async def get_data_nowait(self) -> AssistantInputData:
-        pass
+
+class _ChatInputFieldSyncDropdownObject(SyncListObject):
+    object_adapter = TypeAdapter(ft.Dropdown, config=arbitrary_types_allowed_config)
+    adapter = TypeAdapter(ft.DropdownOption, config=arbitrary_types_allowed_config)
+    list_attr = "options"
+
+
+class ChatInputField(ft.Container):
+
+    class _StackSyncList(SyncList):
+        input_fields: _ChatInputFieldSyncStackObject
+        """Accept ft.ExpansionTile"""
+        dropdowns: _ChatInputFieldSyncDropdownObject
+        """Accept ft.DropdownOption"""
+
+        assistant_names: list[str]
+
+        current_assistant: str | None = None
+
+    def __init__(
+        self,
+        assistant_apps: dict[str, AssistantApp],
+        *,
+        username: str,
+        user_id: UUID,
+        **kwargs,
+    ):
+        """Parse assistant input to input field.
+        Args:
+            assistant_apps: get from ChatAssistantSVC.assistant_names
+            **kwargs:
+        """
+        assert len(assistant_apps)>0
+        self._apps = assistant_apps
+        self._username = username
+        self._user_id = user_id
+        self._dropdown = ft.Dropdown(
+            label="Assistant options", options=[], on_change=self._on_change
+        )
+        self._stack = ft.Stack([])
+        self._stack_lock = UniversalLock()
+
+        self._stack_sync_list = ChatInputField._StackSyncList(
+            input_fields=_ChatInputFieldSyncStackObject(object=self._stack),
+            dropdowns=_ChatInputFieldSyncDropdownObject(object=self._dropdown),
+            assistant_names=[],
+        )
+        """list keys: input_fields (ft.ExpansionTile), dropdowns (ft.DropdownOption)"""
+
+        with self._stack_lock:
+            for name, app in self._apps.items():
+                self._add_assistant(name, app.schema, app.description, lock=False)
+            # self._dropdown.value = self._stack_sync_list.assistant_names[0]
+            # self._current_assistant =
+        super().__init__(**kwargs)
+        self.content = ft.ListView([self._dropdown, self._stack])
+
+    async def get_input_data(
+        self, raise_if_validate_fail: bool = False
+    ) -> tuple[str, AssistantInputData] | None:
+        """
+        Args:
+            raise_if_validate_fail: If False, return None if validate fail.
+        Returns:
+            tuple of assistant name (name that shown to user, not app name) and validated AssistantInputData of current open assistant.
+        """
+        async with self._stack_lock:
+            if (name:= self._current_assistant) is None:
+                return None
+            data = await self._get_input_field(name).get_assistant_data()
+            try:
+                return self._apps[name].schema.model_validate(data)
+            except ValidationError as e:
+                if raise_if_validate_fail:
+                    raise
+                return None
+
+    @property
+    def _current_assistant(self):
+        return self._stack_sync_list.current_assistant
+
+    @_current_assistant.setter
+    def _current_assistant(self, v: str | None):
+        self._stack_sync_list.current_assistant = v
+
+    async def _on_change(self, e):
+        async with self._stack_lock:
+            if self._current_assistant is not None:
+                await self._disable_assistant(self._current_assistant, lock=False)
+                self._current_assistant = None
+
+            ex = self._get_expansion(self._dropdown.value)
+            ex.disabled=False
+            ex.visible = True
+            self._get_input_field(expansion=ex).enable()
+            self._current_assistant = self._dropdown.value
+            self.page.update()
+
+    def _get_expansion(self, assistant_name)->ft.ExpansionTile:
+        expansion = self._stack_sync_list.get_values_by_value(
+            "assistant_names", assistant_name, ["input_fields"]
+        )["input_fields"]
+        assert isinstance(expansion, ft.ExpansionTile)
+        return expansion
+
+    def _get_input_field(self, assistant_name: str=None,*,expansion:ft.ExpansionTile = None) -> SchemaInputField:
+        """
+        This method is change definition depend on the layout, so this act as interface, along with _get_expansion.
+        Args:
+            assistant_name:
+            expansion:
+        Returns:
+            SchemaInputField
+        """
+        assert assistant_name is not None or expansion is not None
+        if assistant_name:
+            expansion = self._get_expansion(assistant_name)
+        input_field = expansion.controls[0] # see _add_assistant" for details about expansion structure.
+        assert isinstance(input_field, SchemaInputField)
+        return input_field
+
+    async def add_assistant(
+        self,
+        assistant_name: str,
+        datatype: type[AssistantInputData],
+        description: str = None,
+    ):
+        """Add new assistant, override the old one.
+        Args:
+            assistant_name: Name of assistant for user to select, add new assistant with the same name will override the old.
+            datatype: Subclass of AssistantInputData
+            description: assistant description
+        """
+        async with self._stack_lock:
+            await asyncio.to_thread(
+                self._add_assistant, assistant_name, datatype, description, lock=False
+            )
+            self.page.update()
+
+    def _add_assistant(
+        self,
+        assistant_name: str,
+        datatype: type[AssistantInputData],
+        description: str = None,
+        *,
+        lock: bool = True,
+    ):
+        if assistant_name in self._stack_sync_list.assistant_names:
+            raise ValueError(
+                f"Assistant {assistant_name} already exists. Remove first before add."
+            )
+        with ExitStack() as stack:
+            if lock:
+                stack.enter_context(self._stack_lock)
+            schema = {}
+            for field_name, field_info in datatype.iter_data_fields():
+                schema[field_name] = InputFieldInfo(
+                    input_field=self._parse_ann(field_info.annotation),
+                    description=field_info.description,
+                )
+            schema_field = SchemaInputField(schema).disable()
+
+            ex_title = ft.ExpansionTile(
+                title=ft.Text(assistant_name),
+                subtitle=ft.Text(description),
+                controls=[schema_field],
+                disabled=True,
+                visible=False
+            )
+            self._stack_sync_list.append(
+                input_fields=ex_title,
+                dropdowns=ft.DropdownOption(assistant_name),
+                assistant_names=assistant_name,
+            )
+
+    async def remove_assistant(self, assistant_name: str):
+        async with self._stack_lock:
+            await self._disable_assistant(assistant_name, lock=False)
+            await asyncio.to_thread(
+                self._stack_sync_list.remove, assistant_names=assistant_name
+            )
+            self.page.update()
+
+    async def _disable_assistant(self, assistant_name: str, *, lock: bool = True):
+        """Disable and cleanup assistant"""
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._stack_lock)
+            ex = self._get_expansion(assistant_name)
+            ex.visible = False
+            ex.disabled = True
+            await self._get_input_field(expansion=ex).disable().cleanup()
+            self.page.update()
+
+    def _parse_ann(self, ann: type) -> BaseInputField | None:
+        """Parse annotation recursively."""
+
+        if ann is None:
+            raise ValueError("Does not support standalone 'None' typehint.")
+        org = get_origin(ann)
+
+        if org == Annotated:
+            return self._parse_ann(get_args(ann)[0])
+
+        if org == UnionType:
+            opt = {}
+            i = 1
+            for arg in get_args(ann):
+                if input_fields := self._parse_ann(arg):
+                    opt[f"Form {i}"] = InputFieldOption(input_field=input_fields)
+                    i += 1
+            return MultiOptionsInputField(opt)
+
+        if org == list:
+            # Special case for pick multiple files. When definition is list[ImageObject] or something like that
+            # Note that not list[ImageObject|VideoObject]. Multiple files picker only pick one media type.
+
+            arg = get_args(ann)[0]  # list only have one arg
+            if isclass(arg):
+                if issubclass(arg, MediaObject):
+                    return MediaInputField(
+                        self._username, self._user_id, arg, allow_multiple=True
+                    )
+
+            return ListInputField(
+                input_field_factory=InputFieldFactory(
+                    factory=self._parse_ann, args=(get_args(ann)[0],)
+                )
+            )
+
+        if org == dict:
+            key_ann, value_ann = get_args(ann)
+            assert key_ann == str
+            return DictInputField(
+                input_field_factory=InputFieldFactory(
+                    factory=self._parse_ann, args=(value_ann,)
+                )
+            )
+
+        if org == tuple:
+            l = []
+            for arg in get_args(ann):
+                if input_fields := self._parse_ann(arg):
+                    l.append(input_fields)
+            assert len(l) > 0
+            return TupleInputField(l)
+
+        if org is None:
+            if ann == NoneType:
+                return None
+
+            if issubclass(ann, Text):
+                return TextInputField(ann)
+
+            if issubclass(ann, BaseSelection):
+                return SelectionInputField(ann)
+
+            if issubclass(ann, MediaObject):
+                return MediaInputField(
+                    self._username, self._user_id, ann, allow_multiple=False
+                )
+
+        # Note expect to raise
+        m = (
+            f"Cannot parse assistant input annotation {ann}. This is app error, not user or dev."
+            f"AssistantInputData interface must check for this. This error should not be catch."
+        )
+        logger.warning(m)
+        raise ValueError(m)
+
+
+for ta in ChatInputField._StackSyncList.adapters.values():
+    ta.rebuild()
+
+
+class ChatOutputField(ft.Container):
+    """
+    chat message,...
+    """
 
 
 if __name__ == "__main__":

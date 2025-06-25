@@ -1,14 +1,15 @@
 import asyncio
+import dataclasses
 import os
 import threading
 from contextlib import contextmanager, asynccontextmanager, AbstractAsyncContextManager
 from contextvars import ContextVar
 from copy import deepcopy
 from datetime import timedelta, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from types import NoneType, UnionType
 from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Annotated,
-                    get_type_hints, get_origin, Coroutine, Generator, )
+                    get_type_hints, get_origin, Coroutine, Generator, Awaitable, )
 from uuid import UUID
 
 import filetype
@@ -17,7 +18,15 @@ import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
 from filetype.types.image import Jpeg
-from pydantic import (BaseModel, ConfigDict, model_validator, create_model, Field, )
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    model_validator,
+    create_model,
+    Field,
+    TypeAdapter,
+    ValidationError,
+)
 from pydantic.fields import FieldInfo
 from ray import serve
 from ray.exceptions import RayTaskError, TaskCancelledError
@@ -67,6 +76,8 @@ class Only(str,Enum):
     NONE="none"
 
 class BaseAssistantType(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     only: ClassVar[Only] = Only.NONE
     """User cannot provide the class has only = "output". Or assistant developer cannot send the class with only="input". """
 
@@ -296,24 +307,86 @@ class TextStream(BaseAssistantType):
     state: Literal["start", "end", "stream"]
     """Stream only saved if there is start and end text stream, otherwise, it just show the stream to user."""
 
+@dataclasses.dataclass
+class InputFilter:
+    regex_string: str
+    allow: bool = True
+    replacement_string: str = ""
+    multiline: bool = False
+    case_sensitive: bool = True
+    unicode: bool = False
+    dot_all: bool = False
+
 
 @assistant_datatype
 class Text(BaseAssistantType):
+    input_filter:ClassVar[InputFilter|None] = None
+    """Filter the input of user. This is prevent user typing"""
+
+    validator: ClassVar[Callable[[str],str|None| Awaitable[str|None]]] = lambda v:v
+    """All exception will be catch and return None in handler. Handler also catch the return to str type is not string."""
+
     role: str
     """role of Text sent from chat session always be "user" and only role "assistant" will be shown in main dialog. """
     content: str
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        if cls.input_filter:
+            assert isinstance(cls.input_filter,InputFilter)
+
+@assistant_datatype
+class BaseSelection(BaseAssistantType):
+    __adapter: ClassVar[TypeAdapter] = TypeAdapter(dict[str,str|None])
+
+    only = Only.INPUT
+    options: ClassVar[dict[str,str|None]] = None
+    """option dict, where keys are option keys and values are description to show to user."""
+    _options: ClassVar[list[str]] = None
+    selection: str
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        _ = cls.__adapter.validate_python(cls.options)
+        cls._options = list(cls.options.keys())
+
+    @classmethod
+    @model_validator(mode="before")
+    def _check_selection(cls, v:dict)->Self:
+        if (val:=v["selection"]) not in cls._options:
+            raise ValidationError(f"'selection' must be in {cls._options}. Got {val}")
+        return v
+
+
+class AssistantStatusCode(str, Enum):
+    START = "start"
+    DONE = "done"
+    SUCCESS = "success"
+    ERROR = "error"
+    CANCELED = "canceled"
+    CANCELING = "canceling"
+    PROCESSING = "processing"
+
+
+@assistant_datatype
+class Status(BaseAssistantType):
+    only = Only.OUTPUT
+
+    code: AssistantStatusCode
+    detail: str | None = None
+
+
+assistant_datatype(StrEnum)
 
 @assistant_datatype
 class Context(BaseAssistantType):
     """Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,...
     This is the input of assistant, but given by app, not by user.
     """
-
     to_user: bool = False
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    only= Only.INPUT
+
     context: dict[str, str] = None
-    context_loader: Callable[[], Coroutine[None, None, dict[str, Any]]] = None
 
     # noinspection PyNestedDecorators
     @model_validator(mode="before")
@@ -324,18 +397,15 @@ class Context(BaseAssistantType):
         return data
 
     async def get(self) -> dict[str, str]:
-        if self.context:
-            return self.context
-        return await self.context_loader()
+        return {} # default
 
-# todo, only media object can wrap into a list. only three types remain Media object, selection, text.
-#  Context => Assistant Data.getcontext. context will be json string. for later, not now.
-#  Decoupling Assistant app with dev interface, dev should not use StreamData directly.
+assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
-
-@assistant_datatype
+# @assistant_datatype
 class BaseForm(BaseAssistantType):
-    """For all arbitrary basic type (int, float,str,bool) and their container, nesting,..."""
+    """For all arbitrary basic type (int, float,str,bool) and their container, nesting,...
+    NOTE: NOT SUPPORT ANYMORE.
+    """
 
     Supported_T: ClassVar[Any] = (
         str,
@@ -385,27 +455,6 @@ class BaseForm(BaseAssistantType):
                 new_ann = type(new_ann) if org == Literal else new_ann
                 cls._validate_type(new_ann)
 
-
-class AssistantStatusCode(str, Enum):
-    START = "start"
-    DONE = "done"
-    SUCCESS = "success"
-    ERROR = "error"
-    CANCELED = "canceled"
-    CANCELING = "canceling"
-    PROCESSING = "processing"
-
-
-@assistant_datatype
-class Status(BaseAssistantType):
-    only = Only.OUTPUT
-
-    code: AssistantStatusCode
-    detail: str | None = None
-
-
-assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
-
 class AssistantData(StreamData):
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
     input_schema: ClassVar[bool] = False
@@ -428,12 +477,12 @@ class AssistantData(StreamData):
             cls._validate_schema(name, ann)
 
     @classmethod
-    def get_data_fields(cls) -> dict[str, FieldInfo]:
-        fields: dict[str, FieldInfo] = deepcopy(cls.model_fields)
+    def iter_data_fields(cls) -> Generator[tuple[str, FieldInfo],None,None]:
         for name, field_info in cls.model_fields.items():
             if get_origin(field_info.annotation) == ClassVar or name in ["created_at", "to_user"]:
-                fields.pop(name)
-        return fields
+                continue
+            else:
+                yield name, field_info
 
     @classmethod
     def _validate_schema(cls, name: str, ann: Type[Any]):
@@ -444,7 +493,7 @@ class AssistantData(StreamData):
             None,
             Annotated,
         ):  # Annotated is only supported for the annotation type in cls.T
-            if not ann in cls.T:
+            if not ann in cls.T and not issubclass(ann,cls.T):
                 m = f"Does not support field annotation '{ann.__name__}' of field name '{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
             if cls.input_schema:

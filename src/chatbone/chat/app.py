@@ -18,7 +18,7 @@ from uuid_extensions import uuid7
 from chatbone.assistant_interface import (ImageObject, VideoObject, AudioObject, DocumentObject, TextStream, Selection,
                                           MediaObject, AnyMediaObject, )
 from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError
-from chatbone.chat.input_fields import BaseUI
+from chatbone.chat.chat_io import BaseUI
 from chatbone.chat.svc import *
 from utilities.logger import logger
 from utilities.misc import UniversalLock
