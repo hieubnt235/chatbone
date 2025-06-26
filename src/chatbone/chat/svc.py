@@ -1,7 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager, AsyncExitStack, AbstractAsyncContextManager
 from typing import Callable, Coroutine, Self
 from uuid import UUID
-import asyncio
 
 import redis
 from fastapi import HTTPException, status
@@ -13,7 +13,14 @@ from chatbone.assistant_interface import (
     AssistantData,
     AssistantInputData,
 )
-from chatbone.broker import (UserData as UserDataCache, UserToken, ChatSessionData, Message, WriteStream, ReadStream, )
+from chatbone.broker import (
+    UserData as UserDataCache,
+    UserToken,
+    ChatSessionData,
+    Message,
+    WriteStream,
+    ReadStream,
+)
 from chatbone.chat.settings import DATASTORE, CONFIG, AUTH
 from utilities.exception import handle_http_exception
 from utilities.func import utc_now
@@ -228,7 +235,7 @@ class AssistantApp(BaseModel):
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    schema: type[AssistantInputData]
+    input_schema: type[AssistantInputData]
     description: str | None = None
 
     app_name: str
@@ -357,7 +364,7 @@ class ChatAssistantSVC(_DataSVC):
         """
         try:
             assistant_app = self.assistant_apps[assistant_name]
-            assert isinstance(data, assistant_app.schema)
+            assert isinstance(data, assistant_app.input_schema)
         except (KeyError, AssertionError) as e:
             raise ValueError(f"Static check fail for assistant. {e}")
 
@@ -413,9 +420,9 @@ class ChatAssistantSVC(_DataSVC):
             await self.userdata.append("summaries", await asyncio.to_thread(_extract))
             await self.userdata.refresh(exclude={})
 
-    async def _call_data_svc_method[
-        S, T
-    ](self, func: Callable[[S], Coroutine[..., ..., T]], schema: S) -> T:
+    async def _call_data_svc_method[S, T](
+        self, func: Callable[[S], Coroutine[..., ..., T]], schema: S
+    ) -> T:
         assert hasattr(schema, "token_id")
         try:
             return await func(schema)

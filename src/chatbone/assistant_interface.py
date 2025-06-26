@@ -4,12 +4,11 @@ import os
 import threading
 from contextlib import contextmanager, asynccontextmanager, AbstractAsyncContextManager
 from contextvars import ContextVar
-from copy import deepcopy
 from datetime import timedelta, datetime
-from enum import Enum, StrEnum
+from enum import Enum
 from types import NoneType, UnionType
 from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Annotated,
-                    get_type_hints, get_origin, Coroutine, Generator, Awaitable, )
+                    get_type_hints, get_origin, Generator, Awaitable, )
 from uuid import UUID
 
 import filetype
@@ -18,15 +17,7 @@ import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
 from filetype.types.image import Jpeg
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    model_validator,
-    create_model,
-    Field,
-    TypeAdapter,
-    ValidationError,
-)
+from pydantic import (BaseModel, ConfigDict, model_validator, create_model, Field, TypeAdapter, ValidationError, )
 from pydantic.fields import FieldInfo
 from ray import serve
 from ray.exceptions import RayTaskError, TaskCancelledError
@@ -41,39 +32,12 @@ from utilities.settings.objest_storage import ObjectStorageSettings
 
 CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 
-AssistantDataType_T: tuple[Type["MediaObject"] | Type[Any]] = ()
-"""Assistant datatype in tuple format, use this to test with isinstance()."""
 
-AssistantDataType_U: Type["MediaObject"] | Type[Any] = NoneType
-"""Assistant datatype in union format."""
+class Only(str, Enum):
+    OUTPUT = "output"
+    INPUT = "input"
+    NONE = "none"
 
-AnyMediaObject: Type["MediaObject"] = NoneType
-"""Media object union."""
-
-
-def assistant_datatype(cls_type):
-    """Decorator to assign assistant datatype.
-    This type is the one stream to app, so it should be pickleable and clear purpose to show to user.
-    Or to be user input type.
-    """
-    global AssistantDataType_T, AssistantDataType_U, AnyMediaObject
-    type_list = list(AssistantDataType_T)
-    type_list.append(cls_type)
-    AssistantDataType_T = tuple(type_list)
-    AssistantDataType_U = (
-        AssistantDataType_U | cls_type if AssistantDataType_U!=NoneType else cls_type
-    )
-    if issubclass(cls_type, MediaObject):
-        AnyMediaObject = (
-            AnyMediaObject | cls_type if AnyMediaObject is not None else cls_type
-        )
-
-    return cls_type
-
-class Only(str,Enum):
-    OUTPUT="output"
-    INPUT="input"
-    NONE="none"
 
 class BaseAssistantType(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -92,29 +56,33 @@ class MediaType(str, Enum):
     AUDIO = "AUDIO"
     DOCUMENT = "DOCUMENT"
 
+
 class InvalidFileTypeException(Exception):
     pass
+
 
 class InvalidFileExtension(InvalidFileTypeException):
     def __init__(self, m="", allowed_ex=None, received_ex=None, filename=None):
         self.al_ex = allowed_ex
         self.re_ex = received_ex
-        self.filename=filename
+        self.filename = filename
         if self.al_ex:
-            m+=f"Allowed extension: {allowed_ex}. "
+            m += f"Allowed extension: {allowed_ex}. "
         if self.re_ex:
-            m+=f"Got {received_ex}. "
+            m += f"Got {received_ex}. "
         super().__init__(m)
 
 
 class InvalidBinaryFile(InvalidFileTypeException):
     pass
 
+
 class MediaObject(BaseAssistantType):
     """Assistant input is the collection of these objects. User must give all required media object to call assistant.
     Notes:
             1. The get_upload_url
     """
+
     object_storage: ClassVar[ObjectStorageSettings] = OBJ_STORAGE
     type: ClassVar[MediaType] = None
     matchers: ClassVar[Sequence[filetype.Type]] = None
@@ -172,7 +140,9 @@ class MediaObject(BaseAssistantType):
             for i, ext in enumerate(cls.extensions):
                 if ex == ext:
                     return cls.mimes[i]
-            raise InvalidFileExtension("Extension is not supported. ",cls.extensions,ex)
+            raise InvalidFileExtension(
+                "Extension is not supported. ", cls.extensions, ex
+            )
 
         mime = await asyncio.to_thread(_validate_extension)
         response_headers = {"response-content-type": "image/png"}
@@ -233,7 +203,9 @@ class MediaObject(BaseAssistantType):
                 mime string.
         """
         if (m := await asyncio.to_thread(match, data, cls.matchers)) is None:
-            raise InvalidBinaryFile(f"Binary object is not instance of type {cls.type}. No matter of its extension.")
+            raise InvalidBinaryFile(
+                f"Binary object is not instance of type {cls.type}. No matter of its extension."
+            )
         return m.mime
 
     async def get_preview_url(self, expires: timedelta = timedelta(days=7)):
@@ -253,6 +225,39 @@ class MediaObject(BaseAssistantType):
     async def remove_object(self):
         """Remove the binary object from server"""
         return await OBJ_STORAGE.remove_object(self.object_name)
+
+
+AssistantDataType_T: tuple[Type[BaseAssistantType]] = ()
+"""Assistant datatype in tuple format, use this to test with isinstance()."""
+
+AssistantDataType_U: Type[BaseAssistantType] = BaseAssistantType
+"""Assistant datatype in union format."""
+
+AnyMediaObject: Type[MediaObject] = MediaObject
+"""Media object union."""
+
+
+def assistant_datatype(cls_type):
+    """Decorator to assign assistant datatype.
+    This type is the one stream to app, so it should be pickleable and clear purpose to show to user.
+    Or to be user input type.
+    """
+    global AssistantDataType_T, AssistantDataType_U, AnyMediaObject
+    assert issubclass(cls_type, BaseAssistantType) and cls_type != BaseAssistantType
+
+    if AssistantDataType_U == BaseAssistantType:
+        AssistantDataType_U = cls_type
+    else:
+        AssistantDataType_U = AssistantDataType_U | cls_type
+
+    AssistantDataType_T = AssistantDataType_T + (cls_type,)
+
+    if issubclass(cls_type, MediaObject):
+        if AnyMediaObject == MediaObject:
+            AnyMediaObject = cls_type
+        else:
+            AnyMediaObject = AnyMediaObject | cls_type
+    return cls_type
 
 
 @assistant_datatype
@@ -300,12 +305,14 @@ class DocumentObject(MediaObject):
 @assistant_datatype
 class TextStream(BaseAssistantType):
     """For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id."""
+
     only = Only.OUTPUT
     id: UUID | int | str
     chunk: str
 
     state: Literal["start", "end", "stream"]
     """Stream only saved if there is start and end text stream, otherwise, it just show the stream to user."""
+
 
 @dataclasses.dataclass
 class InputFilter:
@@ -320,10 +327,12 @@ class InputFilter:
 
 @assistant_datatype
 class Text(BaseAssistantType):
-    input_filter:ClassVar[InputFilter|None] = None
+    input_filter: ClassVar[InputFilter | None] = None
     """Filter the input of user. This is prevent user typing"""
 
-    validator: ClassVar[Callable[[str],str|None| Awaitable[str|None]]] = lambda v:v
+    validator: ClassVar[Callable[[str], str | None | Awaitable[str | None]]] = (
+        lambda v: v
+    )
     """All exception will be catch and return None in handler. Handler also catch the return to str type is not string."""
 
     role: str
@@ -333,14 +342,15 @@ class Text(BaseAssistantType):
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         if cls.input_filter:
-            assert isinstance(cls.input_filter,InputFilter)
+            assert isinstance(cls.input_filter, InputFilter)
+
 
 @assistant_datatype
 class BaseSelection(BaseAssistantType):
-    __adapter: ClassVar[TypeAdapter] = TypeAdapter(dict[str,str|None])
+    __adapter: ClassVar[TypeAdapter] = TypeAdapter(dict[str, str | None])
 
     only = Only.INPUT
-    options: ClassVar[dict[str,str|None]] = None
+    options: ClassVar[dict[str, str | None]] = None
     """option dict, where keys are option keys and values are description to show to user."""
     _options: ClassVar[list[str]] = None
     selection: str
@@ -352,8 +362,8 @@ class BaseSelection(BaseAssistantType):
 
     @classmethod
     @model_validator(mode="before")
-    def _check_selection(cls, v:dict)->Self:
-        if (val:=v["selection"]) not in cls._options:
+    def _check_selection(cls, v: dict) -> Self:
+        if (val := v["selection"]) not in cls._options:
             raise ValidationError(f"'selection' must be in {cls._options}. Got {val}")
         return v
 
@@ -371,20 +381,19 @@ class AssistantStatusCode(str, Enum):
 @assistant_datatype
 class Status(BaseAssistantType):
     only = Only.OUTPUT
-
+    to_user:bool = False
     code: AssistantStatusCode
     detail: str | None = None
 
-
-assistant_datatype(StrEnum)
 
 @assistant_datatype
 class Context(BaseAssistantType):
     """Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,...
     This is the input of assistant, but given by app, not by user.
     """
+
     to_user: bool = False
-    only= Only.INPUT
+    only = Only.INPUT
 
     context: dict[str, str] = None
 
@@ -396,10 +405,13 @@ class Context(BaseAssistantType):
             raise ValueError("'context' or 'context_loader' must be provided.")
         return data
 
+    # noinspection PyMethodMayBeStatic
     async def get(self) -> dict[str, str]:
-        return {} # default
+        return {}  # default
+
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
+
 
 # @assistant_datatype
 class BaseForm(BaseAssistantType):
@@ -455,6 +467,14 @@ class BaseForm(BaseAssistantType):
                 new_ann = type(new_ann) if org == Literal else new_ann
                 cls._validate_type(new_ann)
 
+
+class DataFormat(BaseModel):
+    """The format to show to frontend."""
+
+    type: Literal["html", "markdown", "text"]
+    content: str
+
+
 class AssistantData(StreamData):
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
     input_schema: ClassVar[bool] = False
@@ -464,6 +484,44 @@ class AssistantData(StreamData):
     U: ClassVar[Any] = AssistantDataType_U
 
     created_at: datetime = Field(default_factory=utc_now)
+    
+    # noinspection PyMethodMayBeStatic
+    async def get_data_format(self) -> DataFormat | None:
+        """Override this method to show to user."""
+        return None
+
+    @classmethod
+    def iter_data_fields(cls) -> Generator[tuple[str, FieldInfo], None, None]:
+        for name, field_info in cls.model_fields.items():
+            if get_origin(field_info.annotation) == ClassVar or name in [
+                "created_at",
+                "to_user",
+            ]:
+                continue
+            else:
+                yield name, field_info
+
+    @classmethod
+    def create_model(
+        cls, model_schema: dict[str, Any], doc: str | None = None
+    ) -> Type["AssistantData"]:
+        """
+        todo: is this method necessary? or just directly inherit ?
+        Create a data model dynamically.
+        Args:
+                model_schema: dictionary with keys as name and
+                doc
+        Returns:
+                Instance of a subclass of AssistantData
+        """
+        cls._validate_model(model_schema)
+        return create_model(
+            cls._get_model_name(),
+            __base__=cls,
+            __module__=cls._get_module_name(),
+            __doc__=doc,
+            **model_schema,
+        )
 
     @classmethod
     def __pydantic_init_subclass__(cls):
@@ -477,14 +535,6 @@ class AssistantData(StreamData):
             cls._validate_schema(name, ann)
 
     @classmethod
-    def iter_data_fields(cls) -> Generator[tuple[str, FieldInfo],None,None]:
-        for name, field_info in cls.model_fields.items():
-            if get_origin(field_info.annotation) == ClassVar or name in ["created_at", "to_user"]:
-                continue
-            else:
-                yield name, field_info
-
-    @classmethod
     def _validate_schema(cls, name: str, ann: Type[Any]):
         # General supported type examples: ImageObject, list[ImageObject]|VideoObject, ImageObject|VideoObject|None
         # validate recursively through list.
@@ -493,13 +543,13 @@ class AssistantData(StreamData):
             None,
             Annotated,
         ):  # Annotated is only supported for the annotation type in cls.T
-            if not ann in cls.T and not issubclass(ann,cls.T):
-                m = f"Does not support field annotation '{ann.__name__}' of field name '{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
+            if not ann in cls.T and not issubclass(ann, cls.T):
+                m = f"Does not support field annotation '{ann.__name__}' of '{cls.__name__}.{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
             if cls.input_schema:
                 assert issubclass(ann, BaseAssistantType)
                 if ann.only == Only.OUTPUT:
-                    m = f"Input schema can not contain output-only type '{ann.__name__}' of field name '{name}'."
+                    m = f"Input schema can not contain output-only type '{ann.__name__}' of {cls.__name__}.{name}'."
                     raise ValueError(m)
         else:
             if issubclass(org, (list, UnionType)):
@@ -519,7 +569,7 @@ class AssistantData(StreamData):
         return cls.__module__
 
     @classmethod
-    def validate_schema(cls, schema: dict[str, Any]):
+    def _validate_model(cls, schema: dict[str, Any]):
         for name, field in schema.items():
             # If not tuple, create simple field for compatible with the latest pydantic versions. While old version not support non-tuple.
             if not isinstance(field, Sequence):
@@ -528,28 +578,7 @@ class AssistantData(StreamData):
             cls._validate_schema(name, ann)
 
     @classmethod
-    def create_model(
-        cls, schema: dict[str, Any], doc: str | None = None
-    ) -> Type["AssistantData"]:
-        """
-        Create a data model dynamically.
-        Args:
-                schema: dictionary with keys as name and
-                doc
-        Returns:
-                Instance of a subclass of AssistantData
-        """
-        cls.validate_schema(schema)
-        return create_model(
-            cls._get_model_name(),
-            __base__=cls,
-            __module__=cls._get_module_name(),
-            __doc__=doc,
-            **schema,
-        )
-
-    @classmethod
-    def create_request(
+    def _create_request(
         cls, schema: dict[str, Any], doc: str | None = None
     ) -> "RequestInput":
         """
@@ -567,11 +596,16 @@ class AssistantData(StreamData):
 class AssistantInputData(AssistantData):
     input_schema = True
 
+
 class AssistantOutputData(AssistantData):
+    assistant_name: ClassVar[str] = "Assistant"
     status: Status
 
+
 class RequestInput(StreamData):
-    """This class is used for request input from user. User also send this class instance as response."""
+    """This class is used for request input from user. User also send this class instance as response.
+    Note: This class is used when assistant request input from user while running.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
     id: UUID = Field(frozen=True)
@@ -609,7 +643,7 @@ def format_doc(func):
 
 @format_doc
 async def request_user_input(
-    request_schema: dict[str, tuple[str, str, Literal["optional", "required"]]]
+    request_schema: dict[str, tuple[str, str, Literal["optional", "required"]]],
 ) -> AssistantData | None:
     """
     Request some input object from the user with specified object name, object type, and description.
@@ -643,7 +677,7 @@ async def request_user_input(
 
     schema = await asyncio.to_thread(_make_field)
     request_input: RequestInput = await asyncio.to_thread(
-        AssistantData.create_request, schema
+        AssistantData._create_request, schema
     )
 
     write_stream, read_stream = assistant_streams.get()
@@ -686,7 +720,9 @@ async def request_user_input(
         return None
 
 
-AssistantStreamer = Callable[[AssistantInputData], AsyncGenerator[AssistantOutputData, None]]
+AssistantStreamer = Callable[
+    [AssistantInputData], AsyncGenerator[AssistantOutputData, None]
+]
 
 
 class BaseAssistant(BaseModel):
@@ -746,7 +782,9 @@ class BaseAssistant(BaseModel):
         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
         pass
 
-    async def _stream(self, data: AssistantInputData) -> AsyncGenerator[AssistantOutputData, None]:
+    async def _stream(
+        self, data: AssistantInputData
+    ) -> AsyncGenerator[AssistantOutputData, None]:
         async for chunk in self.streamer(data):
             if not isinstance(chunk, AssistantOutputData):
                 raise ValueError(

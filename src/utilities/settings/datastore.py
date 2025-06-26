@@ -227,14 +227,14 @@ class DatastoreClient(_BaseDataStore):
 	chat: _Chat
 
 
-if __name__ == '__main__':
-	import asyncio
-
-	datastore = DatastoreClient(url='http://localhost:8000')
-
-	request = VerifyUserRequest(body=UserVerify(username='this is new name', password='string'))
-
-	r = asyncio.run(datastore.user.access.verify(request))
-
-	print(r.model_dump_json(indent=4))
-	print(type(r.content))
+# if __name__ == '__main__':
+# 	import asyncio
+#
+# 	datastore = DatastoreClient(url='http://localhost:8000')
+#
+# 	request = VerifyUserRequest(body=UserVerify(username='this is new name', password='string'))
+#
+# 	r = asyncio.run(datastore.user.access.verify(request))
+#
+# 	print(r.model_dump_json(indent=4))
+# 	print(type(r.content))

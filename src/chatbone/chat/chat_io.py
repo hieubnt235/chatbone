@@ -10,10 +10,9 @@ from inspect import iscoroutinefunction, isclass
 from math import floor
 from pprint import pformat
 from types import NoneType, UnionType
+from typing import Any, List, Optional, Tuple, Union, Unpack, Literal
 from typing import (
-    Any,
     Callable,
-    List,
     get_origin,
     Annotated,
     Self,
@@ -23,15 +22,30 @@ from typing import (
     Sequence,
     Iterable,
     Generator,
+    TypedDict,
 )
 from uuid import UUID
 
 import flet as ft
+from flet.core.animation import AnimationValue
+from flet.core.badge import BadgeValue
+from flet.core.blur import Blur
+from flet.core.box import (
+    BoxShadow,
+)
 from flet.core.buttons import RoundedRectangleBorder
+from flet.core.container import ContainerTapEvent
+from flet.core.control import OptionalNumber
 from flet.core.file_picker import (
     FilePickerResultEvent,
     FilePickerUploadEvent,
     FilePickerFile,
+)
+from flet.core.gradients import Gradient
+from flet.core.tooltip import TooltipValue
+from flet.core.types import (
+    OptionalControlEventCallable,
+    OptionalEventCallable,
 )
 from pydantic import (
     BaseModel,
@@ -53,13 +67,80 @@ from chatbone.assistant_interface import (
     Text,
     DocumentObject,
     BaseSelection,
+    AssistantOutputData,
+    DataFormat,
 )
+from chatbone.chat.html_parser import parse_html_to_flet
 from chatbone.chat.svc import AssistantApp
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock, SyncList, SyncListObject
 
 arbitrary_types_allowed_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class ContainerArgs(TypedDict):
+    padding: Optional[ft.PaddingValue]
+    margin: Optional[ft.MarginValue]
+    alignment: Optional[ft.Alignment]
+    bgcolor: Optional[ft.ColorValue]
+    gradient: Optional[Gradient]
+    blend_mode: Optional[ft.BlendMode]
+    border: Optional[ft.Border]
+    border_radius: Optional[ft.BorderRadiusValue]
+    shape: Optional[ft.BoxShape]
+    clip_behavior: Optional[ft.ClipBehavior]
+    ink: Optional[bool]
+    image: Optional[ft.DecorationImage]
+    ink_color: Optional[ft.ColorValue]
+    animate: Optional[AnimationValue]
+    blur: Union[None, float, int, Tuple[Union[float, int], Union[float, int]], Blur]
+    shadow: Union[None, BoxShadow, List[BoxShadow]]
+    url: Optional[str]
+    url_target: Optional[ft.UrlTarget]
+    theme: Optional[ft.Theme]
+    dark_theme: Optional[ft.Theme]
+    theme_mode: Optional[ft.ThemeMode]
+    color_filter: Optional[ft.ColorFilter]
+    ignore_interactions: Optional[bool]
+    foreground_decoration: Optional[ft.BoxDecoration]
+    on_click: OptionalControlEventCallable
+    on_tap_down: OptionalEventCallable["ContainerTapEvent"]
+    on_long_press: OptionalControlEventCallable
+    on_hover: OptionalControlEventCallable
+    #
+    # ConstrainedControl and AdaptiveControl
+    #
+    ref: Optional[ft.Ref]
+    key: Optional[str]
+    width: OptionalNumber
+    height: OptionalNumber
+    left: OptionalNumber
+    top: OptionalNumber
+    right: OptionalNumber
+    bottom: OptionalNumber
+    expand: Union[None, bool, int]
+    expand_loose: Optional[bool]
+    col: Optional[ft.ResponsiveNumber]
+    opacity: OptionalNumber
+    rotate: Optional[ft.RotateValue]
+    scale: Optional[ft.ScaleValue]
+    offset: Optional[ft.OffsetValue]
+    aspect_ratio: OptionalNumber
+    animate_opacity: Optional[AnimationValue]
+    animate_size: Optional[AnimationValue]
+    animate_position: Optional[AnimationValue]
+    animate_rotation: Optional[AnimationValue]
+    animate_scale: Optional[AnimationValue]
+    animate_offset: Optional[AnimationValue]
+    on_animation_end: OptionalControlEventCallable
+    tooltip: Optional[TooltipValue]
+    badge: Optional[BadgeValue]
+    visible: Optional[bool]
+    disabled: Optional[bool]
+    data: Any
+    rtl: Optional[bool]
+    adaptive: Optional[bool]
 
 
 class BaseUI(ft.Container, BaseModel, ABC):
@@ -76,7 +157,7 @@ class BaseUI(ft.Container, BaseModel, ABC):
 
 class BaseInputField(ABC, ft.Container):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs: Unpack[ContainerArgs]):
         self._able_lock = UniversalLock()
 
         self._snackbar: ft.SnackBar = None
@@ -94,14 +175,14 @@ class BaseInputField(ABC, ft.Container):
     @abstractmethod
     async def _refresh(self):
         """Refresh for this InputField class only, will be call by cleanup(). Clean all pending state.
-        Should not inplement logic for sub InputField, which will be done by cleanup() method instead.
+        Should not implement logic for sub InputField, which will be done by cleanup() method instead.
         """
         pass
 
     @property
     @abstractmethod
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
-        """This property return sub input fields (not self), used to cleanup.
+        """This property return sub input fields (not self), used to do cleanup.
         If class does not have input field, explicitly return []"""
         return []
 
@@ -308,7 +389,7 @@ class MediaInputField(BaseInputField):
         user_id: UUID,
         datatype: type[MediaObject],
         allow_multiple: bool = False,
-        **kwargs,
+        **kwargs: Unpack[ContainerArgs],
     ):
         self._datatype = datatype
         self._allow_multiple = allow_multiple
@@ -360,8 +441,8 @@ class MediaInputField(BaseInputField):
             alignment=ft.MainAxisAlignment.CENTER,
             width=320,
         )
-
-        super().__init__(column, border=ft.border.all(1), **kwargs)
+        kwargs["border"] = ft.border.all(1)
+        super().__init__(column, **kwargs)
 
         self._button_state_lock = UniversalLock()
 
@@ -554,10 +635,7 @@ class MediaInputField(BaseInputField):
 
 
 class TextInputField(BaseInputField):
-    def __init__(
-        self,text_type: type[Text],
-        **kwargs,
-    ):
+    def __init__(self, text_type: type[Text], **kwargs: Unpack[ContainerArgs]):
         self._text_type = text_type
         self._textfield = ft.TextField(
             input_filter=text_type.input_filter, on_change=self._on_change
@@ -565,8 +643,8 @@ class TextInputField(BaseInputField):
         self._notice_text = ft.Text(value=self._textfield.value)
         self._value = None
 
-        column = ft.Column([self._textfield,self._notice_text])
-        super().__init__(column, border=ft.border.all(1))
+        column = ft.Column([self._textfield, self._notice_text])
+        super().__init__(column, **kwargs)
 
     async def _on_change(self, e):
         val = await self._validate()
@@ -575,14 +653,16 @@ class TextInputField(BaseInputField):
         else:
             self._notice_text.value = None
         self.value = val
-        self.page.update(self._textfield,self._notice_text)
+        self.page.update(self._textfield, self._notice_text)
 
     async def _validate(self):
         try:
             if iscoroutinefunction(self._text_type.validator):
                 val = await self._text_type.validator(self._textfield.value)
             else:
-                val = await asyncio.to_thread(self._text_type.validator, self._textfield.value)
+                val = await asyncio.to_thread(
+                    self._text_type.validator, self._textfield.value
+                )
             if val is None:
                 return None
             return str(val)
@@ -617,7 +697,9 @@ class TextInputField(BaseInputField):
 
 class SelectionInputField(BaseInputField):
 
-    def __init__(self, selection_type: type[BaseSelection], **kwargs):
+    def __init__(
+        self, selection_type: type[BaseSelection], **kwargs: Unpack[ContainerArgs]
+    ):
         """
         Args:
             options: dict with keys are option keys, values is the description.
@@ -639,7 +721,7 @@ class SelectionInputField(BaseInputField):
     async def get_assistant_data(
         self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
-        if (v := self._dd.value ) is None:
+        if (v := self._dd.value) is None:
             return None
         return self._selection_type(selection=v)
 
@@ -667,7 +749,9 @@ class MultiOptionsInputField(BaseInputField):
     """User provide only one input according to only one options."""
 
     def __init__(
-        self, input_field_options: dict[str, InputFieldOption], *args, **kwargs
+        self,
+        input_field_options: dict[str, InputFieldOption],
+        **kwargs: Unpack[ContainerArgs],
     ):
         self._keys: list[str] = []
         self._stack = ft.Stack([])
@@ -699,7 +783,7 @@ class MultiOptionsInputField(BaseInputField):
             alignment=ft.MainAxisAlignment.CENTER,
         )
 
-        super().__init__(content, *args, **kwargs)
+        super().__init__(content, **kwargs)
 
     async def _on_change(self, e):
         async with self._input_field_lock:
@@ -720,13 +804,13 @@ class MultiOptionsInputField(BaseInputField):
         return self._stack.controls
 
     async def get_assistant_data(
-        self,
-        return_meta: bool = False,
+        self, return_meta: bool = False, c: AssistantDataType_U = None
     ) -> AssistantDataType_U | list[AssistantDataType_U] | None:
         """
         Returns:
             A tuple of key and data if return_meta is True else return just data.
         """
+
         async with self._input_field_lock:
             for k, f in zip(self._keys, self.sub_input_fields):
                 if d := (await f.get_assistant_data()):
@@ -757,7 +841,7 @@ class ListInputField(BaseInputField):
             self,
             input_field: BaseInputField,
             list_input_field: "ListInputField",
-            **kwargs,
+            **kwargs: Unpack[ContainerArgs],
         ):
 
             self._input_field = input_field.disable()
@@ -948,7 +1032,7 @@ class ListInputField(BaseInputField):
             raise
 
     def _clean_sheet(self):
-        """IMPORTANT: This method MUST be called before close sheet if don't want to clean input field ( for success case).
+        """IMPORTANT: This method MUST be called before close sheet if you don't want to clean input field ( for success case).
         And MUST NOT be called for case when input field is expected to clean (ex: close sheet without saving intentionally).
          See _on_dismiss_sheet for details."""
         self._sheet_input_field = None
@@ -957,7 +1041,7 @@ class ListInputField(BaseInputField):
 
     def _close_sheet(self):
         """The on_dismiss_sheet will be called after this method.
-        Note that if not _clean_sheet first, it will cleanup the input field."""
+        Note that if not _clean_sheet first, it will clean up the input field."""
         self.page.close(self._sheet)
 
     async def _on_dismiss_sheet(self, e=None):
@@ -987,7 +1071,7 @@ class ListInputField(BaseInputField):
             if update:
                 self.page.update()
 
-    async def _on_remove_all(self, e):
+    async def _on_remove_all(self, e=None):
         async with self._content_lock:
             while len(self._saved_field_list) > 0:
                 await self._on_remove_saved_field(
@@ -1014,7 +1098,12 @@ class ListInputField(BaseInputField):
         return r
 
     async def _refresh(self):
-        pass
+        """
+        Notes:
+            Because _refresh already cleanup all sub input fields, so do not need the sub_input_field attribute.
+            See Also: self.cleanup()
+        """
+        await self._on_remove_all()
 
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
@@ -1061,7 +1150,9 @@ class DictInputField(ListInputField):
         field_keys: list[str]
         saved_fields: _SyncListViewObject
 
-    def __init__(self, input_field_factory: InputFieldFactory, **kwargs):
+    def __init__(
+        self, input_field_factory: InputFieldFactory, **kwargs: Unpack[ContainerArgs]
+    ):
 
         super().__init__(input_field_factory, **kwargs)
 
@@ -1248,7 +1339,7 @@ class DictInputField(ListInputField):
             if update:
                 self.page.update()
 
-    async def _on_remove_all(self, e):
+    async def _on_remove_all(self, e=None):
         async with self._content_lock:
             while len(self._saved_field_list.saved_fields.list) > 0:
                 await self._on_remove_saved_field(
@@ -1261,7 +1352,9 @@ class DictInputField(ListInputField):
 
 class TupleInputField(BaseInputField):
 
-    def __init__(self, input_fields: Sequence[BaseInputField], **kwargs):
+    def __init__(
+        self, input_fields: Sequence[BaseInputField], **kwargs: Unpack[ContainerArgs]
+    ):
         super().__init__(**kwargs)
 
         self.content = ft.ListView(list(input_fields))
@@ -1300,7 +1393,9 @@ class SchemaInputField(BaseInputField):
     not allow to add more like DictInputField or normal dict.
     """
 
-    def __init__(self, schema: dict[str, InputFieldInfo], **kwargs):
+    def __init__(
+        self, schema: dict[str, InputFieldInfo], **kwargs: Unpack[ContainerArgs]
+    ):
         """
         Args:
             schema: keys are field name
@@ -1322,7 +1417,7 @@ class SchemaInputField(BaseInputField):
             [ft.ExpansionPanelList(panels)]
         )  # wrap to listview to scroll
 
-        self._lock= UniversalLock()
+        self._lock = UniversalLock()
 
         super().__init__(content=panel_list, **kwargs)
 
@@ -1333,9 +1428,11 @@ class SchemaInputField(BaseInputField):
         Returns:
             Generator object instead of list for lazy access.
         """
+
         def _r():
             for panel in self._iter_panels():
                 yield panel.content.controls[1]
+
         return _r()
 
     @property
@@ -1343,11 +1440,14 @@ class SchemaInputField(BaseInputField):
         def _r():
             for panel in self._iter_panels():
                 yield panel.header.value, panel.content.controls[1]
+
         return _r()
 
-    def _iter_panels(self)->Generator[ft.ExpansionPanel,None,None]:
+    def _iter_panels(self) -> Generator[ft.ExpansionPanel, None, None]:
         with self._lock:
-            for c in self.content.controls[0].controls: # Look the layout for more details
+            for c in self.content.controls[
+                0
+            ].controls:  # Look the layout for more details
                 assert isinstance(c, ft.ExpansionPanel)
                 yield c
 
@@ -1357,7 +1457,7 @@ class SchemaInputField(BaseInputField):
         """This output of this method is intentionally to be used to construct AssistantDataInput object.
 
         Args:
-            include_none: If this is True, always return a dict. Else if return None if any values is None.
+            include_none: If this is True, always return a dict. Else it will return None when any value is None.
             **kwargs:
         Returns:
             A dict with keys are field name and AssistantDataType object as values
@@ -1392,6 +1492,71 @@ class _ChatInputFieldSyncDropdownObject(SyncListObject):
 
 
 class ChatInputField(ft.Container):
+    """
+    from uuid import UUID
+
+    from pydantic import Field
+
+    import flet as ft
+    from chatbone.assistant_interface import (
+        AssistantInputData,
+        ImageObject,
+        VideoObject,
+        Text,
+        BaseSelection,
+        DocumentObject,
+    )
+    from chatbone.chat.chat_io import ChatInputField
+    from chatbone.chat.svc import AssistantApp
+    from utilities.logger import logger
+
+
+    class Selection(BaseSelection):
+        options = {"opt 1": "this is option 1", "opt 2": "this is option 2"}
+
+
+    class LimitText(Text):
+        validator = lambda v: v if len(v) < 10 else None
+
+
+    class DataInput(AssistantInputData):
+        image: VideoObject | list[ImageObject] | None
+        texts: list[LimitText] | dict[str, Selection] = Field(
+            description="texts description"
+        )
+        select: Selection
+
+
+    async def main(page: ft.Page):
+        uid = "0197a813-57b5-7dfa-aad4-7d36a58a62e7"
+        input_field = ChatInputField(
+            assistant_apps=dict(
+                dummy=AssistantApp(
+                    schema=DataInput, description="This is dummy", app_name="dummy app"
+                )
+            ),
+            username="hieu",
+            user_id=UUID(uid),
+            width=500,
+            height=500,
+        )
+        text = ft.Text()
+
+        async def on_click(e):
+            data = await input_field.get_input_data()
+            if data:
+                text.value = f"{repr(data)}"
+            else:
+                text.value = "NOTHING"
+            page.update()
+
+        button = ft.Button("select", on_click=on_click)
+        page.add(button, ft.Divider(thickness=5), input_field, text)
+
+
+    ft.app(main, view=ft.AppView.WEB_BROWSER)
+
+    """
 
     class _StackSyncList(SyncList):
         input_fields: _ChatInputFieldSyncStackObject
@@ -1409,14 +1574,14 @@ class ChatInputField(ft.Container):
         *,
         username: str,
         user_id: UUID,
-        **kwargs,
+        **kwargs: Unpack[ContainerArgs],
     ):
         """Parse assistant input to input field.
         Args:
             assistant_apps: get from ChatAssistantSVC.assistant_names
             **kwargs:
         """
-        assert len(assistant_apps)>0
+        assert len(assistant_apps) > 0
         self._apps = assistant_apps
         self._username = username
         self._user_id = user_id
@@ -1435,7 +1600,7 @@ class ChatInputField(ft.Container):
 
         with self._stack_lock:
             for name, app in self._apps.items():
-                self._add_assistant(name, app.schema, app.description, lock=False)
+                self._add_assistant(name, app.input_schema, app.description, lock=False)
             # self._dropdown.value = self._stack_sync_list.assistant_names[0]
             # self._current_assistant =
         super().__init__(**kwargs)
@@ -1451,11 +1616,11 @@ class ChatInputField(ft.Container):
             tuple of assistant name (name that shown to user, not app name) and validated AssistantInputData of current open assistant.
         """
         async with self._stack_lock:
-            if (name:= self._current_assistant) is None:
+            if (name := self._current_assistant) is None:
                 return None
             data = await self._get_input_field(name).get_assistant_data()
             try:
-                return self._apps[name].schema.model_validate(data)
+                return self._apps[name].input_schema.model_validate(data)
             except ValidationError as e:
                 if raise_if_validate_fail:
                     raise
@@ -1476,20 +1641,22 @@ class ChatInputField(ft.Container):
                 self._current_assistant = None
 
             ex = self._get_expansion(self._dropdown.value)
-            ex.disabled=False
+            ex.disabled = False
             ex.visible = True
             self._get_input_field(expansion=ex).enable()
             self._current_assistant = self._dropdown.value
             self.page.update()
 
-    def _get_expansion(self, assistant_name)->ft.ExpansionTile:
+    def _get_expansion(self, assistant_name) -> ft.ExpansionTile:
         expansion = self._stack_sync_list.get_values_by_value(
             "assistant_names", assistant_name, ["input_fields"]
         )["input_fields"]
         assert isinstance(expansion, ft.ExpansionTile)
         return expansion
 
-    def _get_input_field(self, assistant_name: str=None,*,expansion:ft.ExpansionTile = None) -> SchemaInputField:
+    def _get_input_field(
+        self, assistant_name: str = None, *, expansion: ft.ExpansionTile = None
+    ) -> SchemaInputField:
         """
         This method is change definition depend on the layout, so this act as interface, along with _get_expansion.
         Args:
@@ -1501,7 +1668,9 @@ class ChatInputField(ft.Container):
         assert assistant_name is not None or expansion is not None
         if assistant_name:
             expansion = self._get_expansion(assistant_name)
-        input_field = expansion.controls[0] # see _add_assistant" for details about expansion structure.
+        input_field = expansion.controls[
+            0
+        ]  # see _add_assistant" for details about expansion structure.
         assert isinstance(input_field, SchemaInputField)
         return input_field
 
@@ -1551,7 +1720,7 @@ class ChatInputField(ft.Container):
                 subtitle=ft.Text(description),
                 controls=[schema_field],
                 disabled=True,
-                visible=False
+                visible=False,
             )
             self._stack_sync_list.append(
                 input_fields=ex_title,
@@ -1654,15 +1823,114 @@ class ChatInputField(ft.Container):
         logger.warning(m)
         raise ValueError(m)
 
-
-for ta in ChatInputField._StackSyncList.adapters.values():
-    ta.rebuild()
-
-
 class ChatOutputField(ft.Container):
-    """
-    chat message,...
-    """
+    #todo, rerender this UI
+
+    def __init__(
+        self, *, username: str, user_id: UUID, **kwargs: Unpack[ContainerArgs]
+    ):
+
+        self._username = username
+        self._userid = user_id
+
+        self._list_lock = UniversalLock()
+        super().__init__(content=ft.ListView([]), **kwargs)
+
+    async def push(self, data: AssistantInputData | AssistantOutputData):
+        async with self._list_lock:
+            if isinstance(data, AssistantInputData):
+                title = ft.Text(self._username, text_align=ft.TextAlign.RIGHT)
+                mode = "user"
+                ex_title_kwargs = dict(
+                    affinity = ft.TileAffinity.TRAILING,
+                    expanded_alignment = ft.alignment.top_right
+                )
+            elif isinstance(data, AssistantOutputData):
+                title = ft.Text(
+                    data.assistant_name or "Unknow Assistant",
+                    text_align=ft.TextAlign.LEFT,
+                )
+                mode = "assistant"
+                ex_title_kwargs = dict(
+                    affinity=ft.TileAffinity.LEADING,
+                    expanded_alignment=ft.alignment.top_left,
+                )
+            else:
+                raise ValueError(
+                    f"Accept only AssistantInputData or AssistantOutputData instance. Got '{type(data)}'."
+                )
+
+            # If fails, log error and don't raise anything.
+            try:
+                if (data_format := await data.get_data_format()) is None:
+                    logger.info(
+                        f"'{self.__class__.__name__}.push()' got {repr(data)}. But data.get_data_format() return None. Nothing to push."
+                    )
+                    return
+                assert isinstance(data_format, DataFormat)
+            except AssertionError:
+                logger.error(
+                    f"Got '{repr(data)}'. But data.get_data_format() not return instance of 'DataFormat', but {type(data_format)}."
+                )
+            except Exception as e:
+                logger.error(
+                    f"Got '{repr(data)}'. But data.get_data_format() raise an exception: {repr(e)}"
+                )
+                # todo, notify user about assistant error.
+                return
+
+            control = await asyncio.to_thread(self._render, data_format, mode=mode)
+            ex_title = ft.ExpansionTile(
+                title,
+                controls=[control],
+                initially_expanded=True,
+                **ex_title_kwargs
+            )
+            self._message_list.append(ft.Container(content=ex_title,border=ft.border.all(5,color=ft.Colors.BLUE)))
+            self.page.update()
+
+    @property
+    def _message_list(self) -> list[ft.Container]:
+        return self.content.controls
+
+    def _render(
+        self, data: DataFormat, mode: Literal["user", "assistant"]
+    ) -> ft.Control:
+        assert mode in ["user","assistant"]
+        try:
+            control = getattr(self, f"_render_{data.type}")(data.content, mode=mode)
+        except Exception as e:
+            logger.error(
+                f"Cannot call render with type '{data.type}'. Exception {e}.\n"
+                f"Backup with text render."
+            )
+            control = self._render_text(data.content, mode=mode)
+        assert isinstance(control, ft.Control) # if even text render fails, raise error.
+        return control
+
+    # noinspection PyMethodMayBeStatic
+    def _render_text(self, content: str, **kwargs) -> ft.Control:
+        """Default render"""
+        mode = kwargs.get("mode", None)
+        if mode == "assistant":
+            text_align = ft.TextAlign.LEFT
+        elif mode == "user":
+            text_align = ft.TextAlign.RIGHT
+        else:
+            raise ValueError(mode)
+        return ft.Text(content, text_align=text_align)
+
+    # noinspection PyMethodMayBeStatic
+    def _render_html(self, content: str, **kwargs) -> ft.Control:
+        return parse_html_to_flet(content)
+
+    def _render_markdown(self, content: str, **kwargs) -> ft.Control:
+        return ft.Markdown(
+            content,
+            selectable=True,
+            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+            on_tap_link=lambda e: self.page.launch_url(e.data),
+        )
 
 
 if __name__ == "__main__":
