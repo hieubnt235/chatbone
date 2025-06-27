@@ -54,6 +54,7 @@ class _BaseDataStore(BaseClient):
 	redis: RedisWrapperClient | None = None
 
 
+# noinspection PyTypeChecker
 class _Access(_BaseDataStore):
 	path = '/access'
 
@@ -97,6 +98,7 @@ GetLatestUserSummariesRequest = ClientRequestSchema[UserSummarySVCGetLatest]
 DeleteOldUserSummariesRequest = ClientRequestSchema[UserSummarySVCDeleteOld]
 
 
+# noinspection PyTypeChecker
 class _UserSummary(_BaseDataStore):
 	path = '/summary'
 
@@ -105,12 +107,12 @@ class _UserSummary(_BaseDataStore):
 		pass
 
 	@get_datastore_response('GET', UserSummariesReturn)
-	async def get_latest(self, request: GetLatestUserSummariesRequest) -> ClientResponseSchema[UserSummariesReturn]:
+	async def get(self, request: GetLatestUserSummariesRequest) -> ClientResponseSchema[UserSummariesReturn]:
 		if request.body is not None:
 			request.params.update(request.body.model_dump())
 
 	@get_datastore_response('DELETE')
-	async def delete_old(self, request: DeleteOldUserSummariesRequest) -> ClientResponseSchema:
+	async def delete(self, request: DeleteOldUserSummariesRequest) -> ClientResponseSchema:
 		pass
 
 
@@ -143,6 +145,7 @@ GetLatestRequest = ClientRequestSchema[ChatSVCGetLatest]
 DeleteOldRequest = ClientRequestSchema[ChatSVCDeleteOld]
 
 
+# noinspection PyTypeChecker
 class _Message(_BaseDataStore):
 	path = '/message'
 
@@ -151,18 +154,19 @@ class _Message(_BaseDataStore):
 		pass
 
 	@get_datastore_response('GET', MessagesReturn)
-	async def get_latest(self, request: GetLatestRequest) -> ClientResponseSchema[MessagesReturn]:
+	async def get(self, request: GetLatestRequest) -> ClientResponseSchema[MessagesReturn]:
 		if request.body is not None:
 			request.params.update(request.body.model_dump())
 
 	@get_datastore_response('DELETE')
-	async def delete_old(self, request: DeleteOldRequest) -> ClientResponseSchema:
+	async def delete(self, request: DeleteOldRequest) -> ClientResponseSchema:
 		pass
 
 
 CreateChatSummaryRequest = ClientRequestSchema[ChatSummarySVCCreate]
 
 
+# noinspection PyTypeChecker
 class _ChatSummary(_BaseDataStore):
 	path = '/summary'
 
@@ -171,12 +175,12 @@ class _ChatSummary(_BaseDataStore):
 		pass
 
 	@get_datastore_response('GET', ChatSummariesReturn)
-	async def get_latest(self, request: GetLatestRequest) -> ClientResponseSchema[ChatSummariesReturn]:
+	async def get(self, request: GetLatestRequest) -> ClientResponseSchema[ChatSummariesReturn]:
 		if request.body is not None:
 			request.params.update(request.body.model_dump())
 
 	@get_datastore_response('DELETE')
-	async def delete_old(self, request: DeleteOldRequest) -> ClientResponseSchema:
+	async def delete(self, request: DeleteOldRequest) -> ClientResponseSchema:
 		pass
 
 
@@ -203,16 +207,16 @@ class DatastoreClient(_BaseDataStore):
         - datastore.user.access.delete(GetAndDeleteUserRequest) -> ClientResponseSchema[UserInfoReturn]
         - datastore.user.access.delete_tokens(DeleteTokensRequest) -> ClientResponseSchema
         - datastore.user.summary.create(CreateUserSummaryRequest) -> ClientResponseSchema
-        - datastore.user.summary.get_latest(GetLatestUserSummariesRequest) -> ClientResponseSchema[UserSummariesReturn]
-        - datastore.user.summary.delete_old(DeleteOldUserSummariesRequest) -> ClientResponseSchema
+        - datastore.user.summary.get(GetLatestUserSummariesRequest) -> ClientResponseSchema[UserSummariesReturn]
+        - datastore.user.summary.delete(DeleteOldUserSummariesRequest) -> ClientResponseSchema
         - datastore.chat.session.create(CreateChatSessionRequest) -> ClientResponseSchema[ChatSessionReturn]
         - datastore.chat.session.delete(DeleteChatSessionsRequest) -> ClientResponseSchema
         - datastore.chat.message.create(CreateMessageRequest) -> ClientResponseSchema
-        - datastore.chat.message.get_latest(GetLatestRequest) -> ClientResponseSchema[MessagesReturn]
-        - datastore.chat.message.delete_old(DeleteOldRequest) -> ClientResponseSchema
+        - datastore.chat.message.get(GetLatestRequest) -> ClientResponseSchema[MessagesReturn]
+        - datastore.chat.message.delete(DeleteOldRequest) -> ClientResponseSchema
         - datastore.chat.summary.create(CreateChatSummaryRequest) -> ClientResponseSchema
-        - datastore.chat.summary.get_latest(GetLatestRequest) -> ClientResponseSchema[ChatSummariesReturn]
-        - datastore.chat.summary.delete_old(DeleteOldRequest) -> ClientResponseSchema
+        - datastore.chat.summary.get(GetLatestRequest) -> ClientResponseSchema[ChatSummariesReturn]
+        - datastore.chat.summary.delete(DeleteOldRequest) -> ClientResponseSchema
 
 	Examples:
 		datastore = DatastoreClient(url='http://127.0.0.1:8000')

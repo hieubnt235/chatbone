@@ -2,13 +2,13 @@ import asyncio
 import dataclasses
 import os
 import threading
-from contextlib import contextmanager, asynccontextmanager, AbstractAsyncContextManager
+from contextlib import contextmanager, asynccontextmanager
 from contextvars import ContextVar
 from datetime import timedelta, datetime
 from enum import Enum
 from types import NoneType, UnionType
 from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Annotated,
-                    get_type_hints, get_origin, Generator, Awaitable, )
+                    get_type_hints, get_origin, Generator, Awaitable, AsyncIterator, )
 from uuid import UUID
 
 import filetype
@@ -21,6 +21,7 @@ from pydantic import (BaseModel, ConfigDict, model_validator, create_model, Fiel
 from pydantic.fields import FieldInfo
 from ray import serve
 from ray.exceptions import RayTaskError, TaskCancelledError
+from ray.serve._private.common import ReplicaState
 from ray.serve.handle import DeploymentHandle
 from uuid_extensions import uuid7
 
@@ -30,6 +31,7 @@ from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.settings.objest_storage import ObjectStorageSettings
 
+CHATBONE_ASSISTANT_APP_PREFIX = "<Chatbone_Assistant>"
 CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 
 
@@ -227,6 +229,7 @@ class MediaObject(BaseAssistantType):
         return await OBJ_STORAGE.remove_object(self.object_name)
 
 
+# noinspection PyTypeChecker
 AssistantDataType_T: tuple[Type[BaseAssistantType]] = ()
 """Assistant datatype in tuple format, use this to test with isinstance()."""
 
@@ -304,7 +307,7 @@ class DocumentObject(MediaObject):
 
 @assistant_datatype
 class TextStream(BaseAssistantType):
-    """For messages or text stream. Chunk is the unit of stream, all related chunk correlate to the same id."""
+    """For messages or text stream. Chunk is the unit of stream, all related chunks have the same id."""
 
     only = Only.OUTPUT
     id: UUID | int | str
@@ -330,8 +333,8 @@ class Text(BaseAssistantType):
     input_filter: ClassVar[InputFilter | None] = None
     """Filter the input of user. This is prevent user typing"""
 
-    validator: ClassVar[Callable[[str], str | None | Awaitable[str | None]]] = (
-        lambda v: v
+    validator: ClassVar[Callable[[str], str | None | Awaitable[str | None]]] = Field(
+        lambda v: v, exclude=True
     )
     """All exception will be catch and return None in handler. Handler also catch the return to str type is not string."""
 
@@ -381,7 +384,7 @@ class AssistantStatusCode(str, Enum):
 @assistant_datatype
 class Status(BaseAssistantType):
     only = Only.OUTPUT
-    to_user:bool = False
+    to_user: bool = False
     code: AssistantStatusCode
     detail: str | None = None
 
@@ -413,6 +416,7 @@ class Context(BaseAssistantType):
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
 
 
+# NOT SUPPORT ANYMORE
 # @assistant_datatype
 class BaseForm(BaseAssistantType):
     """For all arbitrary basic type (int, float,str,bool) and their container, nesting,...
@@ -471,32 +475,45 @@ class BaseForm(BaseAssistantType):
 class DataFormat(BaseModel):
     """The format to show to frontend."""
 
-    type: Literal["html", "markdown", "text"]
+    type: Literal["html", "markdown", "text"] = "text"
     content: str
 
 
+# noinspection PyTypeChecker
 class AssistantData(StreamData):
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
     input_schema: ClassVar[bool] = False
+    exclude_attrs: ClassVar[list[str]] = None
 
     # T means tuple, U means Union
     T: ClassVar[Any] = AssistantDataType_T
     U: ClassVar[Any] = AssistantDataType_U
 
     created_at: datetime = Field(default_factory=utc_now)
-    
+
     # noinspection PyMethodMayBeStatic
     async def get_data_format(self) -> DataFormat | None:
         """Override this method to show to user."""
-        return None
+
+        return DataFormat(
+            type="text",
+            content=self.model_dump_json(
+                indent=4,
+            ),
+        )
 
     @classmethod
     def iter_data_fields(cls) -> Generator[tuple[str, FieldInfo], None, None]:
         for name, field_info in cls.model_fields.items():
-            if get_origin(field_info.annotation) == ClassVar or name in [
-                "created_at",
-                "to_user",
-            ]:
+            if (
+                get_origin(field_info.annotation) == ClassVar
+                or name
+                in [
+                    "created_at",
+                    "to_user",
+                ]
+                + cls.exclude_attrs
+            ):
                 continue
             else:
                 yield name, field_info
@@ -525,10 +542,19 @@ class AssistantData(StreamData):
 
     @classmethod
     def __pydantic_init_subclass__(cls):
+        cls.exclude_attrs = cls.exclude_attrs or []
         fields: dict[str, FieldInfo] = cls.model_fields
         for name, field_info in fields.items():
             ann = field_info.annotation
-            if get_origin(ann) == ClassVar or name == "created_at":
+            if (
+                get_origin(field_info.annotation) == ClassVar
+                or name
+                in [
+                    "created_at",
+                    "to_user",
+                ]
+                + cls.exclude_attrs
+            ):
                 continue
             if field_info.metadata:
                 ann = Annotated[ann, *field_info.metadata]
@@ -598,7 +624,8 @@ class AssistantInputData(AssistantData):
 
 
 class AssistantOutputData(AssistantData):
-    assistant_name: ClassVar[str] = "Assistant"
+    exclude_attrs = ["assistant_name"]
+    assistant_name: str | None = Field(None, exclude=True)
     status: Status
 
 
@@ -624,8 +651,8 @@ assistant_streams: ContextVar[tuple[WriteStream, ReadStream]] = ContextVar(
 
 
 @contextmanager
-def _stream_cm(write_stream: ReadStream, read_stream: WriteStream):
-    token = assistant_streams.set((WriteStream, ReadStream))
+def _stream_cm(write_stream: WriteStream, read_stream: ReadStream):
+    token = assistant_streams.set((write_stream, read_stream))
     yield token
     assistant_streams.reset(token)
 
@@ -725,6 +752,7 @@ AssistantStreamer = Callable[
 ]
 
 
+# noinspection PyTypeChecker
 class BaseAssistant(BaseModel):
     """This class is the base class of assistant app."""
 
@@ -734,7 +762,7 @@ class BaseAssistant(BaseModel):
     streamer: AssistantStreamer
     input_schema: Type[AssistantInputData]
 
-    name: str
+    name: str | None = None
     """assistant name that will be shown to user frontend."""
 
     assistant_classes: ClassVar[list["BaseAssistant"]] = []
@@ -747,7 +775,11 @@ class BaseAssistant(BaseModel):
         if (st := fields["streamer"].annotation) != AssistantStreamer:
             m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
             raise TypeError(m)
-        if (it := fields["input_schema"].annotation) != Type[AssistantInputData]:
+        # Strict for not allow re define typehint
+        if (it := fields["input_schema"].annotation) not in (
+            type[AssistantInputData],
+            Type[AssistantInputData],
+        ):
             m = f"Typehint of 'input_schema' must be 'Type[AssistantInputData]'. Got '{it}'."
             raise TypeError(m)
 
@@ -762,8 +794,10 @@ class BaseAssistant(BaseModel):
         if not isinstance(sr := self.streamer(None), AsyncGenerator):
             m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
             raise ValueError(m)
+        
+        from utilities.logger import logger
         logger.info(
-            f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): {self.__class__.__name__} was initialized."
+            f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): '{self.__class__.__name__}' was initialized."
         )
 
     def get_schema(self):
@@ -774,9 +808,8 @@ class BaseAssistant(BaseModel):
 
     @classmethod
     def get_app(cls) -> serve.Application:
-        return serve.deployment(name=f"{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}")(
-            cls
-        ).bind()
+        return serve.deployment(
+            name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}")(cls).bind()
 
     async def handle_cancellation(self):
         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
@@ -803,6 +836,7 @@ class BaseAssistant(BaseModel):
                 raise ValueError(f"User data input type must be {self.input_schema}.")
             with _stream_cm(write_stream, read_stream) as token:
                 async for data in self._stream(data_input):
+                    data.assistant_name = self.name
                     await write_stream.write(data)
             await self._write_status(code=AssistantStatusCode.SUCCESS)
         except asyncio.CancelledError as e:
@@ -829,29 +863,32 @@ class AssistantInterface:
     """Chat app uses this class to communicate with assistant app."""
 
     @staticmethod
-    async def get_assistant_names() -> list[tuple[str, str]]:
+    async def get_assistant_names() -> dict[str, str]:
         """
-        Get all current healthy assistant app names
+        
         Returns:
-                list of tuple of assistant (app name, name).
+            A dict with format (assistant_name, app_name) 'app_name' are serve app_name, for internal use to get DeploymentHandle,
+            'assistant_name' is the one show to app or user.
         """
-        names = []
+
+
+        names = {}
         app_names = await asyncio.to_thread(
             AssistantInterface._get_healthy_assistant_app_names
         )
-        for an in app_names:
-            handle = await AssistantInterface.get_assistant_app_handle(an)
-            name = await handle.get_name.remote()
-            names.append((an, name))
+        for appname in app_names:
+            handle = await AssistantInterface.get_assistant_app_handle(appname)
+            as_name = await handle.get_name.remote()
+            names[as_name] = appname
         return names
 
     @staticmethod
-    async def get_assistant_schema(assistant_app_name: str) -> Type[AssistantData]:
+    async def get_assistant_schema(assistant_app_name: str) -> Type[AssistantInputData]:
         handle: DeploymentHandle = await AssistantInterface.get_assistant_app_handle(
             assistant_app_name
         )
         schema = await handle.get_schema.remote()
-        assert issubclass(schema, AssistantData)
+        assert issubclass(schema, AssistantInputData)
         return schema
 
     @staticmethod
@@ -864,7 +901,7 @@ class AssistantInterface:
     @asynccontextmanager
     async def call(
         name, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream
-    ) -> AbstractAsyncContextManager[asyncio.Task]:
+    ) -> AsyncIterator[asyncio.Task]:
         """
         Call assistant and return the asyncio.Task
         Args:
@@ -910,18 +947,21 @@ class AssistantInterface:
     def _get_healthy_assistant_app_names() -> list[str]:
         assistants = []
         apps = serve.status().applications
+        print(f"serve.status().applications return {apps}")
         for name, status in apps.items():
             if status.status == ray_schema.ApplicationStatus.RUNNING:
                 # Check healthy for all deployments and detect one name has assistant postfix
                 has_assistant_postfix: bool = False
                 has_one_deployment_not_healthy: bool = False
                 for depl_name, depl_status in status.deployments.items():
-                    if depl_name.endswith(CHATBONE_ASSISTANT_APP_POSTFIX):
+                    if depl_name.endswith(
+                        CHATBONE_ASSISTANT_APP_POSTFIX
+                    ) and depl_name.startswith(CHATBONE_ASSISTANT_APP_PREFIX):
                         has_assistant_postfix = True
                     if not (
                         depl_status.status == "HEALTHY"
                         and depl_status.status_trigger == "CONFIG_UPDATE_COMPLETED"
-                        and depl_status.replica_states["RUNNING"] > 0
+                        and depl_status.replica_states[ReplicaState.RUNNING] > 0
                     ):
                         has_one_deployment_not_healthy = True
                         break

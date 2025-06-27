@@ -481,6 +481,7 @@ dependencies = [
     { name = "flet", extra = ["all"] },
     { name = "flet-audio" },
     { name = "flet-toast" },
+    { name = "ft" },
     { name = "ipywidgets" },
     { name = "langchain" },
     { name = "langchain-google-genai" },
@@ -524,6 +525,7 @@ requires-dist = [
     { name = "flet", extras = ["all"], specifier = ">=0.28.3" },
     { name = "flet-audio", specifier = ">=0.1.0" },
     { name = "flet-toast", specifier = ">=0.6.0" },
+    { name = "ft", specifier = ">=1.0.0" },
     { name = "ipywidgets", specifier = ">=8.1.5" },
     { name = "langchain", specifier = ">=0.3.19" },
     { name = "langchain-google-genai", specifier = ">=2.1.5" },
@@ -1012,6 +1014,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/ed/41956f52105b8dbc26e457c5705340c67c8cc2b79f394b79bffc09d0e938/frozenlist-1.7.0-cp313-cp313t-win_amd64.whl", hash = "sha256:3bf8010d71d4507775f658e9823210b7427be36625b387221642725b515dcf3e", size = 47516 },
     { url = "https://files.pythonhosted.org/packages/ee/45/b82e3c16be2182bff01179db177fe144d58b5dc787a7d4492c6ed8b9317f/frozenlist-1.7.0-py3-none-any.whl", hash = "sha256:9a5af342e34f7e97caf8c995864c7a396418ae2859cc6fdf1b1073020d516a7e", size = 13106 },
 ]
+
+[[package]]
+name = "ft"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/89/02dcbdaaab0a68d140f6c72eeb440bb77e53c80cebc0be27d49c8b94f6cf/ft-1.0.0.tar.gz", hash = "sha256:bc34d58d7a01297ecbd1302dce8a5b119a2cd3b3a56cd57e2e3e3c8c3398b19d", size = 4893 }
 
 [[package]]
 name = "google-ai-generativelanguage"

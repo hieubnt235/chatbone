@@ -1,6 +1,6 @@
 import asyncio
-from contextlib import asynccontextmanager, AsyncExitStack, AbstractAsyncContextManager
-from typing import Callable, Coroutine, Self
+from contextlib import asynccontextmanager, AsyncExitStack
+from typing import Callable, Coroutine, Self, ClassVar, AsyncIterator
 from uuid import UUID
 
 import redis
@@ -54,18 +54,20 @@ class _DataSVC(BaseModel):
      The checking for deleting if reach maximum should be delete in cache, instead of direct database.
     """
 
-    __PRIVATE__ = "__PRIVATE__"
+    __PRIVATE__: ClassVar[str] = "__PRIVATE__"
 
     @handle_http_exception(ServerError)
     async def _create_chat_session(self, schema: ChatSVCBase) -> ChatSessionReturn:
-        user_info_res = await DATASTORE.user.access.get(
-            ClientRequestSchema[Token](
-                body=Token(token_id=schema.token_id),
-                timeout=CONFIG.datastore_request_timeout.default,
+        user_info_res: ClientResponseSchema[UserInfoReturn] = (
+            await DATASTORE.user.access.get(
+                ClientRequestSchema[Token](
+                    body=Token(token_id=schema.token_id),
+                    timeout=CONFIG.datastore_request_timeout.default,
+                )
             )
         )
 
-        if len(user_info_res.content.chat_ids >= CONFIG.max_sessions):
+        if len(user_info_res.content.chat_ids) >= CONFIG.max_sessions:
             raise TooManySessionsError(CONFIG.max_sessions)
 
         req = ClientRequestSchema[ChatSVCBase](
@@ -88,7 +90,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[ChatSVCDeleteOld](
             body=schema, timeout=CONFIG.datastore_request_timeout.message_delete_old
         )
-        return (await DATASTORE.chat.message.delete_old(req)).content
+        return (await DATASTORE.chat.message.delete(req)).content
 
     @handle_http_exception(ServerError)
     async def _get_messages(self, schema: ChatSVCGetLatest) -> MessagesReturn:
@@ -102,7 +104,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[ChatSVCGetLatest](
             body=schema, timeout=CONFIG.datastore_request_timeout.message_get_latest
         )
-        res = await DATASTORE.chat.message.get_latest(req)
+        res = await DATASTORE.chat.message.get(req)
 
         # Delete old
         if len(res.content.messages) > CONFIG.max_messages:
@@ -114,7 +116,7 @@ class _DataSVC(BaseModel):
                 )
             )
             # request again to confirm.
-            res = await DATASTORE.chat.message.get_latest(req)
+            res = await DATASTORE.chat.message.get(req)
             assert len(res.content.messages) <= CONFIG.max_messages
         return res.content
 
@@ -142,7 +144,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[ChatSVCDeleteOld](
             body=schema, timeout=CONFIG.datastore_request_timeout.summary_delete_old
         )
-        return (await DATASTORE.chat.summary.delete_old(req)).content
+        return (await DATASTORE.chat.summary.delete(req)).content
 
     @handle_http_exception(ServerError)
     async def _get_chat_summaries(
@@ -151,7 +153,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[ChatSVCGetLatest](
             body=schema, timeout=CONFIG.datastore_request_timeout.summary_get_latest
         )
-        res = await DATASTORE.chat.summary.get_latest(req)
+        res = await DATASTORE.chat.summary.get(req)
 
         # Delete old
         if len(res.content.summaries) > CONFIG.max_chat_summaries:
@@ -163,7 +165,7 @@ class _DataSVC(BaseModel):
                 )
             )
             # request again to confirm.
-            res = await DATASTORE.chat.summary.get_latest(req)
+            res = await DATASTORE.chat.summary.get(req)
             assert len(res.content.summaries) <= CONFIG.max_chat_summaries
         return res.content
 
@@ -192,7 +194,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[UserSummarySVCDeleteOld](
             body=schema, timeout=CONFIG.datastore_request_timeout.summary_delete_old
         )
-        return (await DATASTORE.user.summary.delete_old(req)).content
+        return (await DATASTORE.user.summary.delete(req)).content
 
     @handle_http_exception(ServerError)
     async def _get_user_summaries(
@@ -202,7 +204,7 @@ class _DataSVC(BaseModel):
         req = ClientRequestSchema[UserSummarySVCGetLatest](
             body=schema, timeout=CONFIG.datastore_request_timeout.summary_get_latest
         )
-        res = await DATASTORE.user.summary.get_latest(req)
+        res = await DATASTORE.user.summary.get(req)
 
         if len(res.content.summaries) > CONFIG.max_user_summaries:
             _ = await self._delete_old_user_summaries(
@@ -210,7 +212,7 @@ class _DataSVC(BaseModel):
                     token_id=schema.token_id, remain=CONFIG.max_user_summaries
                 )
             )
-            res = await DATASTORE.user.summary.get_latest(req)
+            res = await DATASTORE.user.summary.get(req)
             assert len(res.content.summaries) <= CONFIG.max_user_summaries
         return res.content
 
@@ -269,17 +271,18 @@ class ChatAssistantSVC(_DataSVC):
     def assistant_names(self) -> list[str]:
         return list(self.assistant_apps.keys())
 
-    def __init__(self, _ud, _as, *__PRIVATE__):
-        if not __PRIVATE__ == self.__PRIVATE__:
+    def __init__(self, *,_ud, _as,__PRIVATE__):
+        if not __PRIVATE__ == self.__class__.__PRIVATE__:
             raise ValueError(
                 "Does not support create this class through constructor, use 'create' method instead."
             )
-        super().__init__(userdata=_ud, assistant_app=_as)
+        super().__init__(userdata=_ud, assistant_apps=_as)
 
     @classmethod
     async def create(cls, userdata: UserDataCache):
         obj = cls(_ud=userdata, _as={}, __PRIVATE__=cls.__PRIVATE__)
         await obj.refresh()
+        return obj
 
     async def refresh(self):
         """Recapture all assistant apps and reload userdata."""
@@ -298,7 +301,7 @@ class ChatAssistantSVC(_DataSVC):
         return await self._call_data_svc_method(
             self._delete_chat_session,
             ChatSessionSVCDelete(
-                token_id=self.token_id, chat_session_ids=chat_session_id
+                token_id=self.token_id, chat_session_ids=[chat_session_id]
             ),
         )
 
@@ -348,7 +351,7 @@ class ChatAssistantSVC(_DataSVC):
     @asynccontextmanager
     async def chat(
         self, assistant_name: str, data: AssistantData, chat_session_id: UUID
-    ) -> AbstractAsyncContextManager[ChatHandle]:
+    ) -> AsyncIterator[ChatHandle]:
         """
         Args:
                 assistant_name:
@@ -403,8 +406,8 @@ class ChatAssistantSVC(_DataSVC):
 
     async def _init_all_assistant_app(self):
         names = await AssistantInterface.get_assistant_names()
-        for n in names:
-            self.assistant_apps[n[1]] = await AssistantApp.create(n[0])
+        for as_name, appname in names.items():
+            self.assistant_apps[as_name] = await AssistantApp.create(appname)
 
     async def _init_user_data(self):
         await self.userdata.refresh(exclude={})

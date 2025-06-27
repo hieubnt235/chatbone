@@ -1,63 +1,91 @@
-# This file was generated using the `serve build` command on Ray v2.44.1.
+# This file was generated using the `serve build` command on Ray v2.47.0.
+#  serve build auth:app datastore:app chatbone:app dummy:app -o ./deployments/compose/serve.yaml
+# serve run deployments/compose/serve.yaml
 
 proxy_location: EveryNode
 
 http_options:
-
+    
     host: 0.0.0.0
-
+    
     port: 8000
 
-#grpc_options:
-#
-#    port: 9000
-#
-#    grpc_servicer_functions: [ ]
-#
-#logging_config:
-#
-#    encoding: TEXT
-#
-#    log_level: INFO
-#
-#    logs_dir: null
-#
-#    enable_access_log: true
-#
-#    additional_log_standard_attrs: [ ]
+grpc_options:
+    
+    port: 9000
+    
+    grpc_servicer_functions: [ ]
+
+logging_config:
+    
+    encoding: TEXT
+    
+    log_level: INFO
+    
+    logs_dir: null
+    
+    enable_access_log: true
+    
+    additional_log_standard_attrs: [ ]
 
 applications:
 
-    -   name: auth
+-   name: auth
 
-        route_prefix: /auth
+    route_prefix: /auth
 
-        import_path: auth:app
+    import_path: auth:app
 
-        runtime_env: { }
+    runtime_env: { }
 
-        deployments:
+    deployments:
 
-            -   name: Auth
-                num_replicas: 2
-                ray_actor_options:
-                    num_cpus: 0.5
-                    num_gpus: 0
+    -   name: Auth
+        num_replicas: 2
+        ray_actor_options:
+            num_cpus: 0.5
 
+-   name: datastore
 
-    -   name: datastore
+    route_prefix: /datastore
 
-        route_prefix: /datastore
+    import_path: datastore:app
 
-        import_path: datastore:app
+    runtime_env: { }
 
-        runtime_env: { }
+    deployments:
 
-        deployments:
+    -   name: Datastore
+        num_replicas: 2
+        ray_actor_options:
+            num_cpus: 0.5
 
-            -   name: Datastore
-                num_replicas: 2
-                ray_actor_options:
-                    num_cpus: 0.5
-                    num_gpus: 0
-
+#-   name: chatbone
+#
+##    route_prefix: /
+#
+#    import_path: chatbone:app
+#
+#    runtime_env: { }
+#
+#    deployments:
+#
+#    -   name: Chatbone
+#        num_replicas: 2
+#        ray_actor_options:
+#            num_cpus: 0.5
+#
+#-   name: dummy
+#
+#    route_prefix: null
+#
+#    import_path: dummy:app
+#
+#    runtime_env: { }
+#
+#    deployments:
+#
+#    -   name: <Chatbone_Assistant>DummyAssistant<Chatbone_Assistant>
+#        num_replicas: 2
+#        ray_actor_options:
+#            num_cpus: 0.5

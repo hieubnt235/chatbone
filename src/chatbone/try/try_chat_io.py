@@ -1,23 +1,12 @@
 from uuid import UUID
 
+import flet as ft
 from pydantic import Field
 
-import flet as ft
-from chatbone.assistant_interface import (
-    AssistantInputData,
-    ImageObject,
-    VideoObject,
-    Text,
-    BaseSelection,
-    DocumentObject,
-    AssistantOutputData,
-    DataFormat,
-    Status,
-    AssistantStatusCode,
-)
+from chatbone.assistant_interface import (AssistantInputData, ImageObject, VideoObject, Text, BaseSelection,
+                                          AssistantOutputData, DataFormat, Status, AssistantStatusCode, )
 from chatbone.chat.chat_io import ChatInputField, ChatOutputField
 from chatbone.chat.svc import AssistantApp
-from utilities.logger import logger
 
 
 class Selection(BaseSelection):
@@ -87,7 +76,6 @@ flet.app(target=main, port=8550)
         return DataFormat(type="markdown",content=md)
 
 class DataOutput(AssistantOutputData):
-    assistant_name = "dummy assistant"
     text: Text = Text(role="assistant", content="this is dummy output text.")
     
     async  def get_data_format(self) -> DataFormat | None:
@@ -119,10 +107,11 @@ async def main(page: ft.Page):
 
     async def on_click(e):
         data = await input_field.get_input_data()
+        as_name, data = data
         if data:
             text.value = repr(data)
             await output_field.push(data)
-            await output_field.push(DataOutput(status=Status(code=AssistantStatusCode.DONE)))
+            await output_field.push(DataOutput(assistant_name=as_name,status=Status(code=AssistantStatusCode.DONE)))
         else:
             text.value = "NOTHING"
         page.update()

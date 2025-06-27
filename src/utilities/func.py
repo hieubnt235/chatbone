@@ -112,7 +112,7 @@ def solve_relative_paths_recursively(data: dict, abs_path: Path):
 			data[k] = (abs_path / Path(v)).resolve().as_posix()
 
 def dump_base_models(base_models:list[BaseModel], mode:Literal['json','python']='python'):
-	return [b.model_dump(mode=mode) for b in base_models]
+	return [b.model_dump(mode=mode) for b in base_models if isinstance(b,BaseModel)]
 
 
 

@@ -143,24 +143,12 @@ class ContainerArgs(TypedDict):
     adaptive: Optional[bool]
 
 
-class BaseUI(ft.Container, BaseModel, ABC):
-    model_config = arbitrary_types_allowed_config
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.content = self._get_content()
-
-    @abstractmethod
-    def _get_content(self) -> ft.Control:
-        """This method return a content as ft.Control to pass it to ft.Container.content"""
-
-
 class BaseInputField(ABC, ft.Container):
 
     def __init__(self, *args, **kwargs: Unpack[ContainerArgs]):
         self._able_lock = UniversalLock()
 
-        self._snackbar: ft.SnackBar = None
+        self._snackbar: ft.SnackBar|None = None
         """For notice user"""
 
         super().__init__(*args, **kwargs)
@@ -330,6 +318,7 @@ class _FilePicker(ft.FilePicker):
         )
 
 
+# noinspection PyTypeChecker
 class MediaInputField(BaseInputField):
     """Preview field for one file."""
 
@@ -359,7 +348,7 @@ class MediaInputField(BaseInputField):
 
             self._filename = filename
             self._media_field = media_field
-            self.media_object: AnyMediaObject = None
+            self.media_object: AnyMediaObject|None = None
 
         async def _unselect(self, e):
             await self._media_field._unselect(self._filename)
@@ -805,7 +794,7 @@ class MultiOptionsInputField(BaseInputField):
 
     async def get_assistant_data(
         self, return_meta: bool = False, c: AssistantDataType_U = None
-    ) -> AssistantDataType_U | list[AssistantDataType_U] | None:
+    ) -> AssistantDataType_U | list[AssistantDataType_U] | None| tuple[str, AssistantDataType_U | list[AssistantDataType_U] | None]:
         """
         Returns:
             A tuple of key and data if return_meta is True else return just data.
@@ -834,6 +823,7 @@ class InputFieldFactory(BaseModel):
     kwargs: dict[str, Any] = Field(default_factory=dict)
 
 
+# noinspection PyTypeChecker
 class ListInputField(BaseInputField):
 
     class _SavedField(ft.Row):
@@ -870,13 +860,14 @@ class ListInputField(BaseInputField):
             return self._input_field
 
     def __init__(self, input_field_factory: InputFieldFactory, **kwargs):
-        if not iscoroutinefunction(input_field_factory):
+        if not iscoroutinefunction(input_field_factory.factory):
             f = input_field_factory.factory
 
             async def _factory(*args, **kwargs):
                 return await asyncio.to_thread(f, *args, **kwargs)
 
             input_field_factory.factory = _factory
+            
         self._input_field_factory: InputFieldFactory = input_field_factory
 
         self._add_new_button = ft.IconButton(
@@ -1365,7 +1356,7 @@ class TupleInputField(BaseInputField):
 
     async def get_assistant_data(
         self, **kwargs
-    ) -> tuple[AssistantDataType_U | List[AssistantDataType_U]] | None:
+    ) -> tuple[AssistantDataType_U | List[AssistantDataType_U],...] | None:
         """Return tuple of all field data, or None if there is one that's lack of data."""
         l = []
         for field in self.input_fields:
@@ -1609,7 +1600,7 @@ class ChatInputField(ft.Container):
     async def get_input_data(
         self, raise_if_validate_fail: bool = False
     ) -> tuple[str, AssistantInputData] | None:
-        """
+        """todo: support validate with default (change all input fields to receive default data. and parser inject that.)
         Args:
             raise_if_validate_fail: If False, return None if validate fail.
         Returns:
@@ -1620,7 +1611,7 @@ class ChatInputField(ft.Container):
                 return None
             data = await self._get_input_field(name).get_assistant_data()
             try:
-                return self._apps[name].input_schema.model_validate(data)
+                return name, self._apps[name].input_schema.model_validate(data)
             except ValidationError as e:
                 if raise_if_validate_fail:
                     raise
@@ -1878,7 +1869,8 @@ class ChatOutputField(ft.Container):
                 )
                 # todo, notify user about assistant error.
                 return
-
+            
+            # noinspection PyTypeChecker
             control = await asyncio.to_thread(self._render, data_format, mode=mode)
             ex_title = ft.ExpansionTile(
                 title,

@@ -50,10 +50,10 @@ class ViewParams(BaseModel):
 
 
 class Views(BaseModel):
-    main: ViewParams = ViewParams(route="/")
+    home: ViewParams = ViewParams(route="/")
     login: ViewParams = ViewParams(route="/login")
     signup: ViewParams = ViewParams(route="/signup")
-    # chat: ViewParams = ViewParams(route='/chat')
+    app: ViewParams = ViewParams(route='/app')
 
 
 class ChatConfig(Config):

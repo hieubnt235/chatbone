@@ -4,9 +4,19 @@ import json
 from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from inspect import iscoroutine
-from typing import (Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args, )
+from typing import (
+    Literal,
+    Self,
+    Awaitable,
+    Any,
+    Sequence,
+    ClassVar,
+    get_origin,
+    get_args,
+    AsyncIterator,
+)
 from uuid import UUID
 
 from cloudpickle import cloudpickle
@@ -25,6 +35,7 @@ LOCK_POSTFIX = "<LOCK>"
 NULL = "null"
 
 
+# noinspection PyTypeChecker
 class ChatboneData(BaseModel, ABC):
     """This class for data work with Redis.
     All Redis keys are very important for cascade deleting or expiring, they must:
@@ -122,9 +133,12 @@ class ChatboneData(BaseModel, ABC):
         return new_object
 
     @classmethod
-    @property
-    def rkey_prefix(cls):
+    def _rkey_prefix(cls):
         return f"{cls.__module__}:{cls.__name__}"
+
+    @property
+    def rkey_prefix(self):
+        return self._rkey_prefix()
 
     @property
     def rkey(self) -> str:
@@ -170,14 +184,11 @@ class ChatboneData(BaseModel, ABC):
                 # if not a property or a field
                 continue
 
+            attr = getattr(self, name)
+
             # Field case: Field exist, and a field value type must be ChatboneData,
             # list[ChatBoneData], Tuple[ChatBoneData,...] and dict[Any, ChatBoneData]
-            if (
-                isinstance(
-                    attr := getattr(self, name), (ChatboneData, list, dict, tuple)
-                )
-                and f is not None
-            ):
+            if isinstance(attr, (ChatboneData, list, dict, tuple) ) and f is not None:
                 org = get_origin(f.annotation)
 
                 if org is None:
@@ -217,7 +228,9 @@ class ChatboneData(BaseModel, ABC):
             elif (iscoroutine(attr) or callable(attr)) or (not name.endswith("_rkey")):
                 # Filter properties or field.
                 continue
-
+            elif  attr is None or attr == NULL:
+                continue # see Userdata.encrypted_secret_rkey for example of this case
+            
             else:
                 try:
                     assert isinstance(attr, str)
@@ -239,7 +252,9 @@ class ChatboneData(BaseModel, ABC):
     async def all_sub_rkeys(self) -> list[str]:
         return await asyncio.to_thread(self.get_all_sub_rkeys)
 
-    async def expire(self, num_seconds: float, redis_or_pipeline: Redis | None = None):
+    async def expire(
+        self, num_seconds: int | timedelta, redis_or_pipeline: Redis | None = None
+    ):
         """Expire all keys of this object. Note that this method doesn't watch for existing of keys during expiring.
         Args:
                 num_seconds:
@@ -264,7 +279,7 @@ class ChatboneData(BaseModel, ABC):
 
     async def expire_cascade(
         self,
-        num_seconds: float,
+        num_seconds: int | timedelta,
         keys: list[str],
         redis_or_pipeline: Redis | None = None,
     ):
@@ -298,6 +313,7 @@ class ChatboneData(BaseModel, ABC):
         obj = (await self.refresh()) if refresh else self
         if expire_seconds is not None:
             await obj.expire(expire_seconds)
+        logger.info(f"Saved userdata: {repr(obj)}")
         return obj
 
     async def delete(self) -> int:
@@ -322,14 +338,17 @@ class ChatboneData(BaseModel, ABC):
                 If the pipeline is given, return None.
         """
         await asyncio.to_thread(self._check_list_params, field, values)
-
+        if len(values)==0:
+            logger.info(f"Skip append with no value.")
+            return
+        data = await asyncio.to_thread(dump_base_models, values, "json")
         async with self._get_transaction_pipeline(
             redis_or_pipeline, execute=False
         ) as pipeline:
             coro: Awaitable[list[int | None]] = pipeline.json().arrappend(
                 self.rkey,
                 f"{self._jsonpath}.{field}",
-                *(await asyncio.to_thread(dump_base_models, values, "json")),
+                **data,
             )
             await coro
             if not redis_or_pipeline:
@@ -682,6 +701,7 @@ class ChatSessionData(ChatboneData):
     messages: list[Message] = Field(default_factory=list)
     summaries: list[str] = Field(default_factory=list)
 
+    # noinspection PyTypeChecker
     @asynccontextmanager
     async def get_streams(
         self,
@@ -690,7 +710,7 @@ class ChatSessionData(ChatboneData):
         read_only: bool = False,
         write_streams_acquire_timeout: int | None = None,
         raise_on_write_streams_acquire_fail: bool = True,
-    ) -> AbstractAsyncContextManager[
+    ) -> AsyncIterator[
         dict[Literal["as2cs", "cs2as"], list[WriteStream | ReadStream | None]]
     ]:
         """
@@ -904,9 +924,10 @@ class UserData(ChatboneData):
                 "Cannot resolve 'encrypted_secret_rkey', you must 'refresh' default mode to load dynamic rkeys first."
             )
         if self.encrypted_secret_token == NULL:
-            logger.warning(
-                f"encrypted_secret_token in Redis server is null (not string) value but still exist."
-            )
+            # logger.warning(
+            #     f"encrypted_secret_token in Redis server is null (not string) value but still exist."
+            # )
+            return None  # get_all_rkey will ignore this
         return f"{self.rkey_prefix}:<encrypted_token>:{self.encrypted_secret_token}"
 
     async def get_encrypted_token(self, skip_if_exist: bool = True) -> str:
@@ -969,7 +990,7 @@ class UserData(ChatboneData):
         """
         if (
             secret_key := await cls.redis.get(
-                f"{cls.rkey_prefix}:<encrypted_token>:{encrypted_token}"
+                f"{cls._rkey_prefix()}:<encrypted_token>:{encrypted_token}"
             )
         ) is None:
             raise EncryptedTokenError(
@@ -995,7 +1016,7 @@ class UserData(ChatboneData):
 
     async def heartbeat(
         self,
-        expire_seconds: float,
+        expire_seconds: int | timedelta,
         sleep_ratio: float | None = None,
         sleep_seconds: float | None = None,
     ):
@@ -1040,10 +1061,12 @@ class UserData(ChatboneData):
             for k, v in cs_dict.items()
         }
 
-        # bound
+        self._bound_cs(cs_dict)
+        self.chat_sessions.update(cs_dict)
+        return cs_dict
+
+    def _bound_cs(self, cs_dict: dict[UUID, ChatSessionData]):
         for cs in cs_dict.values():
             cs.bind_rkey_and_json_path(
                 self.rkey, f"{self._jsonpath}.chat_sessions.{cs.id}"
             )
-        self.chat_sessions.update(cs_dict)
-        return cs_dict

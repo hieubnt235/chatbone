@@ -26,6 +26,7 @@ dependencies = [
     "flet-audio>=0.1.0",
     "flet-toast>=0.6.0",
     "flet[all]>=0.28.3",
+    "ft>=1.0.0",
     "ipywidgets>=8.1.5",
     "langchain>=0.3.19",
     "langchain-google-genai>=2.1.5",
@@ -53,12 +54,20 @@ dependencies = [
     "wheel>=0.45.1",
 ]
 
-[tool.setuptools]
-#include-package-data = true # default
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src","examples"]
 include = ["*"]
+
+[tool.setuptools]
+#include-package-data = true # default
+py-modules=["fake_app"]
+
+#[tool.setuptools.package-dir]
+#examples = "/examples"
+#myproj.algorithms = "algorithms"
+#myproj.configs = "configs"
+
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "session"
