@@ -1,7 +1,9 @@
+import base64
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
+from uuid import UUID
 from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet
 import psutil
@@ -115,6 +117,14 @@ def dump_base_models(base_models:list[BaseModel], mode:Literal['json','python']=
 	return [b.model_dump(mode=mode) for b in base_models if isinstance(b,BaseModel)]
 
 
+def uuid_to_base64(uuid_obj: UUID) -> str:
+    encoded_bytes = base64.urlsafe_b64encode(uuid_obj.bytes)
+    return encoded_bytes.decode('ascii').rstrip('=')
 
+def base64_to_uuid(base64_str: str) -> UUID:
+    padded_str = base64_str + '=' * (4 - len(base64_str) % 4)
+    decoded_bytes = base64.urlsafe_b64decode(padded_str.encode('ascii'))
+    return UUID(bytes=decoded_bytes)
+# todo measure time function
 # async def get_tasks(pid:int|None=None):
 # 	ts = [t.get_coro().__qualname__ for t in asyncio.all_tasks()]

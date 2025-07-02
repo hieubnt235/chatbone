@@ -68,7 +68,7 @@ class ChatConfig(Config):
     userdata_expire_seconds: PositiveInt = 59
     """For expire userdata cache."""
 
-    write_streams_accquire_timeout: PositiveInt = 5
+    write_streams_acquire_timeout: PositiveInt = 5
     """Time for accquire write stream lock."""
 
     views: Views = Views()

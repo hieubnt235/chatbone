@@ -29,6 +29,7 @@ Requires-Dist: langgraph>=0.4.8
 Requires-Dist: loguru>=0.7.3
 Requires-Dist: miniopy-async>=1.23.0
 Requires-Dist: notebook>=7.3.2
+Requires-Dist: pipreqs>=0.5.0
 Requires-Dist: pwdlib[argon2]>=0.2.1
 Requires-Dist: pydantic-settings>=2.9.1
 Requires-Dist: pyjwt>=2.10.1

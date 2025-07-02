@@ -62,7 +62,15 @@ class UniversalLock:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await asyncio.to_thread(self._tlock.release)
-
+    
+    @property
+    def locked(self)->bool:
+        return self._tlock.locked()
+    
+    @property
+    async def alocked(self)->bool:
+        return await asyncio.to_thread(self._tlock.locked)
+    
     @asynccontextmanager
     async def alock(
         self, blocking: bool = True, timeout: float = -1, raise_when_false: bool = True
@@ -310,7 +318,7 @@ class SyncList(BaseModel):
                     config=ConfigDict(arbitrary_types_allowed=True, defer_build=True),
                 )
                 _check_default(field.default)
-        logger.info(f"list keys of {cls.__name__} are {cls.adapters.keys()}")
+        logger.debug(f"list keys of {cls.__name__} are {cls.adapters.keys()}")
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         ref_l = len(self.get_list(self.list_names[0]))
@@ -410,7 +418,7 @@ class SyncList(BaseModel):
             case "list":
                 return [self.get_list(name) for name in self.list_keys]
             case "tuple":
-                return (self.get_list(name) for name in self.list_keys)
+                return tuple(self.get_list(name) for name in self.list_keys)
             case "dict":
                 return {name: self.get_list(name) for name in self.list_keys}
         raise ValueError(mode)
@@ -497,3 +505,4 @@ class SyncList(BaseModel):
         for k, v in self.get_all_lists(mode="dict").items():
             s += f"{k}={v}\n"
         return s
+    

@@ -3,23 +3,25 @@ from contextlib import asynccontextmanager, AsyncExitStack
 from typing import Callable, Coroutine, Self, ClassVar, AsyncIterator
 from uuid import UUID
 
+import anyio
 import redis
+from anyio.streams.memory import MemoryObjectSendStream, MemoryObjectReceiveStream
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from redis.exceptions import LockError
 
 from chatbone.assistant_interface import (
     AssistantInterface,
-    AssistantData,
     AssistantInputData,
+    AssistantOutputData,
+    RequestInput,
+    UserInputData,
 )
 from chatbone.broker import (
     UserData as UserDataCache,
     UserToken,
     ChatSessionData,
-    Message,
-    WriteStream,
-    ReadStream,
+    DataSegment,
+    DisplayMessage,
 )
 from chatbone.chat.settings import DATASTORE, CONFIG, AUTH
 from utilities.exception import handle_http_exception
@@ -246,13 +248,17 @@ class AssistantApp(BaseModel):
     @classmethod
     async def create(cls, assistant_app_name) -> Self:
         schema = await AssistantInterface.get_assistant_schema(assistant_app_name)
-        return cls(app_name=assistant_app_name, schema=schema)
+        return cls(app_name=assistant_app_name, input_schema=schema)
+
+
+AssistantOutputStreamType = AssistantOutputData | RequestInput
 
 
 class ChatHandle(BaseModel):
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    write_stream: WriteStream
-    read_stream: ReadStream
+    stream_sender: MemoryObjectSendStream[AssistantInputData]
+    stream_reader: MemoryObjectReceiveStream[AssistantOutputStreamType]
     task: asyncio.Task
 
 
@@ -271,7 +277,7 @@ class ChatAssistantSVC(_DataSVC):
     def assistant_names(self) -> list[str]:
         return list(self.assistant_apps.keys())
 
-    def __init__(self, *,_ud, _as,__PRIVATE__):
+    def __init__(self, *, _ud, _as, __PRIVATE__):
         if not __PRIVATE__ == self.__class__.__PRIVATE__:
             raise ValueError(
                 "Does not support create this class through constructor, use 'create' method instead."
@@ -332,12 +338,17 @@ class ChatAssistantSVC(_DataSVC):
                 ),
             )
 
+            # TODO: RETRIEVE FROM DATABASE
             def _extract():
-                s = [s.summary for s in chat_summaries.summaries]
-                m = [Message(role=m.role, content=m.content) for m in messages.messages]
+                # todo: change this method become to decode the database data
+                m = [
+                    DisplayMessage(role=m.role, content=m.content)
+                    for m in messages.messages
+                ]
                 return {
                     chat_session_id: ChatSessionData(
-                        id=chat_session_id, messages=m, summaries=s
+                        id=chat_session_id,
+                        data_segments=[DataSegment()],  # todo: this is dummy for now
                     )
                 }
 
@@ -348,57 +359,105 @@ class ChatAssistantSVC(_DataSVC):
                 chat_session_id
             ]
 
+    # noinspection PyTypeChecker
     @asynccontextmanager
     async def chat(
-        self, assistant_name: str, data: AssistantData, chat_session_id: UUID
+        self, chat_session_id: UUID, user_input: UserInputData
     ) -> AsyncIterator[ChatHandle]:
-        """
-        Args:
-                assistant_name:
-                data:
-                chat_session_id:
-        Raises:
-                ValueError: assistant name or data are not correct.
-        Notes:
-                Both errors may be solved by recreating this object (user refresh page). Or maybe internal server error.
-
-        Yields:
-                Tuple (WriteStream, ReadStream)
-        """
         try:
-            assistant_app = self.assistant_apps[assistant_name]
-            assert isinstance(data, assistant_app.input_schema)
+            assistant_app = self.assistant_apps[user_input.assistant_name]
+            assert isinstance(user_input.data, assistant_app.input_schema)
         except (KeyError, AssertionError) as e:
             raise ValueError(f"Static check fail for assistant. {e}")
 
         cs = await self.get_chat_session(chat_session_id)
         async with AsyncExitStack() as stack:
-            try:
-                streams = await stack.enter_async_context(
-                    cs.get_streams(
-                        write_streams_acquire_timeout=CONFIG.write_stream_accquire_timeout
-                    )
+            streams = await stack.enter_async_context(
+                cs.get_streams(
+                    write_streams_acquire_timeout=CONFIG.write_streams_acquire_timeout,
+                    raise_on_write_streams_acquire_fail=True,
                 )
-            except LockError:
-                streams = await stack.enter_async_context(
-                    cs.get_streams(read_only=True)
-                )
+            )
+
+            logger.debug(f"Redis stream got: {streams}")
 
             # todo: prepare context.
-            #
+            # todo: handle read stream only case.
 
-            task = await stack.enter_async_context(
-                AssistantInterface.call(assistant_name, data, *streams["as2cs"])
-            )
+            # Long code for type hint and code complete
+            as2cs_ostreams: tuple[
+                MemoryObjectSendStream[AssistantOutputStreamType],
+                MemoryObjectReceiveStream[AssistantOutputStreamType],
+            ] = anyio.create_memory_object_stream[AssistantOutputStreamType](10000)
+            cs2as_ostreams: tuple[
+                MemoryObjectSendStream[AssistantInputData],
+                MemoryObjectReceiveStream[AssistantInputData],
+            ] = anyio.create_memory_object_stream[AssistantInputData](10000)
+            as2cs_sender, as2cs_reader = as2cs_ostreams
+            cs2as_sender, cs2as_reader = cs2as_ostreams
+
+            async def _handle_assistant_data_task():
+                try:
+                    async with as2cs_sender:
+                        async for data in streams.as2cs.read_stream.bind("$",10,save_checkpoint=True):
+                            logger.debug(f"Service handler received {len(data)} redis stream data: \n{repr(data)}")
+                            # todo: choose what data to send to chat session, check status, for now just send all
+                            for datum in data:
+                                assert isinstance(datum, AssistantOutputStreamType)
+                                assert datum.chat_context_id == user_input.data.chat_context_id
+                                await as2cs_sender.send(datum)
+                except asyncio.CancelledError:
+                    pass
+
+            async def _handle_input_data_task():
+                try:
+                    async with cs2as_reader:
+                        async for data in cs2as_reader:
+                            streams.cs2as.write_stream.write(data)
+                except asyncio.CancelledError:
+                    pass
+
+            async def _chat_task():
+                tasks = [
+                    asyncio.create_task(
+                        AssistantInterface.call(
+                            self.assistant_apps[user_input.assistant_name].app_name,
+                            user_input,
+                            streams.as2cs,
+                        )
+                    ),
+                    asyncio.create_task(
+                        _handle_assistant_data_task(),
+                        name="_handle_assistant_data_task",
+                    ),
+                    asyncio.create_task(
+                        _handle_input_data_task(), name="_handle_input_data_task"
+                    ),
+                ]
+
+                try:
+                    done, pending = await asyncio.wait(
+                        tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in pending:
+                        task.cancel()
+
+                    for task in done:
+                        if task.exception() is not None and not asyncio.CancelledError:
+                            raise task.exception()
+                except asyncio.CancelledError:
+                    for task in tasks:
+                        task.cancel()
+                        await task
+
             chat_handle = ChatHandle(
-                write_stream=streams["cs2as"][0],
-                read_stream=streams["cs2as"][1],
-                task=task,
+                stream_sender=cs2as_sender,
+                stream_reader=as2cs_reader,
+                task=asyncio.create_task(_chat_task()),
             )
-            yield chat_handle  # chat app uses these streams.
+            yield chat_handle
 
-            # TODO: persist data.
-        # // HACK
+            # TODO: persist data after success.
 
     @property
     def token_id(self) -> UUID:

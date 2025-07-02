@@ -2,30 +2,58 @@ import asyncio
 import dataclasses
 import os
 import threading
-from contextlib import contextmanager, asynccontextmanager
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta, datetime
 from enum import Enum
 from types import NoneType, UnionType
-from typing import (AsyncGenerator, Type, ClassVar, Callable, Self, Any, get_args, Sequence, Literal, Annotated,
-                    get_type_hints, get_origin, Generator, Awaitable, AsyncIterator, )
+from typing import (
+    AsyncGenerator,
+    Type,
+    ClassVar,
+    Callable,
+    Self,
+    Any,
+    get_args,
+    Sequence,
+    Literal,
+    Annotated,
+    get_type_hints,
+    get_origin,
+    Generator,
+    Awaitable,
+    AsyncIterator,
+)
 from uuid import UUID
 
 import filetype
-import ray
 import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
 from filetype.types.image import Jpeg
-from pydantic import (BaseModel, ConfigDict, model_validator, create_model, Field, TypeAdapter, ValidationError, )
-from pydantic.fields import FieldInfo
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    model_validator,
+    create_model,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    NonNegativeInt,
+)
+from pydantic.fields import FieldInfo, PrivateAttr
 from ray import serve
-from ray.exceptions import RayTaskError, TaskCancelledError
+from ray.exceptions import TaskCancelledError
 from ray.serve._private.common import ReplicaState
+from ray.serve.exceptions import RequestCancelledError
 from ray.serve.handle import DeploymentHandle
 from uuid_extensions import uuid7
 
-from chatbone.broker import WriteStream, ReadStream, StreamData
+from chatbone.broker import (
+    StreamData,
+    StreamPair,
+    DisplayMessage,
+)
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
 from utilities.logger import logger
@@ -305,18 +333,6 @@ class DocumentObject(MediaObject):
     )  # TODO: support txt
 
 
-@assistant_datatype
-class TextStream(BaseAssistantType):
-    """For messages or text stream. Chunk is the unit of stream, all related chunks have the same id."""
-
-    only = Only.OUTPUT
-    id: UUID | int | str
-    chunk: str
-
-    state: Literal["start", "end", "stream"]
-    """Stream only saved if there is start and end text stream, otherwise, it just show the stream to user."""
-
-
 @dataclasses.dataclass
 class InputFilter:
     regex_string: str
@@ -333,13 +349,10 @@ class Text(BaseAssistantType):
     input_filter: ClassVar[InputFilter | None] = None
     """Filter the input of user. This is prevent user typing"""
 
-    validator: ClassVar[Callable[[str], str | None | Awaitable[str | None]]] = Field(
-        lambda v: v, exclude=True
+    input_validator: ClassVar[Callable[[str], str | None | Awaitable[str | None]]] = (
+        lambda v: v
     )
-    """All exception will be catch and return None in handler. Handler also catch the return to str type is not string."""
 
-    role: str
-    """role of Text sent from chat session always be "user" and only role "assistant" will be shown in main dialog. """
     content: str
 
     @classmethod
@@ -369,48 +382,6 @@ class BaseSelection(BaseAssistantType):
         if (val := v["selection"]) not in cls._options:
             raise ValidationError(f"'selection' must be in {cls._options}. Got {val}")
         return v
-
-
-class AssistantStatusCode(str, Enum):
-    START = "start"
-    DONE = "done"
-    SUCCESS = "success"
-    ERROR = "error"
-    CANCELED = "canceled"
-    CANCELING = "canceling"
-    PROCESSING = "processing"
-
-
-@assistant_datatype
-class Status(BaseAssistantType):
-    only = Only.OUTPUT
-    to_user: bool = False
-    code: AssistantStatusCode
-    detail: str | None = None
-
-
-@assistant_datatype
-class Context(BaseAssistantType):
-    """Store chat context as string value, such as user summary, history summaries, or summaries of an image, audio,...
-    This is the input of assistant, but given by app, not by user.
-    """
-
-    to_user: bool = False
-    only = Only.INPUT
-
-    context: dict[str, str] = None
-
-    # noinspection PyNestedDecorators
-    @model_validator(mode="before")
-    @classmethod
-    def _check_init(cls, data: dict):
-        if not data.get("context") and not data.get("context_loader"):
-            raise ValueError("'context' or 'context_loader' must be provided.")
-        return data
-
-    # noinspection PyMethodMayBeStatic
-    async def get(self) -> dict[str, str]:
-        return {}  # default
 
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
@@ -472,47 +443,40 @@ class BaseForm(BaseAssistantType):
                 cls._validate_type(new_ann)
 
 
-class DataFormat(BaseModel):
-    """The format to show to frontend."""
-
-    type: Literal["html", "markdown", "text"] = "text"
-    content: str
-
-
 # noinspection PyTypeChecker
-class AssistantData(StreamData):
+class AssistantData(StreamData, DisplayMessage):
+
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
-    input_schema: ClassVar[bool] = False
-    exclude_attrs: ClassVar[list[str]] = None
+    _is_input_schema: ClassVar[bool] = False
+    _default_exclude_attrs: ClassVar[list[str]] = None
+    _exclude_attrs: ClassVar[list[str]] = None
 
     # T means tuple, U means Union
     T: ClassVar[Any] = AssistantDataType_T
     U: ClassVar[Any] = AssistantDataType_U
 
-    created_at: datetime = Field(default_factory=utc_now)
+    _chat_context_id: UUID = PrivateAttr(default_factory=uuid7)
+    """All data including input, status code, request input and output data in one chat unique uuid.
+    This is set by app, not user or dev.
+    """
+    _created_at: datetime = PrivateAttr(default_factory=utc_now)
 
-    # noinspection PyMethodMayBeStatic
-    async def get_data_format(self) -> DataFormat | None:
-        """Override this method to show to user."""
+    @property
+    def chat_context_id(self):
+        assert self._chat_context_id is not None
+        return self._chat_context_id
 
-        return DataFormat(
-            type="text",
-            content=self.model_dump_json(
-                indent=4,
-            ),
-        )
+    @property
+    def created_at(self):
+        assert self._created_at is not None
+        return self._created_at
 
     @classmethod
     def iter_data_fields(cls) -> Generator[tuple[str, FieldInfo], None, None]:
         for name, field_info in cls.model_fields.items():
             if (
                 get_origin(field_info.annotation) == ClassVar
-                or name
-                in [
-                    "created_at",
-                    "to_user",
-                ]
-                + cls.exclude_attrs
+                or name in cls._exclude_attrs
             ):
                 continue
             else:
@@ -523,7 +487,7 @@ class AssistantData(StreamData):
         cls, model_schema: dict[str, Any], doc: str | None = None
     ) -> Type["AssistantData"]:
         """
-        todo: is this method necessary? or just directly inherit ?
+        todo: is this method necessary? or just directly inherit ? NO IT IS USED TO DYNAMICALLY GEN BY LLM.
         Create a data model dynamically.
         Args:
                 model_schema: dictionary with keys as name and
@@ -542,18 +506,16 @@ class AssistantData(StreamData):
 
     @classmethod
     def __pydantic_init_subclass__(cls):
-        cls.exclude_attrs = cls.exclude_attrs or []
+        cls._exclude_attrs = cls._exclude_attrs or []
+        if cls._default_exclude_attrs is not None:
+            cls._exclude_attrs.extend(cls._default_exclude_attrs)
+
         fields: dict[str, FieldInfo] = cls.model_fields
         for name, field_info in fields.items():
             ann = field_info.annotation
             if (
                 get_origin(field_info.annotation) == ClassVar
-                or name
-                in [
-                    "created_at",
-                    "to_user",
-                ]
-                + cls.exclude_attrs
+                or name in cls._exclude_attrs
             ):
                 continue
             if field_info.metadata:
@@ -572,7 +534,7 @@ class AssistantData(StreamData):
             if not ann in cls.T and not issubclass(ann, cls.T):
                 m = f"Does not support field annotation '{ann.__name__}' of '{cls.__name__}.{name}'.Type hint must be in {[t.__name__ for t in cls.T]}."
                 raise ValueError(m)
-            if cls.input_schema:
+            if cls._is_input_schema:
                 assert issubclass(ann, BaseAssistantType)
                 if ann.only == Only.OUTPUT:
                     m = f"Input schema can not contain output-only type '{ann.__name__}' of {cls.__name__}.{name}'."
@@ -619,14 +581,68 @@ class AssistantData(StreamData):
         return RequestInput(id=uid, data_type=request_model)
 
 
+class ContextCollector:
+    """ """
+
+    # todo
+
+
 class AssistantInputData(AssistantData):
-    input_schema = True
+    # class attrs
+    _exclude_attrs = ["context", "username"]
+    _is_input_schema = True
+
+    _username: str
+    _context: Any = None
+    """Get from context collector"""
+
+    @property
+    def username(self) -> str:
+        return self._username
+
+    @property
+    def context(self):
+        return self._context
+
+
+class AssistantStatusCode(str, Enum):
+    START = "start"
+    DONE = "done"
+    SUCCESS = "success"
+    ERROR = "error"
+    CANCELED = "canceled"
+    CANCELING = "canceling"
+    PROCESSING = "processing"
+
+
+class Status(BaseModel):
+    code: AssistantStatusCode
+    detail: str | None = None
 
 
 class AssistantOutputData(AssistantData):
-    exclude_attrs = ["assistant_name"]
-    assistant_name: str | None = Field(None, exclude=True)
-    status: Status
+    _exclude_attrs = ["stream_place"]
+    stream_place: int = 0
+
+    # These are set by app.
+    _assistant_name: str | None = PrivateAttr(None)
+    _status: Status | None = PrivateAttr(None)
+    _chunk_order: NonNegativeInt | None = PrivateAttr(None)
+
+    @property
+    def status(self):
+        assert self._status is not None
+        return self._status
+
+    @property
+    def assistant_name(self):
+        assert self._assistant_name is not None
+        return self._assistant_name
+
+    @property
+    def chunk_order(self):
+        assert self._chunk_order is not None
+        return self._chunk_order
 
 
 class RequestInput(StreamData):
@@ -634,27 +650,45 @@ class RequestInput(StreamData):
     Note: This class is used when assistant request input from user while running.
     """
 
+    request_prompt: str  # todo: formatted type string like md or html
+
+    request_schema: ClassVar[type[AssistantInputData]] = None
+
     model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
-    id: UUID = Field(frozen=True)
-    data_type: Type[AssistantInputData] = Field(frozen=True)
-    data: AssistantInputData | None = None
 
-    @model_validator(mode="after")
-    def check_data(self) -> Self:
-        assert isinstance(self.data, (self.data_type, None))  # None means no response.
-        return self
+    id: UUID = Field(frozen=True, default_factory=uuid7)
+    """The receiver will check for this id to know if it is a response for the request"""
+
+    _data: AssistantInputData | None = None
+
+    @property
+    def data(self):
+        assert isinstance(self._data, AssistantInputData)
+        return self._data
+
+    def set_response_data(self, data_response: Any):
+        self._data = self.request_schema.model_validate(data_response)
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        assert issubclass(cls.request_schema, AssistantInputData)
 
 
-assistant_streams: ContextVar[tuple[WriteStream, ReadStream]] = ContextVar(
-    "assistant_streams"
+class AssistantStreamContext(BaseModel):
+    stream_pair: StreamPair
+    chat_context_id: UUID
+
+
+assistant_stream_context: ContextVar[AssistantStreamContext] = ContextVar(
+    "assistant_stream_context"
 )
 
 
 @contextmanager
-def _stream_cm(write_stream: WriteStream, read_stream: ReadStream):
-    token = assistant_streams.set((write_stream, read_stream))
+def _stream_cm(context: AssistantStreamContext):
+    token = assistant_stream_context.set(context)
     yield token
-    assistant_streams.reset(token)
+    assistant_stream_context.reset(token)
 
 
 # Note: request_user_input is tool call, so it should have nice docstring, also argument should be serialized as
@@ -707,7 +741,7 @@ async def request_user_input(
         AssistantData._create_request, schema
     )
 
-    write_stream, read_stream = assistant_streams.get()
+    write_stream, read_stream = assistant_stream_context.get()
     logger.info(
         f"Sending input request to user through stream with key '{write_stream.key}'..."
     )
@@ -794,8 +828,9 @@ class BaseAssistant(BaseModel):
         if not isinstance(sr := self.streamer(None), AsyncGenerator):
             m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
             raise ValueError(m)
-        
+
         from utilities.logger import logger
+
         logger.info(
             f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): '{self.__class__.__name__}' was initialized."
         )
@@ -809,7 +844,8 @@ class BaseAssistant(BaseModel):
     @classmethod
     def get_app(cls) -> serve.Application:
         return serve.deployment(
-            name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}")(cls).bind()
+            name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}"
+        )(cls).bind()
 
     async def handle_cancellation(self):
         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
@@ -817,46 +853,98 @@ class BaseAssistant(BaseModel):
 
     async def _stream(
         self, data: AssistantInputData
-    ) -> AsyncGenerator[AssistantOutputData, None]:
+    ) -> AsyncIterator[AssistantOutputData]:
+        logger.debug(f"{self.__class__.__name__} start stream with data {repr(data)}.")
+
+        chunk_index: dict[int, int] = {}
         async for chunk in self.streamer(data):
             if not isinstance(chunk, AssistantOutputData):
                 raise ValueError(
                     "The returned of graph is not the instance of 'AssistantOutputData'."
                 )
+
+            if chunk.stream_place in chunk_index:
+                chunk_index[chunk.stream_place] += 1
+            else:
+                chunk_index[chunk.stream_place] = 0
+
+            chunk._chunk_order = chunk_index[chunk.stream_place]
+
+            logger.debug(
+                f"Assistant yield chunk {repr(chunk)}, chunk_order={chunk.chunk_order}"
+            )
             yield chunk
 
-    async def __call__(
-        self,
-        data_input: AssistantInputData,
-        write_stream: WriteStream,
-        read_stream: ReadStream,
-    ):
-        try:
-            if not isinstance(data_input, self.input_schema):
-                raise ValueError(f"User data input type must be {self.input_schema}.")
-            with _stream_cm(write_stream, read_stream) as token:
-                async for data in self._stream(data_input):
-                    data.assistant_name = self.name
-                    await write_stream.write(data)
-            await self._write_status(code=AssistantStatusCode.SUCCESS)
-        except asyncio.CancelledError as e:
-            await self._write_status(code=AssistantStatusCode.CANCELING)
+        logger.info("Done stream BaseAssistant")
+
+    async def __call__(self, data_input: AssistantInputData, stream_pair: StreamPair):
+        logger.info(f"{self.name} called with {repr(data_input)}.")
+
+        # Interface or app must handle all of these assertions, it's app role, not user or dev role.
+        assert isinstance(data_input, self.input_schema)
+
+        chat_context_id = data_input.chat_context_id
+        logger.debug(f"chat_context_id={data_input.chat_context_id}")
+
+        context = AssistantStreamContext(
+            stream_pair=stream_pair, chat_context_id=chat_context_id
+        )
+
+        with _stream_cm(context) as token:
             try:
-                await self.handle_cancellation()
+                await self._write_status(code=AssistantStatusCode.START)
+
+                async for data in self._stream(data_input):
+                    assert isinstance(data, AssistantOutputData)
+
+                    data._assistant_name = self.name
+                    data._chat_context_id = chat_context_id
+                    data._status = Status(code=AssistantStatusCode.PROCESSING)
+
+                    await stream_pair.write_stream.write(data)
+                    logger.debug(f"Wrote data {repr(data)}, chat_context_id: {data.chat_context_id}, status: {data.status}")
+
+                await self._write_status(code=AssistantStatusCode.SUCCESS)
+
+            except asyncio.CancelledError as e:
+                try:
+                    await self._write_status(code=AssistantStatusCode.CANCELING)
+                    await self.handle_cancellation()
+                except Exception as e:
+                    await self._write_status(
+                        code=AssistantStatusCode.ERROR, detail=str(e)
+                    )
+                finally:
+                    await self._write_status(code=AssistantStatusCode.CANCELED)
+
             except Exception as e:
+                logger.exception(e)
                 await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
-            await self._write_status(code=AssistantStatusCode.CANCELED)
-        except Exception as e:
-            await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
-        finally:
-            await self._write_status(AssistantStatusCode.DONE)
+                # raise e # Not expected error, hot fix by logger.exception() for now.
+            finally:
+                await self._write_status(AssistantStatusCode.DONE)
 
     # noinspection PyMethodMayBeStatic
-    async def _write_status(self, code: AssistantStatusCode, detail: str | None = None):
-        write_stream = assistant_streams.get()[0]
-        await write_stream.write(
-            AssistantData(status=Status(code=AssistantStatusCode.DONE, detail=detail))
-        )
+    async def _write_status(
+        self,
+        code: AssistantStatusCode,
+        detail: str | None = None,
+    ):
+        context = assistant_stream_context.get()
+        write_stream = context.stream_pair.write_stream
+        context_id = context.chat_context_id
+
+        status_data = AssistantOutputData()
+        status_data._chat_context_id = context_id
+        status_data._status = Status(code=code, detail=detail)
+        status_data._assistant_name = self.name
+
+        await write_stream.write(status_data)
+
+
+class UserInputData(BaseModel):
+    assistant_name: str | None = None
+    data: AssistantInputData | None = None
 
 
 class AssistantInterface:
@@ -865,12 +953,11 @@ class AssistantInterface:
     @staticmethod
     async def get_assistant_names() -> dict[str, str]:
         """
-        
+
         Returns:
             A dict with format (assistant_name, app_name) 'app_name' are serve app_name, for internal use to get DeploymentHandle,
             'assistant_name' is the one show to app or user.
         """
-
 
         names = {}
         app_names = await asyncio.to_thread(
@@ -898,46 +985,27 @@ class AssistantInterface:
         )
 
     @staticmethod
-    @asynccontextmanager
-    async def call(
-        name, data: AssistantData, write_stream: WriteStream, read_stream: ReadStream
-    ) -> AsyncIterator[asyncio.Task]:
-        """
-        Call assistant and return the asyncio.Task
-        Args:
-                name:
-                data:
-                write_stream:
-                read_stream:
+    async def call(app_name, user_input: UserInputData, stream_pair: StreamPair):
+        """Call ray task and block until success"""
+        handle = await AssistantInterface.get_assistant_app_handle(app_name)
+        task = handle.remote(user_input.data, stream_pair)
 
-        Returns:
-                asyncio.Task: This can be used for cancel the call task.
-        """
-        handle = await AssistantInterface.get_assistant_app_handle(name)
-        task = asyncio.create_task(
-            AssistantInterface._call_task(handle, data, write_stream, read_stream)
+        logger.debug(
+            f"AssistantInterface called assistant {user_input.assistant_name}. chat_context_id = {user_input.data.chat_context_id}"
         )
-        yield task
-        task.cancel()
-        await task
 
-    @staticmethod
-    async def _call_task(
-        handle: DeploymentHandle,
-        data: AssistantData,
-        write_stream: WriteStream,
-        read_stream: ReadStream,
-    ):
-        task = handle.remote(data, write_stream, read_stream)
         try:
             await task
-        except asyncio.CancelledError:
-            ray.cancel(task)
+        except asyncio.CancelledError as e:
+            logger.debug(f"Assistant call cancelling...")
+            task.cancel()
             try:
                 await task
-            except RayTaskError as e:
-                if not isinstance(e.cause, TaskCancelledError):
+            except RequestCancelledError as e:
+                if not isinstance(e, TaskCancelledError):
+                    logger.exception(e)
                     raise e
+                logger.debug("Ray call cancelled successfully.")
 
     @staticmethod
     def _get_assistant_app_handle(assistant_name: str) -> DeploymentHandle:

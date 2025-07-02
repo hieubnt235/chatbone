@@ -6,17 +6,7 @@ from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncEx
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from inspect import iscoroutine
-from typing import (
-    Literal,
-    Self,
-    Awaitable,
-    Any,
-    Sequence,
-    ClassVar,
-    get_origin,
-    get_args,
-    AsyncIterator,
-)
+from typing import (Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args, AsyncIterator, )
 from uuid import UUID
 
 from cloudpickle import cloudpickle
@@ -188,7 +178,7 @@ class ChatboneData(BaseModel, ABC):
 
             # Field case: Field exist, and a field value type must be ChatboneData,
             # list[ChatBoneData], Tuple[ChatBoneData,...] and dict[Any, ChatBoneData]
-            if isinstance(attr, (ChatboneData, list, dict, tuple) ) and f is not None:
+            if isinstance(attr, (ChatboneData, list, dict, tuple)) and f is not None:
                 org = get_origin(f.annotation)
 
                 if org is None:
@@ -228,9 +218,9 @@ class ChatboneData(BaseModel, ABC):
             elif (iscoroutine(attr) or callable(attr)) or (not name.endswith("_rkey")):
                 # Filter properties or field.
                 continue
-            elif  attr is None or attr == NULL:
-                continue # see Userdata.encrypted_secret_rkey for example of this case
-            
+            elif attr is None or attr == NULL:
+                continue  # see Userdata.encrypted_secret_rkey for example of this case
+
             else:
                 try:
                     assert isinstance(attr, str)
@@ -338,7 +328,7 @@ class ChatboneData(BaseModel, ABC):
                 If the pipeline is given, return None.
         """
         await asyncio.to_thread(self._check_list_params, field, values)
-        if len(values)==0:
+        if len(values) == 0:
             logger.info(f"Skip append with no value.")
             return
         data = await asyncio.to_thread(dump_base_models, values, "json")
@@ -395,6 +385,8 @@ class ChatboneData(BaseModel, ABC):
         async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
             coros: list[Awaitable[list[int | None]]] = []
             for k, v in values.items():
+                if isinstance(v,BaseModel):
+                    v=v.model_dump(mode="json")
                 coros.append(
                     pipeline.json().set(self.rkey, f"{self._jsonpath}.{field}.{k}", v)
                 )
@@ -520,22 +512,27 @@ class ChatboneData(BaseModel, ABC):
                 if execute:
                     await pipeline.execute()
 
+# Stream Data
+
+EncodedStreamData = dict[FieldT, EncodableT]
 
 class StreamData(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def _encode(self) -> dict[FieldT, EncodableT]:
+    def _encode(self) -> EncodedStreamData:
         return {f"{StreamData}": cloudpickle.dumps(self)}
 
     @classmethod
-    def _decode(cls, data: dict[FieldT, EncodableT]) -> Self:
-        return cloudpickle.loads(data[f"{cls}".encode()])
+    def _decode(cls, data: EncodedStreamData) -> Self:
+        data = cloudpickle.loads(data[f"{cls}".encode()])
+        assert isinstance(data, StreamData)
+        return data
 
-    async def encode(self) -> dict[str, int | float | str | bytes]:
+    async def encode(self) -> EncodedStreamData:
         return await asyncio.to_thread(self._encode)
 
     @classmethod
-    async def decode(cls, data: dict[str, int | float | str | bytes]) -> Self:
+    async def decode(cls, data: EncodedStreamData) -> Self:
         return await asyncio.to_thread(cls._decode, data)
 
 
@@ -616,6 +613,7 @@ class ReadStream(Stream):
         save_checkpoint: bool | None = None,
     ) -> Self:
         """Create a new object with new state. Use current states if they are not provided.
+        None arg means hold the current settings.
         Args:
                 checkpoint:
                 count:
@@ -624,9 +622,9 @@ class ReadStream(Stream):
                 New object of ReadStream.
         """
         new_obj = self.__class__(self.key)
-        new_obj._checkpoint_id = checkpoint or self._checkpoint_id
-        new_obj._count = count or self._count
-        new_obj._save_checkpoint = save_checkpoint or self._save_checkpoint
+        new_obj._checkpoint_id = checkpoint if checkpoint is not None else self._checkpoint_id
+        new_obj._count = count if count is not None else self._count
+        new_obj._save_checkpoint = save_checkpoint if save_checkpoint is not None else self._save_checkpoint
         return new_obj
 
     async def read(
@@ -656,22 +654,27 @@ class ReadStream(Stream):
 			
 			protocol 3
 			{'test_stream': [ [('1749050499833-0', {'abc': '123'}),('1749050622319-0', {'abc': '123'}), ('1749050817070-0', {'abc': '123'})]] }
-		With non encodable data, just return byte stream.
+		With non encodable data, just return byte stream, so the stream key is also byte type.
 		"""
-        checkpoint = checkpoint or self._checkpoint_id
+        checkpoint = checkpoint if checkpoint is not None else self._checkpoint_id
         count = count or self._count
 
         data = await get_redis(decode_responses=False, protocol=3).xread(
             {self.key: checkpoint}, count, block
         )
+        logger.debug(f"Redis read with checkpoint {checkpoint}")
         if data:
             data = data[self.key.encode()][0]
-            logger.debug(f"Read data: {data}")
             decoded_data = []
             for d in data:
                 decoded_data.append(await StreamData.decode(d[1]))
+                
             if self._save_checkpoint:
-                self._checkpoint_id = data[-1][0].encode()
+                ckpt = data[-1][0]
+                assert isinstance(ckpt,bytes)
+                new_ckpt = ckpt.decode()
+                self._checkpoint_id = new_ckpt
+                logger.debug(f"Change checkpoint of read stream to {new_ckpt}")
             return decoded_data
         else:
             assert data == {}
@@ -683,11 +686,75 @@ class ReadStream(Stream):
     async def __anext__(self) -> list[StreamData]:
         return await self.read(block=0)  # block forever.
 
+class StreamPair(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    write_stream: WriteStream | None = None
+    read_stream: ReadStream | None = None
 
-class Message(BaseModel):
-    role: Literal["user", "system", "assistant"]
+class ChatStreams(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    as2cs: StreamPair = Field(default_factory=StreamPair)
+    cs2as: StreamPair = Field(default_factory=StreamPair)
+
+# Cache Data Model
+
+class DisplayableMessage(BaseModel):
+    role: Literal["assistant", "user"]
+    type: Literal["markdown", "html"] = "markdown"
+    sender: str|None=None
+    
     content: str
+    
+    # format_attrs: set[str] = Field(default_factory=set)
 
+class DisplayMessage:
+
+    async def get_display_message(self)-> DisplayableMessage | None:
+        try:
+            m = await self._compose_displayable_data()
+            # attr_values = {}
+            # for attr in m.format_attrs:
+            #     try:
+            #         value = getattr(self, attr)
+            #         if isawaitable(value):
+            #             attr_values[attr] = await value
+            #         elif iscoroutinefunction(value):
+            #             attr_values[attr] = (
+            #                 await value()
+            #             )  # Only for none parameters functions
+            #         elif callable(value):
+            #             attr_values[attr] = await asyncio.to_thread(value)
+            #         else:
+            #             attr_values[attr] = value
+            #     except Exception as e:
+            #         attr_values[attr] = e
+            #     await asyncio.sleep(0.1)  # Prevent for blocking.
+            #
+            # m.content.format(**attr_values)
+        except NotImplementedError:
+            return None
+            
+        return m
+
+    async def _compose_displayable_data(self)->DisplayableMessage:
+        raise NotImplementedError
+
+
+class DataSegment(BaseModel):
+    """User can make subclass of this class to custom any data to cache and storage. Such as context,...
+    This class will be used to collect the context.
+    Note: instance of this class MUST BE PICKLEABLE.
+    """
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    messages: list[DisplayMessage] = Field(default_factory=list)
+    """List of message to display to chat dialog in the order."""
+    
+    def encode(self)->str:
+        return cloudpickle.dumps(self)
+    
+    @classmethod
+    def decode(cls, v: bytes )->Self:
+        return cloudpickle.loads(v)
 
 class ChatSessionData(ChatboneData):
     """
@@ -695,12 +762,9 @@ class ChatSessionData(ChatboneData):
             1. Init value to add to UserData.
             2. After added to UserData and refresh, it will bind with user data, now it can interact with server data.
     """
-
     embedding = True
-
-    messages: list[Message] = Field(default_factory=list)
-    summaries: list[str] = Field(default_factory=list)
-
+    data_segments: list[DataSegment] = Field(default_factory=list)
+    
     # noinspection PyTypeChecker
     @asynccontextmanager
     async def get_streams(
@@ -710,9 +774,7 @@ class ChatSessionData(ChatboneData):
         read_only: bool = False,
         write_streams_acquire_timeout: int | None = None,
         raise_on_write_streams_acquire_fail: bool = True,
-    ) -> AsyncIterator[
-        dict[Literal["as2cs", "cs2as"], list[WriteStream | ReadStream | None]]
-    ]:
+    ) -> AsyncIterator[ChatStreams]:
         """
         Args:
                 write_only:
@@ -720,7 +782,7 @@ class ChatSessionData(ChatboneData):
                 write_streams_acquire_timeout:
                 raise_on_write_streams_acquire_fail
         Returns:
-                dict of as2cs and cs2as streams with value is (write stream, read stream).
+            ChatStreams
         Raises:
                 LockError: Timeout because the others are using the 'write' role of the stream.
         Examples:
@@ -732,64 +794,82 @@ class ChatSessionData(ChatboneData):
         await self.init_stream_keys()
         get_all = not write_only and not read_only
         keys = [self.cs2as_stream_rkey, self.as2cs_stream_rkey]
-        locked: bool = False
 
-        ret_streams = dict(as2cs=[], cs2as=[])
+        locked: bool = False  # for debug purpose.
+
+        ret_streams = ChatStreams()
 
         async def _append_streams(stream_cls: WriteStream | ReadStream | None):
-            streams = (
-                [None, None]
-                if stream_cls is None
-                else [
-                    await stream_cls._create(self.as2cs_stream_rkey),
-                    await stream_cls._create(self.cs2as_stream_rkey),
-                ]
-            )
-            ret_streams["as2cs"].append(streams[0])
-            ret_streams["cs2as"].append(streams[1])
+            if stream_cls is None:
+                return
+            if stream_cls == WriteStream:
+                ret_streams.as2cs.write_stream = await stream_cls._create(
+                    self.as2cs_stream_rkey
+                )
+                ret_streams.cs2as.write_stream = await stream_cls._create(
+                    self.cs2as_stream_rkey
+                )
+            elif stream_cls == ReadStream:
+                ret_streams.as2cs.read_stream = await stream_cls._create(
+                    self.as2cs_stream_rkey
+                )
+                ret_streams.cs2as.read_stream = await stream_cls._create(
+                    self.cs2as_stream_rkey
+                )
 
-        stream_cls = [None, None]
         async with AsyncExitStack() as stack:
             try:
+                # Get write streams
                 if write_only or get_all:
-                    acquire_timeout = (
-                        write_streams_acquire_timeout
-                        or CONFIG.redis_acquire_lock_timeout
-                    )
-                    _ = [
-                        await stack.enter_async_context(
-                            self.redis.lock(
-                                f"{key}:{LOCK_POSTFIX}",
-                                blocking_timeout=acquire_timeout,
-                            )
+                    try:
+                        acquire_timeout = (
+                            write_streams_acquire_timeout
+                            or CONFIG.redis_acquire_lock_timeout
                         )
-                        for key in keys
-                    ]
-                    locked = True
-                    logger.debug(
-                        f"Write streams pair of chat session '{self.id}' were acquired."
-                    )
-                    stream_cls[0] = WriteStream
-                await _append_streams(stream_cls[0])
+                        _ = [
+                            await stack.enter_async_context(
+                                self.redis.lock(
+                                    f"{key}:{LOCK_POSTFIX}",
+                                    blocking_timeout=acquire_timeout,
+                                )
+                            )
+                            for key in keys
+                        ]
+                        locked = True
+                        logger.debug(
+                            f"Write streams pair of chat session '{self.id}' were acquired."
+                        )
+                        ret_streams.as2cs.write_stream = await WriteStream._create(
+                            self.as2cs_stream_rkey
+                        )
+                        ret_streams.cs2as.write_stream = await WriteStream._create(
+                            self.cs2as_stream_rkey
+                        )
 
+                    except LockError:
+                        logger.debug(
+                            f"Chat session '{self.id}' write stream acquired locks fail after trying for {acquire_timeout} seconds."
+                        )
+                        if raise_on_write_streams_acquire_fail:
+                            raise
+
+                # Get read streams, will be skiped if the getting write streams fail.
                 if read_only or get_all:
-                    stream_cls[1] = ReadStream
-                await _append_streams(stream_cls[1])
+                    ret_streams.as2cs.read_stream = await ReadStream._create(
+                        self.as2cs_stream_rkey
+                    )
+                    ret_streams.cs2as.read_stream = await ReadStream._create(
+                        self.cs2as_stream_rkey
+                    )
 
                 yield ret_streams
 
-            except LockError:
-                logger.debug(
-                    f"Chat session '{self.id}' write stream acquired locks fail after trying for {acquire_timeout} seconds."
-                )
-                if raise_on_write_streams_acquire_fail:
-                    raise
             except Exception as e:
                 logger.exception(e)
                 raise e
             finally:
                 if locked:
-                    logger.debug(
+                    logger.info(
                         f"Write streams of chat session '{self.id}' were released."
                     )
 

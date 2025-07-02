@@ -49,6 +49,57 @@ services:
         networks:
             - chatbone-network
         command: server /data --console-address ":9001"
+    
+    auth:
+        shm_size: '2gb'
+        build:
+            context: ../..
+            dockerfile: deployments/auth/auth.Dockerfile
+        image: auth-app:latest
+        
+        container_name: auth_app
+        ports:
+            - "23500:8000"
+            - "23501:8265"
+        environment:
+            AUTH_DATASTORE__URL: "http://datastore:8000"
+            AUTH_CONFIG__FILE: "./config.toml"
+        
+        command: ["uv","run", "uvicorn",
+                  "--host","0.0.0.0",
+                  "auth:app"]
+        
+        networks:
+        - chatbone-network
+        
+        
+    datastore:
+        shm_size: '2gb'
+        build:
+            context: ../..
+            dockerfile: deployments/datastore/datastore.Dockerfile
+        image: datastore-app:latest
+        container_name: datastore_app
+        
+        ports:
+        - "23502:8000"
+        - "23503:8265"
+        environment:
+            DATASTORE_DB__DRIVERNAME: 'postgresql+asyncpg'
+            DATASTORE_DB__USERNAME: 'hieu'
+            DATASTORE_DB__PASSWORD: '2352001'
+            DATASTORE_DB__HOST: 'postgres'
+            DATASTORE_DB__PORT: '5432'
+            DATASTORE_DB__DATABASE: 'datastore_db'
+            DATASTORE_CONFIG__FILE: './config.toml'
+        
+        command:  ["uv","run", "uvicorn",
+                   "--host","0.0.0.0", # see : https://stackoverflow.com/questions/75040507/how-to-access-fastapi-backend-from-a-different-machine-ip-on-the-same-local-netw/75041731#75041731
+                   "datastore:app"]
+        
+        networks:
+        - chatbone-network
+
 
 # Define named volumes for data persistence
 volumes:

@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import FastAPI, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from ray import serve
 
 from auth.auth_svc import auth_svc, UserRegister, TokenJWT
 from utilities.settings.datastore import UserInfoReturn
@@ -30,13 +29,3 @@ async def get_user(jwt: Annotated[str, Depends(oauth2_scheme)]) -> UserInfoRetur
 	return await auth_svc.get_user(jwt)
 
 
-@serve.deployment()
-@serve.ingress(app)
-class Auth:
-	pass
-
-
-app = Auth.bind()
-
-if __name__ == '__main__':
-	serve.run(app, blocking=True)  # import uvicorn  # uvicorn.run("app:app", reload=True)

@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from ray import serve
 
 from datastore.api.chat_message import router as chat_message_router
 from datastore.api.chat_session import router as chat_session_router
@@ -18,14 +17,3 @@ app.include_router(chat_session_router, prefix='/chat/session', tags=['Chat'])
 app.include_router(chat_message_router, prefix='/chat/message', tags=['Chat'])
 app.include_router(chat_summary_router, prefix='/chat/summary', tags=['Chat'])
 
-
-@serve.deployment()
-@serve.ingress(app)
-class Datastore:
-	pass
-
-
-app = Datastore.bind()
-
-if __name__ == '__main__':
-	serve.run(app, blocking=True)

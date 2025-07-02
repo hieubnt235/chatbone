@@ -1,6 +1,9 @@
 import asyncio
+import itertools
 import pprint
+import time
 from abc import ABC, abstractmethod
+from bisect import bisect_left
 from contextlib import AsyncExitStack, asynccontextmanager, ExitStack
 from copy import deepcopy
 from datetime import timedelta, datetime, timezone
@@ -10,7 +13,7 @@ from inspect import iscoroutinefunction, isclass
 from math import floor
 from pprint import pformat
 from types import NoneType, UnionType
-from typing import Any, List, Optional, Tuple, Union, Unpack, Literal
+from typing import Any, List, Optional, Tuple, Union, Unpack
 from typing import (
     Callable,
     get_origin,
@@ -26,7 +29,9 @@ from typing import (
 )
 from uuid import UUID
 
+import anyio
 import flet as ft
+from anyio.streams.memory import MemoryObjectSendStream, MemoryObjectReceiveStream
 from flet.core.animation import AnimationValue
 from flet.core.badge import BadgeValue
 from flet.core.blur import Blur
@@ -68,9 +73,9 @@ from chatbone.assistant_interface import (
     DocumentObject,
     BaseSelection,
     AssistantOutputData,
-    DataFormat,
+    AssistantStatusCode,
 )
-from chatbone.chat.html_parser import parse_html_to_flet
+from chatbone.broker import DisplayMessage, DisplayableMessage
 from chatbone.chat.svc import AssistantApp
 from utilities.func import utc_now
 from utilities.logger import logger
@@ -148,7 +153,7 @@ class BaseInputField(ABC, ft.Container):
     def __init__(self, *args, **kwargs: Unpack[ContainerArgs]):
         self._able_lock = UniversalLock()
 
-        self._snackbar: ft.SnackBar|None = None
+        self._snackbar: ft.SnackBar | None = None
         """For notice user"""
 
         super().__init__(*args, **kwargs)
@@ -348,7 +353,7 @@ class MediaInputField(BaseInputField):
 
             self._filename = filename
             self._media_field = media_field
-            self.media_object: AnyMediaObject|None = None
+            self.media_object: AnyMediaObject | None = None
 
         async def _unselect(self, e):
             await self._media_field._unselect(self._filename)
@@ -440,26 +445,42 @@ class MediaInputField(BaseInputField):
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         """
         Returns:
-            If allow_multiple, return a list of MediaObject or a blank list. Else return only one MediaObject or None.
+            If allow_multiple, return a list of MediaObject else return only one MediaObject if files exist. or None.
         """
         if not self._allow_multiple:
             assert len(self._file_names) <= 1
-            return (
+            data = (
                 (await self.get_file_preview_row(self._file_names[0])).media_object
                 if len(self._file_names) == 1
                 else None
             )
+            if data:
+                await self.save()
+                return data
+            else:
+                return None
 
         async with self._file_index_lock:
             if not self._file_names:
-                return []
+                return None
             else:
-                return [
+                data = [
                     f.media_object
                     for f in self._file_list.controls
                     if isinstance(f, MediaInputField._FilePreviewRow)
                     and f.media_object is not None
                 ]
+                if data:
+                    await self.save()
+                    return data
+                else:
+                    return None
+
+    async def save(self):
+        """Save all current choosen files, marked so that unselect not delete file in storage.
+        This method should call after success response to persist data.
+        """
+        await self._unselect_all(cancel=False)
 
     def build(self):
         if not self._file_picker in self.page.overlay:
@@ -528,19 +549,22 @@ class MediaInputField(BaseInputField):
             else:
                 await self._update_progress(e.file_name, e.progress, media_object)
 
-    async def _unselect_all(self, e=None):
+    async def _unselect_all(self, e=None, *, cancel=True):
         async with self._file_index_lock:
             for filename in deepcopy(self._file_names):
-                await self._unselect(filename, update=False, lock=False)
+                await self._unselect(filename, cancel=cancel, update=False, lock=False)
             self.page.update()
 
-    async def _unselect(self, filename, update: bool = True, lock: bool = True):
+    async def _unselect(
+        self, filename, *, cancel: bool = True, update: bool = True, lock: bool = True
+    ):
         should_lock = lock
         async with AsyncExitStack() as stack:
             if lock:
                 await stack.enter_async_context(self._file_index_lock)
                 should_lock = False
-        await self._file_picker.cancel(filename)
+        if cancel:
+            await self._file_picker.cancel(filename)
         await self.remove_file_review_row(filename, should_lock)
         if update:
             self.page.update()
@@ -646,11 +670,11 @@ class TextInputField(BaseInputField):
 
     async def _validate(self):
         try:
-            if iscoroutinefunction(self._text_type.validator):
-                val = await self._text_type.validator(self._textfield.value)
+            if iscoroutinefunction(self._text_type.input_validator):
+                val = await self._text_type.input_validator(self._textfield.value)
             else:
                 val = await asyncio.to_thread(
-                    self._text_type.validator, self._textfield.value
+                    self._text_type.input_validator, self._textfield.value
                 )
             if val is None:
                 return None
@@ -794,7 +818,12 @@ class MultiOptionsInputField(BaseInputField):
 
     async def get_assistant_data(
         self, return_meta: bool = False, c: AssistantDataType_U = None
-    ) -> AssistantDataType_U | list[AssistantDataType_U] | None| tuple[str, AssistantDataType_U | list[AssistantDataType_U] | None]:
+    ) -> (
+        AssistantDataType_U
+        | list[AssistantDataType_U]
+        | None
+        | tuple[str, AssistantDataType_U | list[AssistantDataType_U] | None]
+    ):
         """
         Returns:
             A tuple of key and data if return_meta is True else return just data.
@@ -867,7 +896,7 @@ class ListInputField(BaseInputField):
                 return await asyncio.to_thread(f, *args, **kwargs)
 
             input_field_factory.factory = _factory
-            
+
         self._input_field_factory: InputFieldFactory = input_field_factory
 
         self._add_new_button = ft.IconButton(
@@ -920,8 +949,8 @@ class ListInputField(BaseInputField):
         self._sheet.content.content = value
 
     async def _on_open_input_sheet(self, e):
-        await self._content_lock.aacqurie()  # Lock until dismiss
         try:
+            await self._content_lock.aacqurie()  # Lock until dismiss
             self._sheet_input_field = await self._input_field_factory.factory(
                 *self._input_field_factory.args, **self._input_field_factory.kwargs
             )
@@ -939,13 +968,15 @@ class ListInputField(BaseInputField):
             self.page.open(self._sheet)
 
         except Exception as e:
+            if await self._content_lock.alocked:
+                await self._content_lock.arelease()
             logger.exception(e)
-            self.page.close(self._sheet)
+            self._close_sheet()
             self.notice_user("Server error when open input sheet.")
 
     async def _on_open_edit_sheet(self, e, *, current_saved_field: _SavedField):
-        await self._content_lock.aacqurie()  # Lock until dismiss
         try:
+            await self._content_lock.aacqurie()  # Lock until dismiss
             # todo: deep copy is dump. construct and do get_state instead.
             #  For now just construct entirely new. Every thing go right
             self._sheet_input_field = await self._input_field_factory.factory(
@@ -968,8 +999,10 @@ class ListInputField(BaseInputField):
             self.page.open(self._sheet)
 
         except Exception as e:
+            if await self._content_lock.alocked:
+                await self._content_lock.arelease()
             logger.exception(e)
-            self.page.close(self._sheet)
+            self._close_sheet()
             self.notice_user("Server error when open edit sheet.")
 
     async def _on_save_input_sheet(self, e):
@@ -1007,7 +1040,7 @@ class ListInputField(BaseInputField):
     @asynccontextmanager
     async def _save_sheet_cm(self) -> AsyncIterator[tuple[str, BaseInputField | None]]:
         # Check for already locked, acquire() return false and self._sheet_input_field is already created
-        assert (not await self._content_lock.aacqurie(blocking=False)) and (
+        assert (await self._content_lock.alocked) and (
             self._sheet_input_field is not None
         )
         try:
@@ -1036,7 +1069,9 @@ class ListInputField(BaseInputField):
         self.page.close(self._sheet)
 
     async def _on_dismiss_sheet(self, e=None):
-        assert not await self._content_lock.aacqurie(blocking=False)
+        assert (
+            await self._content_lock.alocked
+        )  # lock must be aquired when sheet open, so when dismiss, must be locked.
         if self._sheet_input_field:
             await self._sheet_input_field.cleanup()
             self._clean_sheet()
@@ -1214,8 +1249,8 @@ class DictInputField(ListInputField):
         self, e, *, current_saved_field: _DictInputFieldSavedField
     ):
         # Almost like the base class with slightly change.
-        await self._content_lock.aacqurie()  # Lock until dismiss
         try:
+            await self._content_lock.aacqurie()  # Lock until dismiss
             self._sheet_input_field = await self._input_field_factory.factory(
                 *self._input_field_factory.args, **self._input_field_factory.kwargs
             )
@@ -1236,6 +1271,8 @@ class DictInputField(ListInputField):
             self.page.open(self._sheet)
 
         except Exception as e:
+            if await self._content_lock.alocked:
+                await self._content_lock.arelease()
             logger.exception(e)
             self.page.close(self._sheet)
             self.notice_user("Server error when open edit sheet.")
@@ -1356,7 +1393,7 @@ class TupleInputField(BaseInputField):
 
     async def get_assistant_data(
         self, **kwargs
-    ) -> tuple[AssistantDataType_U | List[AssistantDataType_U],...] | None:
+    ) -> tuple[AssistantDataType_U | List[AssistantDataType_U], ...] | None:
         """Return tuple of all field data, or None if there is one that's lack of data."""
         l = []
         for field in self.input_fields:
@@ -1392,9 +1429,9 @@ class SchemaInputField(BaseInputField):
             schema: keys are field name
             **kwargs:
         """
-        panels = []
+        self._panels = []
         for field_name, field_info in schema.items():
-            panels.append(
+            self._panels.append(
                 ft.ExpansionPanel(
                     header=ft.Text(field_name),
                     can_tap_header=True,
@@ -1404,13 +1441,13 @@ class SchemaInputField(BaseInputField):
                 )
             )
 
-        panel_list = ft.ListView(
-            [ft.ExpansionPanelList(panels)]
-        )  # wrap to listview to scroll
+        # panel_list = ft.ListView(
+        #     []
+        # )  # wrap to listview to scroll
 
         self._lock = UniversalLock()
 
-        super().__init__(content=panel_list, **kwargs)
+        super().__init__(content=ft.ExpansionPanelList(self._panels), **kwargs)
 
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
@@ -1436,9 +1473,7 @@ class SchemaInputField(BaseInputField):
 
     def _iter_panels(self) -> Generator[ft.ExpansionPanel, None, None]:
         with self._lock:
-            for c in self.content.controls[
-                0
-            ].controls:  # Look the layout for more details
+            for c in self._panels:
                 assert isinstance(c, ft.ExpansionPanel)
                 yield c
 
@@ -1480,6 +1515,11 @@ class _ChatInputFieldSyncDropdownObject(SyncListObject):
     object_adapter = TypeAdapter(ft.Dropdown, config=arbitrary_types_allowed_config)
     adapter = TypeAdapter(ft.DropdownOption, config=arbitrary_types_allowed_config)
     list_attr = "options"
+
+
+class UserInputData(BaseModel):
+    assistant_name: str | None = None
+    data: AssistantInputData | None = None
 
 
 class ChatInputField(ft.Container):
@@ -1565,6 +1605,7 @@ class ChatInputField(ft.Container):
         *,
         username: str,
         user_id: UUID,
+        send_button: ft.Control | None = None,
         **kwargs: Unpack[ContainerArgs],
     ):
         """Parse assistant input to input field.
@@ -1572,12 +1613,16 @@ class ChatInputField(ft.Container):
             assistant_apps: get from ChatAssistantSVC.assistant_names
             **kwargs:
         """
-        assert len(assistant_apps) > 0
+        assert isinstance(assistant_apps, dict)
+
         self._apps = assistant_apps
         self._username = username
         self._user_id = user_id
+        self._send_button = send_button
         self._dropdown = ft.Dropdown(
-            label="Assistant options", options=[], on_change=self._on_change
+            label="Assistant options",
+            options=[],
+            on_change=self._on_change,
         )
         self._stack = ft.Stack([])
         self._stack_lock = UniversalLock()
@@ -1594,28 +1639,51 @@ class ChatInputField(ft.Container):
                 self._add_assistant(name, app.input_schema, app.description, lock=False)
             # self._dropdown.value = self._stack_sync_list.assistant_names[0]
             # self._current_assistant =
+
         super().__init__(**kwargs)
-        self.content = ft.ListView([self._dropdown, self._stack])
+        self.content = ft.Column(
+            [
+                ft.ListView([self._stack], expand=True),
+                ft.Divider(height=1, color=ft.Colors.BLUE, thickness=1),
+                (
+                    ft.Row(
+                        [self._dropdown, self._send_button],
+                        alignment=ft.MainAxisAlignment.END,
+                    )
+                    if self._send_button
+                    else self._dropdown
+                ),
+            ],
+        )
+
+    def build(self):
+        self._dropdown.width = self.page.width * 0.2
 
     async def get_input_data(
         self, raise_if_validate_fail: bool = False
-    ) -> tuple[str, AssistantInputData] | None:
+    ) -> UserInputData:
         """todo: support validate with default (change all input fields to receive default data. and parser inject that.)
         Args:
             raise_if_validate_fail: If False, return None if validate fail.
         Returns:
-            tuple of assistant name (name that shown to user, not app name) and validated AssistantInputData of current open assistant.
+            UserInputData.
         """
         async with self._stack_lock:
             if (name := self._current_assistant) is None:
-                return None
-            data = await self._get_input_field(name).get_assistant_data()
+                return UserInputData()
             try:
-                return name, self._apps[name].input_schema.model_validate(data)
+                data = await self._get_input_field(name).get_assistant_data()
+                data = self._apps[name].input_schema.model_validate(data)
+                data._username = self._username
+
+                return UserInputData(
+                    assistant_name=name,
+                    data=data,
+                )
             except ValidationError as e:
                 if raise_if_validate_fail:
                     raise
-                return None
+                return UserInputData(assistant_name=name)
 
     @property
     def _current_assistant(self):
@@ -1628,7 +1696,9 @@ class ChatInputField(ft.Container):
     async def _on_change(self, e):
         async with self._stack_lock:
             if self._current_assistant is not None:
-                await self._disable_assistant(self._current_assistant, lock=False)
+                await self._disable_assistant(
+                    self._current_assistant, lock=False, update=False
+                )
                 self._current_assistant = None
 
             ex = self._get_expansion(self._dropdown.value)
@@ -1707,7 +1777,7 @@ class ChatInputField(ft.Container):
             schema_field = SchemaInputField(schema).disable()
 
             ex_title = ft.ExpansionTile(
-                title=ft.Text(assistant_name),
+                title=ft.Text("Input form"),
                 subtitle=ft.Text(description),
                 controls=[schema_field],
                 disabled=True,
@@ -1719,15 +1789,31 @@ class ChatInputField(ft.Container):
                 assistant_names=assistant_name,
             )
 
-    async def remove_assistant(self, assistant_name: str):
+    async def cleanup(self):
+        """clean all pending input fields"""
         async with self._stack_lock:
-            await self._disable_assistant(assistant_name, lock=False)
+            for name in self._stack_sync_list.assistant_names:
+                await self._disable_assistant(name, lock=False, update=False)
+            self.page.update()
+            logger.info("ChatInputField cleaned up.")
+
+    async def remove_assistant(
+        self, assistant_name: str, *, lock: bool = True, update: bool = True
+    ):
+        async with AsyncExitStack() as stack:
+            if lock:
+                await stack.enter_async_context(self._stack_lock)
+                lock = False
+            await self._disable_assistant(assistant_name, lock=lock, update=False)
             await asyncio.to_thread(
                 self._stack_sync_list.remove, assistant_names=assistant_name
             )
-            self.page.update()
+            if update:
+                self.page.update()
 
-    async def _disable_assistant(self, assistant_name: str, *, lock: bool = True):
+    async def _disable_assistant(
+        self, assistant_name: str, *, lock: bool = True, update: bool = True
+    ):
         """Disable and cleanup assistant"""
         async with AsyncExitStack() as stack:
             if lock:
@@ -1736,7 +1822,8 @@ class ChatInputField(ft.Container):
             ex.visible = False
             ex.disabled = True
             await self._get_input_field(expansion=ex).disable().cleanup()
-            self.page.update()
+            if update:
+                self.page.update()
 
     def _parse_ann(self, ann: type) -> BaseInputField | None:
         """Parse annotation recursively."""
@@ -1814,107 +1901,268 @@ class ChatInputField(ft.Container):
         logger.warning(m)
         raise ValueError(m)
 
+
+class RequestInputField(ft.Container):
+    def __init__(
+        self, input_field: ChatInputField, on_send, **kwargs: Unpack[ContainerArgs]
+    ):
+        super().__init__(**kwargs)
+        self.content = ft.Column(
+            [input_field, ft.IconButton(ft.Icons.SEND, on_click=on_send)]
+        )
+
+
 class ChatOutputField(ft.Container):
-    #todo, rerender this UI
+    # todo, rerender this UI
 
     def __init__(
-        self, *, username: str, user_id: UUID, **kwargs: Unpack[ContainerArgs]
+        self,
+        *,
+        username: str,
+        user_id: UUID,
+        cs_uid: UUID,
+        cs_base64: str,
+        **kwargs: Unpack[ContainerArgs],
     ):
 
         self._username = username
-        self._userid = user_id
+        self._user_id = user_id
+        self._cs_uid = cs_uid
+        self._cs_base64 = cs_base64
+
+        self._message_list = ft.ListView([], expand=True)
 
         self._list_lock = UniversalLock()
-        super().__init__(content=ft.ListView([]), **kwargs)
 
-    async def push(self, data: AssistantInputData | AssistantOutputData):
-        async with self._list_lock:
-            if isinstance(data, AssistantInputData):
-                title = ft.Text(self._username, text_align=ft.TextAlign.RIGHT)
-                mode = "user"
-                ex_title_kwargs = dict(
-                    affinity = ft.TileAffinity.TRAILING,
-                    expanded_alignment = ft.alignment.top_right
-                )
-            elif isinstance(data, AssistantOutputData):
-                title = ft.Text(
-                    data.assistant_name or "Unknow Assistant",
-                    text_align=ft.TextAlign.LEFT,
-                )
-                mode = "assistant"
-                ex_title_kwargs = dict(
-                    affinity=ft.TileAffinity.LEADING,
-                    expanded_alignment=ft.alignment.top_left,
-                )
-            else:
-                raise ValueError(
-                    f"Accept only AssistantInputData or AssistantOutputData instance. Got '{type(data)}'."
-                )
+        column = ft.Column(
+            [ft.Text(f"Chat session id:{self._cs_base64}"), self._message_list]
+        )
+        super().__init__(content=column, **kwargs)
 
-            # If fails, log error and don't raise anything.
-            try:
-                if (data_format := await data.get_data_format()) is None:
-                    logger.info(
-                        f"'{self.__class__.__name__}.push()' got {repr(data)}. But data.get_data_format() return None. Nothing to push."
-                    )
-                    return
-                assert isinstance(data_format, DataFormat)
-            except AssertionError:
-                logger.error(
-                    f"Got '{repr(data)}'. But data.get_data_format() not return instance of 'DataFormat', but {type(data_format)}."
-                )
-            except Exception as e:
-                logger.error(
-                    f"Got '{repr(data)}'. But data.get_data_format() raise an exception: {repr(e)}"
-                )
-                # todo, notify user about assistant error.
-                return
-            
-            # noinspection PyTypeChecker
-            control = await asyncio.to_thread(self._render, data_format, mode=mode)
-            ex_title = ft.ExpansionTile(
-                title,
-                controls=[control],
-                initially_expanded=True,
-                **ex_title_kwargs
+    # noinspection PyTypeChecker
+    @property
+    def message_list(self) -> list[ft.ExpansionTile]:
+        return self._message_list.controls
+
+    @asynccontextmanager
+    async def stream_message(
+        self, chat_context_id: UUID
+    ) -> AsyncIterator[MemoryObjectSendStream[AssistantOutputData]]:
+        # This is not thread safe, only use in this function.
+
+        class TextStream:
+            """Below examples show append with list of string give better performance. More longer the string, more perforamce gap
+            1166 if j in range 10000. But the append time is always 0.01 for j in range 10000. So dont need to use thread here.
+
+            a = list("" for i in range(5) )
+            b = list([] for i in range(5))
+            import time
+            import itertools
+            start = time.time()
+            for i in range(5):
+                    for j in range(1000):
+                            a[i]+="a"*1000
+            s="".join(a)
+            print(t1:=(time.time()-start))
+            start = time.time()
+            for i in range(5):
+                    for j in range(1000):
+                            b[i].append("b"*1000)
+            ss="".join(itertools.chain.from_iterable(b))
+            print(len(s), len(ss))
+            print(t2:=(time.time()-start))
+            print(t1/t2)
+
+            # OUTPUT
+            0.09939241409301758
+            5000000 5000000
+            0.0022478103637695312
+            44.21743742044973
+
+            """
+
+            logger.debug(
+                f"Start streaming message with chat_context_id={chat_context_id}"
             )
-            self._message_list.append(ft.Container(content=ex_title,border=ft.border.all(5,color=ft.Colors.BLUE)))
+
+            def __init__(self):
+                self._text_streams: list[list[str]] = []
+                self._stream_place: list[int] = []
+
+            def append_text(self, place: int, value: str) -> int:
+                """
+                Args:
+                    place: place holder of the stream in the message
+                    value: value to concat to the stream
+                Returns:
+                    index of the value in the stream place
+                """
+                # all values on the left of below index is smaller than place value
+                place_idx = bisect_left(self._stream_place, place)
+                chunk_idx = None
+                # If place already exist, value of that index must be equal to original value.
+                try:
+                    if self._stream_place[place_idx] == place:
+                        self._text_streams[place_idx].append(value)
+                        chunk_idx = len(self._text_streams[place_idx]) - 1
+                        logger.debug(f"Chunk index: {chunk_idx}")
+                        return chunk_idx
+                except IndexError:
+                    logger.debug(f"No stream place {place}. Create new one.")
+
+                # this code only run when raise IndexError or if block fails.
+                self._stream_place.insert(place_idx, place)
+                self._text_streams.insert(place_idx, [value])
+                logger.debug(f"Chunk index: {0}")
+                return 0
+
+            @property
+            def text(self):
+                return "".join(itertools.chain.from_iterable(self._text_streams))
+
+        send_stream, read_stream = anyio.create_memory_object_stream[
+            AssistantOutputData
+        ](0)
+
+        async def _push_task(
+            read_stream: MemoryObjectReceiveStream[AssistantOutputData],
+        ):
+            markdown: ft.Markdown | None = None  # For now support only markdown.
+            text_stream: TextStream | None = None
+
+            async with read_stream as reader:
+                async for data in reader:
+                    assert isinstance(data, AssistantOutputData)
+                    assert data.chat_context_id == chat_context_id
+                    logger.debug(
+                        f"Receive data={repr(data)}, chat_context_id={data.chat_context_id}, assistant_name={data.assistant_name}"
+                    )
+
+                    if data.status.code == AssistantStatusCode.ERROR:
+                        logger.error(
+                            f"There is an error from assistant. {data.status.detail}"
+                        )
+                        break  # TODO, handle more status code
+
+                    if data.status.code == AssistantStatusCode.PROCESSING:
+                        chunk_order = data.chunk_order
+                        logger.debug(
+                            f"Status code is processing and chunk order={chunk_order}."
+                        )
+
+                        display_message = await data.get_display_message()
+                        start = time.time()  # for debug
+
+                        if markdown is None:
+                            assert text_stream is None
+
+                            markdown = await self.__push(display_message)
+                            assert isinstance(markdown, ft.Markdown)
+
+                            text_stream = TextStream()
+                            idx = text_stream.append_text(
+                                data.stream_place, display_message.content
+                            )
+                            assert idx == chunk_order
+                        else:
+                            idx = text_stream.append_text(
+                                data.stream_place, display_message.content
+                            )
+                            assert idx == chunk_order
+                            markdown.value = text_stream.text
+                            markdown.update()
+
+                        end = time.time() - start
+                        logger.debug(f"Pushed new markdown in {end} seconds.")
+                        if end > 0.1:
+                            logger.warning(
+                                f"Pushing new markdown took {end} more than 0.1 seconds."
+                                f" It may seriously block the main thread. Consider to use a new thread."
+                            )
+            logger.debug("_push_task done.")
+
+        async with self._list_lock:
+            t = asyncio.create_task(_push_task(read_stream))
+            async with send_stream as sender:
+                try:
+                    yield sender
+                except Exception as e:
+                    t.cancel()
+                    raise e
+
+    async def push_messages(self, messages: list[DisplayMessage]):
+        async with self._list_lock:
+            for message in messages:
+                try:
+                    m = await message.get_display_message()
+                    if m is None:
+                        continue
+                    if isinstance(m, DisplayableMessage):
+                        assert m.role in ["user", "assistant"]
+                        if m.role == "user":
+                            m.sender = m.sender or self._username
+                        else:
+                            m.sender = m.sender or "Assistant"
+                        await self.__push(m, update=False)
+                    else:
+                        logger.error(
+                            f"get_display_message() of {repr(message)} does not return 'DisplayableMessage' object, got {type(m)}."
+                        )
+                except Exception as e:
+                    logger.error(f"Got exception when call get_display_message(): {e}.")
             self.page.update()
 
-    @property
-    def _message_list(self) -> list[ft.Container]:
-        return self.content.controls
+    async def __push(
+        self, m: DisplayableMessage, *, update: bool = True
+    ) -> ft.Control | ft.Markdown:
+        """Push no lock"""
+        role = m.role
+        assert role in ["user", "assistant"]
+        if role == "user":
+            title = ft.Text(m.sender or "<Unknow User>", text_align=ft.TextAlign.RIGHT)
+            ex_title_kwargs = dict(
+                affinity=ft.TileAffinity.TRAILING,
+                expanded_alignment=ft.alignment.top_right,
+            )
+        else:
+            title = ft.Text(
+                m.sender or "<Unknow Assistant>",
+                text_align=ft.TextAlign.LEFT,
+            )
 
-    def _render(
-        self, data: DataFormat, mode: Literal["user", "assistant"]
-    ) -> ft.Control:
-        assert mode in ["user","assistant"]
+            ex_title_kwargs = dict(
+                affinity=ft.TileAffinity.LEADING,
+                expanded_alignment=ft.alignment.top_left,
+            )
+
+        # noinspection PyTypeChecker
+        control = await asyncio.to_thread(self._render, m)
+        ex_title = ft.ExpansionTile(
+            title,
+            controls=[ft.Container(control)],
+            initially_expanded=True,
+            **ex_title_kwargs,
+        )
+        self.message_list.append(ex_title)
+        if update:
+            self.page.update()
+        return control
+
+    def _render(self, data: DisplayableMessage, **kwargs) -> ft.Control | ft.Markdown:
         try:
-            control = getattr(self, f"_render_{data.type}")(data.content, mode=mode)
+            # for future general supported formats
+            control = getattr(self, f"_render_{data.type}")(data.content)
         except Exception as e:
             logger.error(
                 f"Cannot call render with type '{data.type}'. Exception {e}.\n"
-                f"Backup with text render."
+                f"Backup with markdown render."
             )
-            control = self._render_text(data.content, mode=mode)
-        assert isinstance(control, ft.Control) # if even text render fails, raise error.
+            control = self._render_markdown(data.content)
+        assert isinstance(control, ft.Control)
         return control
 
-    # noinspection PyMethodMayBeStatic
-    def _render_text(self, content: str, **kwargs) -> ft.Control:
-        """Default render"""
-        mode = kwargs.get("mode", None)
-        if mode == "assistant":
-            text_align = ft.TextAlign.LEFT
-        elif mode == "user":
-            text_align = ft.TextAlign.RIGHT
-        else:
-            raise ValueError(mode)
-        return ft.Text(content, text_align=text_align)
-
-    # noinspection PyMethodMayBeStatic
     def _render_html(self, content: str, **kwargs) -> ft.Control:
-        return parse_html_to_flet(content)
+        raise NotImplementedError
 
     def _render_markdown(self, content: str, **kwargs) -> ft.Control:
         return ft.Markdown(
@@ -1922,6 +2170,7 @@ class ChatOutputField(ft.Container):
             selectable=True,
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
             on_tap_link=lambda e: self.page.launch_url(e.data),
+            expand=True,
         )
 
 
