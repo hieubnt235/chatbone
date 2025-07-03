@@ -399,12 +399,21 @@ class ChatAssistantSVC(_DataSVC):
             async def _handle_assistant_data_task():
                 try:
                     async with as2cs_sender:
-                        async for data in streams.as2cs.read_stream.bind("$",10,save_checkpoint=True):
-                            logger.debug(f"Service handler received {len(data)} redis stream data: \n{repr(data)}")
-                            # todo: choose what data to send to chat session, check status, for now just send all
+                        async for data in streams.as2cs.read_stream.bind(
+                            "$", 10, save_checkpoint=True
+                        ):
+                            logger.debug(
+                                f"Service handler received {len(data)} redis stream data: \n{repr(data)}"
+                            )
                             for datum in data:
+                                if isinstance(datum, AssistantInputData):
+                                    continue # This is the first input data sent for stream, use to ping and save input.
+                                
                                 assert isinstance(datum, AssistantOutputStreamType)
-                                assert datum.chat_context_id == user_input.data.chat_context_id
+                                assert (
+                                    datum.chat_context_id
+                                    == user_input.data.chat_context_id
+                                )
                                 await as2cs_sender.send(datum)
                 except asyncio.CancelledError:
                     pass
@@ -413,6 +422,8 @@ class ChatAssistantSVC(_DataSVC):
                 try:
                     async with cs2as_reader:
                         async for data in cs2as_reader:
+                            assert isinstance(data, AssistantInputData)
+                            
                             streams.cs2as.write_stream.write(data)
                 except asyncio.CancelledError:
                     pass
@@ -449,7 +460,10 @@ class ChatAssistantSVC(_DataSVC):
                     for task in tasks:
                         task.cancel()
                         await task
-
+                    
+                    # TODO: HANDLE SAVER WHEN CANCEL
+            
+            
             chat_handle = ChatHandle(
                 stream_sender=cs2as_sender,
                 stream_reader=as2cs_reader,

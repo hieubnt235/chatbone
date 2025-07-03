@@ -1,6 +1,5 @@
 import asyncio
 import itertools
-import pprint
 import time
 from abc import ABC, abstractmethod
 from bisect import bisect_left
@@ -65,12 +64,10 @@ from chatbone.assistant_interface import (
     AssistantDataType_U,
     AnyMediaObject,
     MediaObject,
-    ImageObject,
     InvalidFileExtension,
     InvalidBinaryFile,
     AssistantInputData,
     Text,
-    DocumentObject,
     BaseSelection,
     AssistantOutputData,
     AssistantStatusCode,
@@ -2049,8 +2046,13 @@ class ChatOutputField(ft.Container):
                         logger.debug(
                             f"Status code is processing and chunk order={chunk_order}."
                         )
-
                         display_message = await data.get_display_message()
+
+                        # Override when get display message through stream.
+                        display_message.role = "assistant"
+                        if display_message.sender is None:
+                            display_message.sender = data.assistant_name
+
                         start = time.time()  # for debug
 
                         if markdown is None:
@@ -2093,16 +2095,25 @@ class ChatOutputField(ft.Container):
     async def push_messages(self, messages: list[DisplayMessage]):
         async with self._list_lock:
             for message in messages:
+                logger.debug(f"Trying to push message: {repr(message)}")
                 try:
                     m = await message.get_display_message()
-                    if m is None:
-                        continue
+                    logger.debug(f"Displayable message {repr(m)}")
                     if isinstance(m, DisplayableMessage):
-                        assert m.role in ["user", "assistant"]
-                        if m.role == "user":
+                        if isinstance(message, AssistantInputData):
+                            m.role = "user"
                             m.sender = m.sender or self._username
-                        else:
+                        elif isinstance(message, AssistantOutputData):
+                            m.role = "assistant"
                             m.sender = m.sender or "Assistant"
+                        else:
+                            if m.role not in ["user", "assistant"]:
+                                logger.warning(
+                                    f"Message without role cannot be display. "
+                                    f"{repr(m)}"
+                                )
+                                continue
+
                         await self.__push(m, update=False)
                     else:
                         logger.error(
@@ -2118,18 +2129,16 @@ class ChatOutputField(ft.Container):
         """Push no lock"""
         role = m.role
         assert role in ["user", "assistant"]
+        assert m.sender is not None
+
         if role == "user":
-            title = ft.Text(m.sender or "<Unknow User>", text_align=ft.TextAlign.RIGHT)
+            title = ft.Text(m.sender, text_align=ft.TextAlign.RIGHT)
             ex_title_kwargs = dict(
                 affinity=ft.TileAffinity.TRAILING,
                 expanded_alignment=ft.alignment.top_right,
             )
         else:
-            title = ft.Text(
-                m.sender or "<Unknow Assistant>",
-                text_align=ft.TextAlign.LEFT,
-            )
-
+            title = ft.Text(m.sender, text_align=ft.TextAlign.LEFT)
             ex_title_kwargs = dict(
                 affinity=ft.TileAffinity.LEADING,
                 expanded_alignment=ft.alignment.top_left,
@@ -2172,98 +2181,3 @@ class ChatOutputField(ft.Container):
             on_tap_link=lambda e: self.page.launch_url(e.data),
             expand=True,
         )
-
-
-if __name__ == "__main__":
-
-    uuid = UUID("0cab9030-a5d5-49a8-ab90-30a5d519a818")
-    print(ImageObject.extensions)
-
-    async def main(page: ft.Page):
-        page.vertical_alignment = ft.MainAxisAlignment.CENTER
-        page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-
-        def factory(*args, **kwargs):
-            def _val(v: str):
-                int(v)
-                return True
-
-            return MultiOptionsInputField(
-                dict(
-                    document=InputFieldOption(
-                        input_field=MediaInputField("hieu", uuid, DocumentObject),
-                        description="Choose one document",
-                    ),
-                    image=InputFieldOption(
-                        input_field=MediaInputField(
-                            "hieu",
-                            uuid,
-                            ImageObject,
-                            allow_multiple=True,
-                        ),
-                        description="Choose many image.",
-                    ),
-                    text=InputFieldOption(input_field=TextInputField(validator=_val)),
-                ),
-                *args,
-                **kwargs,
-            )
-
-        list_input_field = ListInputField(
-            InputFieldFactory(
-                factory=factory,
-                kwargs=dict(
-                    border=ft.border.all(1),
-                    padding=ft.padding.all(20),
-                ),
-            ),
-            border=ft.border.all(1),
-            padding=ft.padding.all(20),
-            width=500,
-            height=500,
-        )
-        dict_input_field = DictInputField(
-            InputFieldFactory(
-                factory=factory,
-                kwargs=dict(
-                    border=ft.border.all(1),
-                    padding=ft.padding.all(20),
-                ),
-            ),
-            border=ft.border.all(1),
-            padding=ft.padding.all(20),
-            width=500,
-            height=500,
-        )
-
-        option = MultiOptionsInputField(
-            dict(
-                list_input=InputFieldOption(
-                    input_field=list_input_field, description="this is list input field"
-                ),
-                dict_input=InputFieldOption(
-                    input_field=dict_input_field, description="this is dict input field"
-                ),
-            )
-        )
-
-        text = ft.Text()
-        page.add(option, text)
-
-        async def on_click(e):
-            if data := (await option.get_assistant_data(return_meta=True)):
-                key = data[0]
-                if isinstance(data[1], list):
-                    data = "\n".join(repr(data[1]))
-                if isinstance(data[1], dict):
-                    pprint.pformat(data[1], indent=4)
-
-            text.value = data or "NOTHING"
-            page.update()
-
-        page.add(ft.Button("Select all file", on_click=on_click))
-
-    app = ft.app(main, export_asgi_app=True)
-    import uvicorn
-
-    uvicorn.run(app, port=5555)

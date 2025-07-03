@@ -603,17 +603,17 @@ class ReadStream(Stream):
         self._checkpoint_id: str = (
             "$"  # get new data coming after the moment of blocking.
         )
-        self._count: int = 1
+        self._count: int|None = 1
         self._save_checkpoint: bool = False
 
     def bind(
         self,
         checkpoint: str | None = None,
-        count: int | None = None,
+        count: int | Literal["DEFAULT",None] = "DEFAULT",
         save_checkpoint: bool | None = None,
     ) -> Self:
         """Create a new object with new state. Use current states if they are not provided.
-        None arg means hold the current settings.
+        None arg means hold the current settings except count..
         Args:
                 checkpoint:
                 count:
@@ -623,7 +623,8 @@ class ReadStream(Stream):
         """
         new_obj = self.__class__(self.key)
         new_obj._checkpoint_id = checkpoint if checkpoint is not None else self._checkpoint_id
-        new_obj._count = count if count is not None else self._count
+        new_obj._count = count if count!="DEFAULT" else self._count
+        
         new_obj._save_checkpoint = save_checkpoint if save_checkpoint is not None else self._save_checkpoint
         return new_obj
 
@@ -657,7 +658,7 @@ class ReadStream(Stream):
 		With non encodable data, just return byte stream, so the stream key is also byte type.
 		"""
         checkpoint = checkpoint if checkpoint is not None else self._checkpoint_id
-        count = count or self._count
+        count = count if count!="DEFAULT" else self._count
 
         data = await get_redis(decode_responses=False, protocol=3).xread(
             {self.key: checkpoint}, count, block
@@ -679,7 +680,20 @@ class ReadStream(Stream):
         else:
             assert data == {}
             return []
+    
+    async def capture(self, from_latest:bool = True, count:int|None=None)->list[StreamData]:
+        redis = get_redis(decode_responses=False, protocol=3)
+        if from_latest:
+            data = await redis.xrevrange(self.key,count=count)
+        else:
+            data = await redis.xrange(self.key,count=count)
+        if data:
+            return [await StreamData.decode(d[1]) for d in data]
+        return []
+        
 
+        
+    
     def __aiter__(self) -> Self:
         return self
 
@@ -699,7 +713,7 @@ class ChatStreams(BaseModel):
 # Cache Data Model
 
 class DisplayableMessage(BaseModel):
-    role: Literal["assistant", "user"]
+    role: Literal["assistant", "user", None] = None
     type: Literal["markdown", "html"] = "markdown"
     sender: str|None=None
     

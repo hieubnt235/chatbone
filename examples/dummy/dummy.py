@@ -14,6 +14,7 @@ from chatbone.assistant_interface import (
     VideoObject,
     BaseAssistant,
     AssistantStreamer,
+    capture_chat_context,
 )
 from chatbone.broker import DisplayableMessage
 from utilities import logger
@@ -25,7 +26,7 @@ class DataInput(AssistantInputData):
     image: ImageObject | list[Text] | VideoObject | None = None
     
     async def _compose_displayable_data(self) -> DisplayableMessage:
-        return DisplayableMessage(role="user",content=self.message.content)
+        return DisplayableMessage(content=self.message.content)
 
 
 class DataOutput(AssistantOutputData):
@@ -39,10 +40,7 @@ class DataOutput(AssistantOutputData):
             content+=f"""
             ![My image]({url})
             """
-        
-        return DisplayableMessage(
-            role="assistant", type="markdown", content=content, sender=self.assistant_name
-        )
+        return DisplayableMessage(content=content)
 
 
 def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
@@ -66,13 +64,33 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
 
         llm = init_chat_model(model="google_genai:gemini-2.0-flash")
         llm_response = await llm.ainvoke(state.messages)
-        
+
         # noinspection PyTypeChecker
         state.messages = llm_response
 
         return state
 
-    builder.add_node("node1", node1).set_entry_point("node1").set_finish_point("node1")
+    async def node2(state: State):
+        logger.debug("ENTER NODE 2")
+        
+        chat_context_list = await capture_chat_context()
+        logger.debug(f"Node2 capture context:\n"
+                     f"{chat_context_list}")
+        for context in chat_context_list:
+            for data in context:
+                print(await data.get_display_message(), sep="")
+            print("=============================================")
+        
+        logger.debug("END NODE @")
+        
+        return state
+
+    (builder.add_node("node1", node1)
+     .set_entry_point("node1")
+     .add_node("node2", node2)
+     .add_edge("node1","node2")
+     .set_finish_point("node2"))
+
     graph = builder.compile()
 
     async def streamer(data: DataInput):

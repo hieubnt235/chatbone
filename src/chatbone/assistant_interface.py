@@ -53,6 +53,7 @@ from chatbone.broker import (
     StreamData,
     StreamPair,
     DisplayMessage,
+    DataSegment,
 )
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
@@ -636,7 +637,6 @@ class AssistantOutputData(AssistantData):
 
     @property
     def assistant_name(self):
-        assert self._assistant_name is not None
         return self._assistant_name
 
     @property
@@ -786,6 +786,80 @@ AssistantStreamer = Callable[
 ]
 
 
+async def capture_chat_context(
+    from_latest: bool = True, count: int | None = None, data_only: bool = True
+) -> list[list[AssistantData]]:
+    """Retrieve latest data,
+    Args:
+        from_latest: The latest group of data which has the same chat_context_id will be in the first list.
+        count: The number of data retrieved from stream ( Not the data after filter by status code.)
+        data_only: If false, return both data input and status code.
+
+    Returns: a list as matrix with row is list of all data that has the same chat_context_id.
+    
+    IMPORTANT:
+        All data that have the same chat_context_id must be next to each others.
+    """
+
+    read_stream = assistant_stream_context.get().stream_pair.read_stream
+
+    all_data = await read_stream.capture(from_latest, count)
+    logger.debug(f"All data captured: \n"
+                 f"{all_data}")
+
+    chat_context_list: list[list[AssistantData]] = []
+    context_dict: dict[UUID, list[AssistantData] | None] = {}
+
+    def _do():
+        current_id: UUID | None = None
+        for data in all_data:
+            assert isinstance(data, AssistantData)
+            if (
+                isinstance(data, AssistantOutputData)
+                and data.status.code != AssistantStatusCode.PROCESSING
+                and data_only
+            ):
+                logger.debug(f"Captured AssistantOutputData but status is not PROCESSING, and be skipped because of data_only:\n"
+                             f"{data}")
+                continue
+            logger.debug(f"current_id={current_id}, chat_context_id={data.chat_context_id}")
+            if data.chat_context_id != current_id:
+                assert data.chat_context_id not in context_dict
+
+                if current_id is not None:
+                    if from_latest:
+                        context_dict[current_id].reverse()
+                    chat_context_list.append(context_dict[current_id])
+                    logger.debug(f"chat_context_list appended: {context_dict[current_id]}")
+                    # None means mark it done, so any uuid exist in the future will raise error
+                    context_dict[current_id] = None
+
+                context_dict[data.chat_context_id] = [data]
+                current_id = data.chat_context_id
+            else:
+                context_dict[current_id].append(data)
+
+        # Save the last context, which is not triggered because there is no more satisfy data.chat_context_id != current_id
+        if current_id:
+            if from_latest:
+                context_dict[current_id].reverse()
+            chat_context_list.append(context_dict[current_id])
+            logger.debug("Saved last context...")
+
+    await asyncio.to_thread(_do)
+    logger.debug(f"context_dict:\n{context_dict}")
+    logger.debug(f"chat_context_list: \n{chat_context_list}")
+    return chat_context_list
+
+
+async def get_data_segments() -> list[DataSegment]:
+    pass
+
+
+async def save_data_segments(data_segments: list[DataSegment]):
+    pass
+
+
 # noinspection PyTypeChecker
 class BaseAssistant(BaseModel):
     """This class is the base class of assistant app."""
@@ -851,6 +925,9 @@ class BaseAssistant(BaseModel):
         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
         pass
 
+    async def get_context(self):
+        pass
+
     async def _stream(
         self, data: AssistantInputData
     ) -> AsyncIterator[AssistantOutputData]:
@@ -892,6 +969,7 @@ class BaseAssistant(BaseModel):
 
         with _stream_cm(context) as token:
             try:
+                await stream_pair.write_stream.write(data_input) # Ping
                 await self._write_status(code=AssistantStatusCode.START)
 
                 async for data in self._stream(data_input):
@@ -902,7 +980,9 @@ class BaseAssistant(BaseModel):
                     data._status = Status(code=AssistantStatusCode.PROCESSING)
 
                     await stream_pair.write_stream.write(data)
-                    logger.debug(f"Wrote data {repr(data)}, chat_context_id: {data.chat_context_id}, status: {data.status}")
+                    logger.debug(
+                        f"Wrote data {repr(data)}, chat_context_id: {data.chat_context_id}, status: {data.status}"
+                    )
 
                 await self._write_status(code=AssistantStatusCode.SUCCESS)
 
