@@ -1670,6 +1670,7 @@ class ChatInputField(ft.Container):
                 return UserInputData()
             try:
                 data = await self._get_input_field(name).get_assistant_data()
+                logger.debug(f"get_input_data got: {repr(data)}")
                 data = self._apps[name].input_schema.model_validate(data)
                 data._username = self._username
 
@@ -1678,6 +1679,8 @@ class ChatInputField(ft.Container):
                     data=data,
                 )
             except ValidationError as e:
+                
+                logger.info(f"Error when get_input_data: {e}")
                 if raise_if_validate_fail:
                     raise
                 return UserInputData(assistant_name=name)
@@ -2032,7 +2035,7 @@ class ChatOutputField(ft.Container):
                     assert isinstance(data, AssistantOutputData)
                     assert data.chat_context_id == chat_context_id
                     logger.debug(
-                        f"Receive data={repr(data)}, chat_context_id={data.chat_context_id}, assistant_name={data.assistant_name}"
+                        f"Receive data={repr(data)}, chat_context_id={data.chat_context_id}, assistant_name={data.assistant_name}, role = {data.default_role}"
                     )
 
                     if data.status.code == AssistantStatusCode.ERROR:

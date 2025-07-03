@@ -15,8 +15,15 @@ from chatbone.assistant_interface import (
     BaseAssistant,
     AssistantStreamer,
     capture_chat_context,
+    get_data_segments,
+    save_data_segments,
 )
-from chatbone.broker import DisplayableMessage
+from chatbone.broker import (
+    DisplayableMessage,
+    DataSegment,
+    DisplayMessage,
+    CompositeDisplayMessage,
+)
 from utilities import logger
 
 
@@ -24,20 +31,20 @@ class DataInput(AssistantInputData):
     message: Text = Field(description="say what ever you want")
     others: list[Text] | None = Field(None, description="add what ever")
     image: ImageObject | list[Text] | VideoObject | None = None
-    
+
     async def _compose_displayable_data(self) -> DisplayableMessage:
         return DisplayableMessage(content=self.message.content)
 
 
 class DataOutput(AssistantOutputData):
     text: Text
-    image: ImageObject|None=None
-    
+    image: ImageObject | None = None
+
     async def _compose_displayable_data(self) -> DisplayableMessage:
         content = self.text.content
         if self.image is not None:
             url = await self.image.get_preview_url()
-            content+=f"""
+            content += f"""
             ![My image]({url})
             """
         return DisplayableMessage(content=content)
@@ -53,6 +60,18 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
     builder = StateGraph(DataInput)
 
     async def node1(data_input: DataInput):
+
+        segments = await get_data_segments()
+        logger.debug("Node 1: All history segments display")
+        for ds in segments:
+            print("START DS=================================")
+            for m in ds.messages:
+                if m := (await m.get_display_message()):
+                    print(m.content, sep="")
+                else:
+                    logger.error("Cannot get displayable message in segment")
+            print("END DS===================================")
+
         m = HumanMessage.model_validate(
             data_input.message,
             from_attributes=True,
@@ -72,24 +91,59 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
 
     async def node2(state: State):
         logger.debug("ENTER NODE 2")
-        
+
         chat_context_list = await capture_chat_context()
-        logger.debug(f"Node2 capture context:\n"
-                     f"{chat_context_list}")
-        for context in chat_context_list:
-            for data in context:
-                print(await data.get_display_message(), sep="")
-            print("=============================================")
+        logger.debug(f"Node2 capture context:\n" f"{chat_context_list}")
+
+        class CustomDisplayMessage(CompositeDisplayMessage):
+            async def _compose_displayable_data(self) -> DisplayableMessage:
+                contents = []
+                async for m in self.iter_displayable_messages():
+                    contents += m.content
+                return DisplayableMessage(content="".join(contents))
+
+        class CustomDataSegment(DataSegment):
+            total_stream_token: int | None = None  # anything
+            
+        data_segment = CustomDataSegment()
         
-        logger.debug("END NODE @")
+        context = chat_context_list[0] # The latest conversation context.
+        output_display_message = CustomDisplayMessage(
+            role="assistant", sender="Dummy", render_type="markdown"
+        )
+
+        # Compose data segment.
+        for data in context:
+            assert isinstance(
+                (m := await data.get_display_message()), DisplayableMessage
+            )
+            # Append only display message, ininput messags
+            if isinstance(data, AssistantInputData):
+                data.default_sender = data.username
+                data.default_role = "user"
+                data.default_type = "markdown"
+                data_segment.messages.append(data)
+                continue
+            assert isinstance(data, AssistantOutputData)
+            output_display_message.append(data)
+        # Append output message
+        data_segment.messages.append(output_display_message)
+        data_segment.total_stream_token=len(context)
         
+        logger.debug(f"Saving data_segment:\n"
+                     f"{repr(data_segment)}")
+        
+        await save_data_segments([data_segment])
+        logger.debug("Saved segments")
         return state
 
-    (builder.add_node("node1", node1)
-     .set_entry_point("node1")
-     .add_node("node2", node2)
-     .add_edge("node1","node2")
-     .set_finish_point("node2"))
+    (
+        builder.add_node("node1", node1)
+        .set_entry_point("node1")
+        .add_node("node2", node2)
+        .add_edge("node1", "node2")
+        .set_finish_point("node2")
+    )
 
     graph = builder.compile()
 
@@ -106,8 +160,8 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
             )
         if isinstance(data.image, ImageObject):
             yield DataOutput(
-                text= Text(content = "This is addition content outside the LLM"),
-                image= data.image
+                text=Text(content="This is addition content outside the LLM"),
+                image=data.image,
             )
 
     return streamer
@@ -124,17 +178,31 @@ class DummyAssistant(BaseAssistant):
 
 app = DummyAssistant.get_app()
 
-if __name__ == "__main__":
-    # serve.run(app,blocking=True,route_prefix=None, name="dummy")
-    import asyncio
+# if __name__ == "__main__":
+#     # serve.run(app,blocking=True,route_prefix=None, name="dummy")
+#     import asyncio
+#
+#     async def main():
+#         streamer = get_streamer()
+#         data_input = DataInput(
+#             message=Text(role="user", content="tell me a short story about cats.")
+#         )
+#
+#         async for data in streamer(data_input):
+#             print(await data.get_display_message())
+#
+#     asyncio.run(main())
 
-    async def main():
-        streamer = get_streamer()
-        data_input = DataInput(
-            message=Text(role="user", content="tell me a short story about cats.")
-        )
-
-        async for data in streamer(data_input):
-            print(await data.get_display_message())
-
-    asyncio.run(main())
+# class Data(AssistantInputData):
+#     pass
+# data = Data()
+#
+# print(data._role)
+# e = data._encode()
+#
+# e = {f"{StreamData}".encode(): e[f"{StreamData}"]}
+#
+# d = StreamData._decode(e)
+#
+# assert isinstance(d,Data)
+# print(d._role)

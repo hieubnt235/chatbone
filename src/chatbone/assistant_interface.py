@@ -54,10 +54,13 @@ from chatbone.broker import (
     StreamPair,
     DisplayMessage,
     DataSegment,
+    UserData,
+    ChatSessionData,
 )
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
 from utilities.logger import logger
+from utilities.misc import UniversalLock
 from utilities.settings.objest_storage import ObjectStorageSettings
 
 CHATBONE_ASSISTANT_APP_PREFIX = "<Chatbone_Assistant>"
@@ -449,7 +452,11 @@ class AssistantData(StreamData, DisplayMessage):
 
     model_config = ConfigDict(validate_default=True, validate_assignment=True)
     _is_input_schema: ClassVar[bool] = False
-    _default_exclude_attrs: ClassVar[list[str]] = None
+    _default_exclude_attrs: ClassVar[list[str]] = list(
+        DisplayMessage.model_fields.keys()
+    )
+    """Attributes from DisplayMessage"""
+
     _exclude_attrs: ClassVar[list[str]] = None
 
     # T means tuple, U means Union
@@ -510,7 +517,6 @@ class AssistantData(StreamData, DisplayMessage):
         cls._exclude_attrs = cls._exclude_attrs or []
         if cls._default_exclude_attrs is not None:
             cls._exclude_attrs.extend(cls._default_exclude_attrs)
-
         fields: dict[str, FieldInfo] = cls.model_fields
         for name, field_info in fields.items():
             ann = field_info.annotation
@@ -675,8 +681,15 @@ class RequestInput(StreamData):
 
 
 class AssistantStreamContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     stream_pair: StreamPair
     chat_context_id: UUID
+    cs_id: UUID
+    userdata: UserData
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._lock = UniversalLock() # for pickable
 
 
 assistant_stream_context: ContextVar[AssistantStreamContext] = ContextVar(
@@ -687,6 +700,7 @@ assistant_stream_context: ContextVar[AssistantStreamContext] = ContextVar(
 @contextmanager
 def _stream_cm(context: AssistantStreamContext):
     token = assistant_stream_context.set(context)
+    logger.debug(f"Context:\n" f"{repr(context)}")
     yield token
     assistant_stream_context.reset(token)
 
@@ -781,11 +795,6 @@ async def request_user_input(
         return None
 
 
-AssistantStreamer = Callable[
-    [AssistantInputData], AsyncGenerator[AssistantOutputData, None]
-]
-
-
 async def capture_chat_context(
     from_latest: bool = True, count: int | None = None, data_only: bool = True
 ) -> list[list[AssistantData]]:
@@ -796,16 +805,14 @@ async def capture_chat_context(
         data_only: If false, return both data input and status code.
 
     Returns: a list as matrix with row is list of all data that has the same chat_context_id.
-    
+
     IMPORTANT:
         All data that have the same chat_context_id must be next to each others.
     """
 
     read_stream = assistant_stream_context.get().stream_pair.read_stream
-
     all_data = await read_stream.capture(from_latest, count)
-    logger.debug(f"All data captured: \n"
-                 f"{all_data}")
+    logger.debug(f"All data captured: \n" f"{all_data}")
 
     chat_context_list: list[list[AssistantData]] = []
     context_dict: dict[UUID, list[AssistantData] | None] = {}
@@ -819,10 +826,12 @@ async def capture_chat_context(
                 and data.status.code != AssistantStatusCode.PROCESSING
                 and data_only
             ):
-                logger.debug(f"Captured AssistantOutputData but status is not PROCESSING, and be skipped because of data_only:\n"
-                             f"{data}")
+                logger.debug(
+                    f"Captured AssistantOutputData but status is not PROCESSING, and be skipped because of data_only:\n"
+                    f"{data}"
+                )
                 continue
-            logger.debug(f"current_id={current_id}, chat_context_id={data.chat_context_id}")
+
             if data.chat_context_id != current_id:
                 assert data.chat_context_id not in context_dict
 
@@ -830,10 +839,8 @@ async def capture_chat_context(
                     if from_latest:
                         context_dict[current_id].reverse()
                     chat_context_list.append(context_dict[current_id])
-                    logger.debug(f"chat_context_list appended: {context_dict[current_id]}")
                     # None means mark it done, so any uuid exist in the future will raise error
                     context_dict[current_id] = None
-
                 context_dict[data.chat_context_id] = [data]
                 current_id = data.chat_context_id
             else:
@@ -844,20 +851,56 @@ async def capture_chat_context(
             if from_latest:
                 context_dict[current_id].reverse()
             chat_context_list.append(context_dict[current_id])
-            logger.debug("Saved last context...")
+            logger.debug("Saved last context.")
 
     await asyncio.to_thread(_do)
-    logger.debug(f"context_dict:\n{context_dict}")
-    logger.debug(f"chat_context_list: \n{chat_context_list}")
+    logger.debug(f"returned chat_context_list: \n{chat_context_list}")
     return chat_context_list
 
 
 async def get_data_segments() -> list[DataSegment]:
-    pass
+    context = assistant_stream_context.get()
+    cs = (await context.userdata.get_chat_sessions([context.cs_id]))[context.cs_id]
+    data_segments = []
+    for encoded in cs.data_segments:
+        ds = await asyncio.to_thread(DataSegment.decode, encoded)
+        assert isinstance(ds, DataSegment)
+        data_segments.append(ds)
+    return data_segments
 
 
-async def save_data_segments(data_segments: list[DataSegment]):
-    pass
+async def save_data_segments(data_segments: list[DataSegment], *, persist: bool = True):
+    context = assistant_stream_context.get()
+    encoded_segs: list[str] = []
+    async with context._lock:
+        cs = (await context.userdata.get_chat_sessions([context.cs_id]))[context.cs_id]
+        for ds in data_segments:
+            encoded = await asyncio.to_thread(ds.encode)
+            encoded_segs.append(encoded)
+        await cs.append("data_segments", encoded_segs)
+
+        if persist:
+            logger.warning("Persist not implementation.")
+            # TODO
+
+
+async def get_user_facts() -> list[str]:
+    context = assistant_stream_context.get()
+    return context.userdata.summaries
+
+
+async def save_user_facts(facts: list[str], *, persist: bool = True):
+    context = assistant_stream_context.get()
+    async with context._lock:
+        await context.userdata.append("summaries", facts)
+    if persist:
+        logger.warning("Persis not implementation.")
+        # todo
+
+
+AssistantStreamer = Callable[
+    [AssistantInputData], AsyncGenerator[AssistantOutputData, None]
+]
 
 
 # noinspection PyTypeChecker
@@ -954,7 +997,13 @@ class BaseAssistant(BaseModel):
 
         logger.info("Done stream BaseAssistant")
 
-    async def __call__(self, data_input: AssistantInputData, stream_pair: StreamPair):
+    async def __call__(
+        self,
+        data_input: AssistantInputData,
+        stream_pair: StreamPair,
+        userdata: UserData,
+        cs_id: UUID,
+    ):
         logger.info(f"{self.name} called with {repr(data_input)}.")
 
         # Interface or app must handle all of these assertions, it's app role, not user or dev role.
@@ -964,12 +1013,15 @@ class BaseAssistant(BaseModel):
         logger.debug(f"chat_context_id={data_input.chat_context_id}")
 
         context = AssistantStreamContext(
-            stream_pair=stream_pair, chat_context_id=chat_context_id
+            stream_pair=stream_pair,
+            chat_context_id=chat_context_id,
+            userdata=userdata,
+            cs_id=cs_id,
         )
 
         with _stream_cm(context) as token:
             try:
-                await stream_pair.write_stream.write(data_input) # Ping
+                await stream_pair.write_stream.write(data_input)  # Ping
                 await self._write_status(code=AssistantStatusCode.START)
 
                 async for data in self._stream(data_input):
@@ -1065,10 +1117,16 @@ class AssistantInterface:
         )
 
     @staticmethod
-    async def call(app_name, user_input: UserInputData, stream_pair: StreamPair):
+    async def call(
+        app_name,
+        user_input: UserInputData,
+        stream_pair: StreamPair,
+        userdata: UserData,
+        cs_id: UUID,
+    ):
         """Call ray task and block until success"""
         handle = await AssistantInterface.get_assistant_app_handle(app_name)
-        task = handle.remote(user_input.data, stream_pair)
+        task = handle.remote(user_input.data, stream_pair, userdata, cs_id)
 
         logger.debug(
             f"AssistantInterface called assistant {user_input.assistant_name}. chat_context_id = {user_input.data.chat_context_id}"

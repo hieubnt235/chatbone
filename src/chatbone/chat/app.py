@@ -11,12 +11,7 @@ from pydantic import Field
 from ray import serve
 
 from chatbone.broker import UserData, EncryptedTokenError, UserNotFoundError, ReadStream
-from chatbone.chat.chat_io import (
-    ChatInputField,
-    ChatOutputField,
-    ContainerArgs,
-    RequestInputField,
-)
+from chatbone.chat.chat_io import (ChatInputField, ChatOutputField, ContainerArgs, RequestInputField, )
 from chatbone.chat.svc import *
 from utilities.func import uuid_to_base64, base64_to_uuid
 from utilities.logger import logger
@@ -389,7 +384,7 @@ class _IOFields(ft.Container):
                 "Current output field is running task. Cancel it first before add new output fields."
             )
         self._task = task
-        logger.info(
+        logger.debug(
             f"Chat task added to io fields. Username={self.chat_output_field._username}. cs_id {self.chat_output_field._cs_uid}."
         )
 
@@ -400,7 +395,7 @@ class _IOFields(ft.Container):
             self._task.cancel()
             t = self._task
             self._task = None
-            logger.info(f"Cancelled io field task {t}")
+            logger.debug(f"Cancelled io field task {t}")
             return t
 
 
@@ -517,14 +512,14 @@ class AppView(BaseView):
                 self._cs_browser.disabled = True
                 self._enable_send(False, lock=False)  # already update
                 self.page.update()
-                logger.info("Chatting mode entered successfully")
+                logger.debug("Chatting mode entered successfully")
                 yield
             finally:
                 self._input_field.disabled = False
                 self._cs_browser.disabled = False
                 self._enable_send(lock=False)
                 self.page.update()
-                logger.info("Chatting mode exists")
+                logger.debug("Chatting mode exists")
 
     # noinspection PyTypeChecker
     @property
@@ -611,7 +606,7 @@ class AppView(BaseView):
             self._io_fields.update()  # It will replace prompt text with io input fields.
             self._enable_send()
             messages = await self.chat_app.get_chat_session_messages(uid)
-            logger.info(f"Message history:\n{messages}")
+            logger.debug(f"Message history:\n{messages}")
             await self._output_field.push_messages(messages)
 
     async def _on_chat(self, e):
@@ -673,16 +668,16 @@ class AppView(BaseView):
             task = self._io_fields.cancel_task()
             if task:
                 await task
-                logger.info(
+                logger.debug(
                     f"Chat task killed. Username={self._output_field._username}."
                     f" cs_id{self._output_field._cs_uid}."
                 )
             else:
-                logger.info("No task to kill")
+                logger.debug("No task to kill")
         finally:
             if await self._io_fields.lock.alocked:
                 await self._io_fields.lock.arelease()
-            logger.info("io fields lock released")
+            logger.debug("io fields lock released")
 
     async def cleanup(self):
         await self._kill_chat_task()
@@ -797,7 +792,6 @@ class ChatApp:
     async def chat(
         self, chat_session_id: UUID, user_input: UserInputData
     ) -> AsyncIterator[AssistantOutputData | RequestInputField]:
-        logger.info("go in chat")
         async with AsyncExitStack() as stack:
             chat_handle = await stack.enter_async_context(
                 self.chat_assistant_svc.chat(chat_session_id, user_input)
@@ -805,7 +799,7 @@ class ChatApp:
             try:
                 reader = await stack.enter_async_context(chat_handle.stream_reader)
                 sender = await stack.enter_async_context(chat_handle.stream_sender)
-                logger.info("Connect chat assistant successful, start stream.")
+                logger.debug("Connect chat assistant successful, start stream.")
 
                 async for data in reader:
                     logger.debug(f"Chat app got data {repr(data)}")
@@ -813,7 +807,7 @@ class ChatApp:
                         yield data  # This can be raise Exception
                     elif isinstance(data, RequestInput):
                         yield await self._make_request_input_field(data, sender)
-                logger.info("End stream successfully")
+                logger.debug("End stream successfully")
             except Exception as e:
                 logger.exception(e)
                 chat_handle.task.cancel()
@@ -832,13 +826,13 @@ class ChatApp:
     @property
     async def local_data(self) -> _LocalData | None:
         data = await self.page.client_storage.get_async(self.local_data_key)
-        logger.info(f"Raw local data received in session: {data}.")
+        logger.debug(f"Raw local data received in session: {data}.")
         if data:
             return ChatApp._LocalData.model_validate(data)
         return None
 
     async def set_local_data(self, new_local_data: _LocalData):
-        logger.info(f"Set new local data: {new_local_data}")
+        logger.debug(f"Set new local data: {new_local_data}")
         await self.page.client_storage.set_async(
             self.local_data_key, new_local_data.model_dump(mode="json")
         )
@@ -897,7 +891,7 @@ class ChatApp:
                 assert isinstance(self.heartbeat_task, Task)
 
             except EncryptedTokenError:
-                logger.info(
+                logger.debug(
                     "encrypted token in local storage is no longer valid and get deleted."
                 )
                 await self.remove_local_data()
@@ -920,12 +914,12 @@ class ChatApp:
             if self.userdata is None:
                 raise UserNotFoundError("Userdata not found, login first.")
             try:
-                logger.info(
+                logger.debug(
                     f"Heartbeat of userdata '{self.userdata.username}' started."
                 )
                 await self.userdata.heartbeat(CONFIG.userdata_expire_seconds, 0.05)
             except asyncio.CancelledError:
-                logger.info(
+                logger.debug(
                     f"Heartbeat of userdata '{self.userdata.username}' stopped."
                 )
 
@@ -1005,7 +999,7 @@ class ChatApp:
         )
 
     def go(self, route: str):
-        logger.info(f"{self.id}: go to '{route}'")
+        logger.debug(f"{self.id}: go to '{route}'")
         self.page.go(route)
 
     def go_to_view(self, view_name: str):

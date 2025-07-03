@@ -348,7 +348,7 @@ class ChatAssistantSVC(_DataSVC):
                 return {
                     chat_session_id: ChatSessionData(
                         id=chat_session_id,
-                        data_segments=[DataSegment()],  # todo: this is dummy for now
+                        data_segments=[],  # todo: this is dummy for now
                     )
                 }
 
@@ -381,7 +381,6 @@ class ChatAssistantSVC(_DataSVC):
 
             logger.debug(f"Redis stream got: {streams}")
 
-            # todo: prepare context.
             # todo: handle read stream only case.
 
             # Long code for type hint and code complete
@@ -435,6 +434,8 @@ class ChatAssistantSVC(_DataSVC):
                             self.assistant_apps[user_input.assistant_name].app_name,
                             user_input,
                             streams.as2cs,
+                            self.userdata,
+                            chat_session_id
                         )
                     ),
                     asyncio.create_task(
@@ -461,17 +462,12 @@ class ChatAssistantSVC(_DataSVC):
                         task.cancel()
                         await task
                     
-                    # TODO: HANDLE SAVER WHEN CANCEL
-            
-            
             chat_handle = ChatHandle(
                 stream_sender=cs2as_sender,
                 stream_reader=as2cs_reader,
                 task=asyncio.create_task(_chat_task()),
             )
             yield chat_handle
-
-            # TODO: persist data after success.
 
     @property
     def token_id(self) -> UUID:

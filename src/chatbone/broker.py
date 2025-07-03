@@ -1,12 +1,23 @@
 __all__ = ["UserData", "ChatSessionData"]
 import asyncio
+import base64
 import json
 from abc import ABC
 from contextlib import asynccontextmanager, AbstractAsyncContextManager, AsyncExitStack
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from inspect import iscoroutine
-from typing import (Literal, Self, Awaitable, Any, Sequence, ClassVar, get_origin, get_args, AsyncIterator, )
+from typing import (
+    Literal,
+    Self,
+    Awaitable,
+    Any,
+    Sequence,
+    ClassVar,
+    get_origin,
+    get_args,
+    AsyncIterator,
+)
 from uuid import UUID
 
 from cloudpickle import cloudpickle
@@ -18,7 +29,7 @@ from redis.exceptions import LockError
 from redis.typing import FieldT, EncodableT
 
 from chatbone.settings import REDIS, CONFIG, get_redis
-from utilities.func import encrypt, decrypt, dump_base_models
+from utilities.func import encrypt, decrypt, dump_if_base_model
 from utilities.logger import logger
 
 LOCK_POSTFIX = "<LOCK>"
@@ -327,18 +338,22 @@ class ChatboneData(BaseModel, ABC):
                 If JSON list exists, return len of the entire list.
                 If the pipeline is given, return None.
         """
-        await asyncio.to_thread(self._check_list_params, field, values)
         if len(values) == 0:
             logger.info(f"Skip append with no value.")
             return
-        data = await asyncio.to_thread(dump_base_models, values, "json")
+        await asyncio.to_thread(self._check_list_params, field, values)
+
+        def _dump_if_base_model():
+            return [v.model_dump_json() for v in values if isinstance(v, BaseModel)]
+
+        data = await asyncio.to_thread(dump_if_base_model, values, "json")
         async with self._get_transaction_pipeline(
             redis_or_pipeline, execute=False
         ) as pipeline:
             coro: Awaitable[list[int | None]] = pipeline.json().arrappend(
                 self.rkey,
                 f"{self._jsonpath}.{field}",
-                **data,
+                *data,
             )
             await coro
             if not redis_or_pipeline:
@@ -385,8 +400,8 @@ class ChatboneData(BaseModel, ABC):
         async with self._get_transaction_pipeline(redis_or_pipeline) as pipeline:
             coros: list[Awaitable[list[int | None]]] = []
             for k, v in values.items():
-                if isinstance(v,BaseModel):
-                    v=v.model_dump(mode="json")
+                if isinstance(v, BaseModel):
+                    v = v.model_dump(mode="json")
                 coros.append(
                     pipeline.json().set(self.rkey, f"{self._jsonpath}.{field}.{k}", v)
                 )
@@ -512,19 +527,21 @@ class ChatboneData(BaseModel, ABC):
                 if execute:
                     await pipeline.execute()
 
+
 # Stream Data
 
 EncodedStreamData = dict[FieldT, EncodableT]
 
+
 class StreamData(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def _encode(self) -> EncodedStreamData:
         return {f"{StreamData}": cloudpickle.dumps(self)}
 
     @classmethod
     def _decode(cls, data: EncodedStreamData) -> Self:
-        data = cloudpickle.loads(data[f"{cls}".encode()])
+        # Note: the dict key is encoded because when data is loaded from stream, the key has type bytes
+        data = cloudpickle.loads(data[f"{StreamData}".encode()])
         assert isinstance(data, StreamData)
         return data
 
@@ -603,13 +620,13 @@ class ReadStream(Stream):
         self._checkpoint_id: str = (
             "$"  # get new data coming after the moment of blocking.
         )
-        self._count: int|None = 1
+        self._count: int | None = 1
         self._save_checkpoint: bool = False
 
     def bind(
         self,
         checkpoint: str | None = None,
-        count: int | Literal["DEFAULT",None] = "DEFAULT",
+        count: int | Literal["DEFAULT", None] = "DEFAULT",
         save_checkpoint: bool | None = None,
     ) -> Self:
         """Create a new object with new state. Use current states if they are not provided.
@@ -622,10 +639,14 @@ class ReadStream(Stream):
                 New object of ReadStream.
         """
         new_obj = self.__class__(self.key)
-        new_obj._checkpoint_id = checkpoint if checkpoint is not None else self._checkpoint_id
-        new_obj._count = count if count!="DEFAULT" else self._count
-        
-        new_obj._save_checkpoint = save_checkpoint if save_checkpoint is not None else self._save_checkpoint
+        new_obj._checkpoint_id = (
+            checkpoint if checkpoint is not None else self._checkpoint_id
+        )
+        new_obj._count = count if count != "DEFAULT" else self._count
+
+        new_obj._save_checkpoint = (
+            save_checkpoint if save_checkpoint is not None else self._save_checkpoint
+        )
         return new_obj
 
     async def read(
@@ -658,7 +679,7 @@ class ReadStream(Stream):
 		With non encodable data, just return byte stream, so the stream key is also byte type.
 		"""
         checkpoint = checkpoint if checkpoint is not None else self._checkpoint_id
-        count = count if count!="DEFAULT" else self._count
+        count = count if count != "DEFAULT" else self._count
 
         data = await get_redis(decode_responses=False, protocol=3).xread(
             {self.key: checkpoint}, count, block
@@ -669,10 +690,10 @@ class ReadStream(Stream):
             decoded_data = []
             for d in data:
                 decoded_data.append(await StreamData.decode(d[1]))
-                
+
             if self._save_checkpoint:
                 ckpt = data[-1][0]
-                assert isinstance(ckpt,bytes)
+                assert isinstance(ckpt, bytes)
                 new_ckpt = ckpt.decode()
                 self._checkpoint_id = new_ckpt
                 logger.debug(f"Change checkpoint of read stream to {new_ckpt}")
@@ -680,78 +701,114 @@ class ReadStream(Stream):
         else:
             assert data == {}
             return []
-    
-    async def capture(self, from_latest:bool = True, count:int|None=None)->list[StreamData]:
+
+    async def capture(
+        self, from_latest: bool = True, count: int | None = None
+    ) -> list[StreamData]:
         redis = get_redis(decode_responses=False, protocol=3)
         if from_latest:
-            data = await redis.xrevrange(self.key,count=count)
+            data = await redis.xrevrange(self.key, count=count)
         else:
-            data = await redis.xrange(self.key,count=count)
+            data = await redis.xrange(self.key, count=count)
         if data:
             return [await StreamData.decode(d[1]) for d in data]
         return []
-        
 
-        
-    
     def __aiter__(self) -> Self:
         return self
 
     async def __anext__(self) -> list[StreamData]:
         return await self.read(block=0)  # block forever.
 
+
 class StreamPair(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     write_stream: WriteStream | None = None
     read_stream: ReadStream | None = None
+
 
 class ChatStreams(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     as2cs: StreamPair = Field(default_factory=StreamPair)
     cs2as: StreamPair = Field(default_factory=StreamPair)
 
+
 # Cache Data Model
 
+
 class DisplayableMessage(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
     role: Literal["assistant", "user", None] = None
     type: Literal["markdown", "html"] = "markdown"
-    sender: str|None=None
-    
-    content: str
-    
-    # format_attrs: set[str] = Field(default_factory=set)
+    sender: str | None = None
 
-class DisplayMessage:
+    content: str = None
+    """Cannot be None get_display_message will raise if it and the default is None."""
 
-    async def get_display_message(self)-> DisplayableMessage | None:
+
+class DisplayMessage(BaseModel):
+    model_config = ConfigDict(validate_assignment=True, validate_default=True)
+
+    # Default for DisplayableMessage
+    default_role: Literal["user", "assistant", None] = None
+    default_type: Literal[
+        "markdown",
+        "html",
+    ] = "markdown"
+    default_sender: str | None = None
+    default_content: str | None = None
+
+    async def get_display_message(self) -> DisplayableMessage | None:
         try:
-            m = await self._compose_displayable_data()
-            # attr_values = {}
-            # for attr in m.format_attrs:
-            #     try:
-            #         value = getattr(self, attr)
-            #         if isawaitable(value):
-            #             attr_values[attr] = await value
-            #         elif iscoroutinefunction(value):
-            #             attr_values[attr] = (
-            #                 await value()
-            #             )  # Only for none parameters functions
-            #         elif callable(value):
-            #             attr_values[attr] = await asyncio.to_thread(value)
-            #         else:
-            #             attr_values[attr] = value
-            #     except Exception as e:
-            #         attr_values[attr] = e
-            #     await asyncio.sleep(0.1)  # Prevent for blocking.
-            #
-            # m.content.format(**attr_values)
-        except NotImplementedError:
+            dm = await self._compose_displayable_data()
+        except Exception as e:
+            logger.warning(
+                f"Error when call _compose_displayable_data, return None. Error: {e}"
+            )
             return None
-            
-        return m
+        dm.content = dm.content if dm.content is not None else self.default_content
+        assert isinstance(dm.content, str)
 
-    async def _compose_displayable_data(self)->DisplayableMessage:
-        raise NotImplementedError
+        dm.role = dm.role if dm.role is not None else self.default_role
+        dm.sender = dm.sender if dm.sender is not None else self.default_sender
+        dm.type = dm.type if dm.type is not None else self.default_type
+        return dm
+
+    async def _compose_displayable_data(self) -> DisplayableMessage:
+        return DisplayableMessage()  # default
+
+
+class CompositeDisplayMessage(DisplayMessage):
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
+
+    sub_messages: list[DisplayMessage] = Field(default_factory=list)
+
+    async def iter_displayable_messages(self) -> AsyncIterator[DisplayableMessage]:
+        for m in self.sub_messages:
+            dm = None
+            if not isinstance(m, DisplayMessage):
+                logger.warning(
+                    f"Sub message is not the instance of DisplayMessage and was skipped. Got {repr(m)}"
+                )
+                continue
+            try:
+                dm = await m.get_display_message()
+                assert isinstance(dm, DisplayableMessage)
+            except Exception as e:
+                logger.error(
+                    f"DisplayMessage.get_display_message() got an error while calling: {e}. The loop still continue."
+                )
+            assert isinstance(dm, DisplayableMessage)  # double check
+            yield dm
+
+    async def _compose_displayable_data(self) -> DisplayableMessage:
+        if len(self.sub_messages) == 1:
+            return await self.sub_messages[0].get_display_message()
+        raise NotImplementedError  # Force to override
+
+    def append(self, m: DisplayMessage):
+        assert isinstance(m, DisplayMessage)
+        self.sub_messages.append(m)
 
 
 class DataSegment(BaseModel):
@@ -759,16 +816,23 @@ class DataSegment(BaseModel):
     This class will be used to collect the context.
     Note: instance of this class MUST BE PICKLEABLE.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
     messages: list[DisplayMessage] = Field(default_factory=list)
     """List of message to display to chat dialog in the order."""
-    
-    def encode(self)->str:
-        return cloudpickle.dumps(self)
-    
+
+    def encode(self) -> str:
+        b =cloudpickle.dumps(self)
+        return base64.b64encode(b).decode()
+
     @classmethod
-    def decode(cls, v: bytes )->Self:
-        return cloudpickle.loads(v)
+    def decode(cls, v: str) -> Self:
+        assert isinstance(v,str)
+        s = base64.b64decode(v)
+        return cloudpickle.loads(s)
+
+    # TODO: CHECK FOR PICKABLE TYPE HINT.
+
 
 class ChatSessionData(ChatboneData):
     """
@@ -776,9 +840,10 @@ class ChatSessionData(ChatboneData):
             1. Init value to add to UserData.
             2. After added to UserData and refresh, it will bind with user data, now it can interact with server data.
     """
+
     embedding = True
-    data_segments: list[DataSegment] = Field(default_factory=list)
-    
+    data_segments: list[str] = Field(default_factory=list)
+
     # noinspection PyTypeChecker
     @asynccontextmanager
     async def get_streams(

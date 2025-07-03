@@ -113,9 +113,14 @@ def solve_relative_paths_recursively(data: dict, abs_path: Path):
 		if isinstance(v, str) and k.endswith(("file", "path", "dir")):
 			data[k] = (abs_path / Path(v)).resolve().as_posix()
 
-def dump_base_models(base_models:list[BaseModel], mode:Literal['json','python']='python'):
-	return [b.model_dump(mode=mode) for b in base_models if isinstance(b,BaseModel)]
-
+def dump_if_base_model(models:list[BaseModel|Any], mode:Literal['json','python']='python'):
+    r = []
+    for m in models:
+        if isinstance(m,BaseModel):
+            r.append(m.model_dump(mode=mode))
+        else:
+            r.append(m)
+    return r
 
 def uuid_to_base64(uuid_obj: UUID) -> str:
     encoded_bytes = base64.urlsafe_b64encode(uuid_obj.bytes)
