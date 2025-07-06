@@ -3,13 +3,13 @@ from uuid import UUID
 import flet as ft
 from pydantic import Field
 
-from chatbone.assistant_interface import (AssistantInputData, ImageObject, VideoObject, Text, BaseSelection,
+from chatbone.assistant_interface import (AssistantInputData, ImageObject, VideoObject, Text, Selection,
                                           AssistantOutputData, DataFormat, Status, AssistantStatusCode, )
 from chatbone.chat.chat_io import ChatInputField, ChatOutputField
 from chatbone.chat.svc import AssistantApp
 
 
-class Selection(BaseSelection):
+class Selection(Selection):
     options = {"opt 1": "this is option 1", "opt 2": "this is option 2"}
 
 

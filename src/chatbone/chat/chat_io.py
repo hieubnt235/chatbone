@@ -68,7 +68,7 @@ from chatbone.assistant_interface import (
     InvalidBinaryFile,
     AssistantInputData,
     Text,
-    BaseSelection,
+    Selection,
     AssistantOutputData,
     AssistantStatusCode,
 )
@@ -563,6 +563,7 @@ class MediaInputField(BaseInputField):
         if cancel:
             await self._file_picker.cancel(filename)
         await self.remove_file_review_row(filename, should_lock)
+        logger.debug(f"Unselect file with cancel={cancel}, num files now: {self._file_names}.")
         if update:
             self.page.update()
 
@@ -651,7 +652,6 @@ class TextInputField(BaseInputField):
             input_filter=text_type.input_filter, on_change=self._on_change
         )
         self._notice_text = ft.Text(value=self._textfield.value)
-        self._value = None
 
         column = ft.Column([self._textfield, self._notice_text])
         super().__init__(column, **kwargs)
@@ -662,16 +662,15 @@ class TextInputField(BaseInputField):
             self._notice_text.value = "Invalid input"
         else:
             self._notice_text.value = None
-        self.value = val
         self.page.update(self._textfield, self._notice_text)
 
     async def _validate(self):
         try:
             if iscoroutinefunction(self._text_type.input_validator):
-                val = await self._text_type.input_validator(self._textfield.value)
+                val = await self._text_type.input_validator(self.value)
             else:
                 val = await asyncio.to_thread(
-                    self._text_type.input_validator, self._textfield.value
+                    self._text_type.input_validator, self.value
                 )
             if val is None:
                 return None
@@ -682,16 +681,19 @@ class TextInputField(BaseInputField):
 
     @property
     def value(self) -> str | None:
-        return self._value
+        return self._textfield.value
 
     @value.setter
     def value(self, v: str | None):
-        self._value = v
+        self._textfield.value = v
 
     async def get_assistant_data(
         self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         r = self._text_type(role="user", content=self.value) if self.value else None
+        if r:
+            self.value= None
+            self._textfield.value = None
         return r
 
     async def _refresh(self) -> None:
@@ -708,7 +710,7 @@ class TextInputField(BaseInputField):
 class SelectionInputField(BaseInputField):
 
     def __init__(
-        self, selection_type: type[BaseSelection], **kwargs: Unpack[ContainerArgs]
+        self, selection_type: type[Selection], **kwargs: Unpack[ContainerArgs]
     ):
         """
         Args:
@@ -717,12 +719,12 @@ class SelectionInputField(BaseInputField):
         """
         assert selection_type.options is not None
         self._selection_type = selection_type
-
+        
         self._dd = ft.Dropdown(
-            options=[ft.DropdownOption(k, v) for k, v in selection_type.options.items()]
+            options=[ft.DropdownOption(key=k) for k in selection_type.options.keys()]
         )
 
-        self._desc = ft.Text(pformat(selection_type.options))
+        self._desc = ft.Text(f"Hint:{pformat(selection_type.options)}:{selection_type.__doc__}")
 
         content = ft.Column([self._dd, self._desc])
 
@@ -1885,7 +1887,7 @@ class ChatInputField(ft.Container):
             if issubclass(ann, Text):
                 return TextInputField(ann)
 
-            if issubclass(ann, BaseSelection):
+            if issubclass(ann, Selection):
                 return SelectionInputField(ann)
 
             if issubclass(ann, MediaObject):

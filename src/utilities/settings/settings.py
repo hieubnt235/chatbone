@@ -1,5 +1,6 @@
 # from dotenv import find_dotenv
 import inspect
+import time
 from pathlib import Path
 from typing import ClassVar
 from uuid import UUID
@@ -77,9 +78,11 @@ class Settings(BaseSettings):
 
     @handle_exception(SettingsException)
     def __init__(self, *args, **kwargs):
+        start = time.time()
         load_dotenv(self.model_config.get("env_file"))
         super().__init__(*args, **kwargs)
+        
         logger.info(
-            f"'{self.service_name}' SERVICE SETTINGS:\n"
+            f"'{self.service_name}' service settings created in {time.time()-start} seconds:\n"
             f"{self.model_dump_json(indent=4)}"
         )

@@ -4,36 +4,76 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import AnyMessage, HumanMessage, AIMessageChunk
 from langgraph.graph import StateGraph, add_messages
 from pydantic import BaseModel, Field
-from uuid_extensions import uuid7
 
-from chatbone.assistant_interface import (
-    AssistantInputData,
-    Text,
-    AssistantOutputData,
-    ImageObject,
-    VideoObject,
-    BaseAssistant,
-    AssistantStreamer,
-    capture_chat_context,
-    get_data_segments,
-    save_data_segments,
-)
-from chatbone.broker import (
-    DisplayableMessage,
-    DataSegment,
-    DisplayMessage,
-    CompositeDisplayMessage,
-)
+from chatbone.assistant_interface import (AssistantInputData, Text, AssistantOutputData, ImageObject, VideoObject,
+                                          BaseAssistant, AssistantStreamer, capture_chat_context, get_data_segments,
+                                          save_data_segments, Selection, )
+from chatbone.broker import (DisplayableMessage, DataSegment, CompositeDisplayMessage, )
 from utilities import logger
 
+
+# NewSelection = Selection[
+#     dict(name="give me a name", value="what is your age", __doc__="this is the doc")
+# ]
+# assert issubclass(NewSelection,Selection)
+# logger.debug(f"NewSelection = {NewSelection.options}")
+# print(NewSelection.__name__)
+# c = NewSelection.model_validate({"selection": "name"})
+# try:
+#     d = NewSelection(selection="abc")
+# except ValueError as e:
+#     print(e)
+# print(c)
+# print(c._dynamic_construction_class_args__)
+# assert isinstance(c, Selection)
+# b = cloudpickle.dumps(c)
+# bb = base64.b64encode(b).decode()
+# s = base64.b64decode(bb)
+# cc = cloudpickle.loads(s)
+#
+# print(cc)
+# print(cc.__class__, cc.__class__.__module__)
+# print(cc.options)
+# with open("dumpt", "rb") as f:
+#     cc = cloudpickle.load(f)
+#     print(cc)
+#     print(cc.__class__,cc.__class__.__module__)
+#     print(cc.options)
+
+# b = cloudpickle.dumps(self)
+# return base64.b64encode(b).decode()
+# s = base64.b64decode(v)
+# return cloudpickle.loads(s)
+
+
+# YesNoSelection = Selection[{"Yes": "When you agree", "No": "When you dump","__doc__":"This is doc"}]
+
+# TODO: NOT WORK
+# logger.debug(f"Module: {__name__}")
+# YesNoSelection = Selection[
+#     {
+#     "Yes": "When you agree",
+#     "No": "When you dump",
+#     "__doc__":"this is doc",
+#     "__module__": __name__,
+#     }
+# ]
+
+class YesNoSelection(Selection):
+    options = {"Yes": "When you agree", "No": "When you dump"}
 
 class DataInput(AssistantInputData):
     message: Text = Field(description="say what ever you want")
     others: list[Text] | None = Field(None, description="add what ever")
     image: ImageObject | list[Text] | VideoObject | None = None
-
+    yes_no: YesNoSelection
+    
     async def _compose_displayable_data(self) -> DisplayableMessage:
-        return DisplayableMessage(content=self.message.content)
+        return DisplayableMessage(content=self.message.content
+                                          +f"\nSelection:{self.yes_no.selection}"
+                                  )
+
+# data = DataInput(message=Text(content="abc"), yes_no=)
 
 
 class DataOutput(AssistantOutputData):
@@ -104,12 +144,12 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
 
         class CustomDataSegment(DataSegment):
             total_stream_token: int | None = None  # anything
-            
+
         data_segment = CustomDataSegment()
-        
-        context = chat_context_list[0] # The latest conversation context.
+
+        context = chat_context_list[0]  # The latest conversation context.
         output_display_message = CustomDisplayMessage(
-            role="assistant", sender="Dummy", render_type="markdown"
+            default_role="assistant", default_sender="Dummy", default_type="markdown"
         )
 
         # Compose data segment.
@@ -117,22 +157,22 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
             assert isinstance(
                 (m := await data.get_display_message()), DisplayableMessage
             )
-            # Append only display message, ininput messags
+            # Append only display message, in input messags
             if isinstance(data, AssistantInputData):
                 data.default_sender = data.username
                 data.default_role = "user"
                 data.default_type = "markdown"
                 data_segment.messages.append(data)
                 continue
+                
             assert isinstance(data, AssistantOutputData)
             output_display_message.append(data)
         # Append output message
         data_segment.messages.append(output_display_message)
-        data_segment.total_stream_token=len(context)
-        
-        logger.debug(f"Saving data_segment:\n"
-                     f"{repr(data_segment)}")
-        
+        data_segment.total_stream_token = len(context)
+
+        logger.debug(f"Saving data_segment:\n" f"{repr(data_segment)}")
+
         await save_data_segments([data_segment])
         logger.debug("Saved segments")
         return state
@@ -149,10 +189,9 @@ def get_streamer() -> Callable[[DataInput], AsyncGenerator[DataOutput, None]]:
 
     async def streamer(data: DataInput):
         assert data is not None
-        logger.info(repr(data))
-        # async for chunk in graph.astream(data,stream_mode=):
-        stream_id = uuid7()
-
+        logger.debug(f"DUMMY streamer receive data input")
+        logger.debug(repr(data))
+        
         async for chunk, meta in graph.astream(data, stream_mode="messages"):
             assert isinstance(chunk, AIMessageChunk)
             yield DataOutput(

@@ -1,11 +1,16 @@
+import time
+
+start = time.time()
 import asyncio
 import dataclasses
+import json
 import os
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta, datetime
 from enum import Enum
+from pprint import pformat
 from types import NoneType, UnionType
 from typing import (
     AsyncGenerator,
@@ -31,6 +36,7 @@ import ray.serve.schema as ray_schema
 from filetype import match
 from filetype.types import document, IMAGE, VIDEO, AUDIO, archive
 from filetype.types.image import Jpeg
+from jedi.inference.gradual.typing import TypedDict
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -38,10 +44,10 @@ from pydantic import (
     create_model,
     Field,
     TypeAdapter,
-    ValidationError,
     NonNegativeInt,
 )
-from pydantic.fields import FieldInfo, PrivateAttr
+from pydantic.fields import FieldInfo, PrivateAttr, _Unset
+from pydantic_core import PydanticUndefined
 from ray import serve
 from ray.exceptions import TaskCancelledError
 from ray.serve._private.common import ReplicaState
@@ -55,7 +61,6 @@ from chatbone.broker import (
     DisplayMessage,
     DataSegment,
     UserData,
-    ChatSessionData,
 )
 from chatbone.settings import OBJ_STORAGE, CONFIG
 from utilities.func import utc_now
@@ -268,6 +273,7 @@ AssistantDataType_T: tuple[Type[BaseAssistantType]] = ()
 AssistantDataType_U: Type[BaseAssistantType] = BaseAssistantType
 """Assistant datatype in union format."""
 
+
 AnyMediaObject: Type[MediaObject] = MediaObject
 """Media object union."""
 
@@ -365,86 +371,142 @@ class Text(BaseAssistantType):
             assert isinstance(cls.input_filter, InputFilter)
 
 
-@assistant_datatype
-class BaseSelection(BaseAssistantType):
-    __adapter: ClassVar[TypeAdapter] = TypeAdapter(dict[str, str | None])
+# TODO: Dynamical model creation not work, error fail when assistant receive object from chat app, use it, pickle and save it
+#  then cannot reload anymore. Already sent issue: https://github.com/pydantic/pydantic/issues/12040
 
+@assistant_datatype
+class Selection(BaseAssistantType):
+    model_config = ConfigDict(from_attributes=True)
+    __adapter: ClassVar[TypeAdapter] = TypeAdapter(dict[str, str | None])
+    # __cache_classes: ClassVar[dict[str, type["Selection"]]] = {}
+    """Cache for subclass that created dynamically, not by declaration."""
     only = Only.INPUT
+
     options: ClassVar[dict[str, str | None]] = None
     """option dict, where keys are option keys and values are description to show to user."""
-    _options: ClassVar[list[str]] = None
     selection: str
 
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        _ = cls.__adapter.validate_python(cls.options)
-        cls._options = list(cls.options.keys())
+    def __class_getitem__(cls, items: dict[str, str | None]) -> type[Self]:
+        return cls.create_from_options(**items)
+
+    # def __reduce__(self):
+    #     logger.debug(
+    #         f"Instance of class={self.__class__.__name__}, class_id={id(self.__class__)} call __reduce__()."
+    #     )
+    #     if args := getattr(self, "_dynamic_construction_class_args__", None):
+    #         logger.debug(
+    #             f"Selection.__reduce__ call class constructor with _dynamic_construction_class_args__:\n"
+    #             f"{args}"
+    #         )
+    #         return _selection_reconstruct, (args, self.model_dump())
+    #     else:
+    #         For not dynamic creation.
+            # logger.debug("Selection.__reduce__ call super().__reduce__()")
+            # return super().__reduce__()
 
     @classmethod
-    @model_validator(mode="before")
-    def _check_selection(cls, v: dict) -> Self:
-        if (val := v["selection"]) not in cls._options:
-            raise ValidationError(f"'selection' must be in {cls._options}. Got {val}")
-        return v
+    def create_from_options(
+        cls,**kwargs
+        # options: dict[str, str | None],
+        # __doc__: str | None = None,
+    ) -> type[Self]:
+        """
+        Args:
+            options:keys are the option key, which one that user will choose, values are description, give user a hint.
+            __doc__:
+
+        Examples:
+            CustomSelection = Selection.create_from_options(name = "give me a name", value = "what is your age")
+            print(CustomSelection)
+            assert issubclass(CustomSelection, Selection)
+
+            c = CustomSelection.model_validate({"selection":"name"})
+            try:
+                d = CustomSelection(selection="abc")
+            except ValueError as e:
+                print(e)
+            print(c)
+            assert isinstance(c,Selection)
+
+        Returns:
+            New subclass of Selection.
+        """
+        doc = kwargs.pop("__doc__",None)
+        module = kwargs.pop("__module__",cls.__module__)
+        sorted_keys = sorted(kwargs.keys())
+        model_name = f"{cls.__name__}_options_{'_'.join(sorted_keys)}"
+        # if model := cls.__cache_classes.get(model_name, None):
+        #     logger.debug(f"Detect model from cache: {model}")
+        #     assert issubclass(model, Selection)
+        #     logger.debug(
+        #         f"Selection create_from_options return class {model_name} from cache.\n"
+        #         f"All Selection cache subclasses: {cls.__cache_classes}"
+        #     )
+        #     return model
+        # else:
+        model = create_model(
+            model_name,
+            __doc__=doc,
+            __base__=cls,
+            __module__=module,
+            options=(ClassVar[dict[str, str | None]], kwargs),
+            _dynamic_construction_class_args__=(
+                ClassVar[tuple],
+                (kwargs, __doc__),
+            ),
+        )
+
+            # cls.__cache_classes[model_name] = model
+            # logger.debug(
+            #     f"Dynamically created new model {model.__name__}, id={id(model)}\n"
+            #     f"All Selection cache subclasses: {cls.__cache_classes}"
+            # )
+        logger.debug(f"Dynamically create {model.__name__}, {model.__module__}")
+        return model
+
+    @model_validator(mode="after")
+    def _check_selection(self) -> Self:
+        logger.debug(f"All selection options: {self.options}")
+        _ = self.__adapter.validate_python(self.options)
+        if (val := self.selection) not in self.options:
+            raise ValueError(
+                f"'selection' must be in {list(self.options.keys())}. Got {val}"
+            )
+        return self
+
+
+def _selection_reconstruct(args, values):
+    model = Selection.create_from_options(*args)
+    logger.debug(f"_selection_reconstruct: {model}")
+    assert issubclass(model, Selection)
+    return model(**values)
 
 
 assistant_datatype_strings = [t.__name__ for t in AssistantDataType_T]
+assistant_datatype_dict = {t.__name__: t for t in AssistantDataType_T}
+logger.debug(
+    f"Assistant datatype dict:\n"
+    f"{pformat({k:str(v) for k,v in assistant_datatype_dict.items()}, indent=4)}"
+)
 
 
-# NOT SUPPORT ANYMORE
-# @assistant_datatype
-class BaseForm(BaseAssistantType):
-    """For all arbitrary basic type (int, float,str,bool) and their container, nesting,...
-    NOTE: NOT SUPPORT ANYMORE.
-    """
+class DataForm(TypedDict):
+    annotation: Any
 
-    Supported_T: ClassVar[Any] = (
-        str,
-        int,
-        float,
-        bool,
-    )
+    # pydantic.Field parameters
+    default: Any = PydanticUndefined
+    description: Any = _Unset
 
-    @classmethod
-    def fields(cls) -> Generator[tuple[str, FieldInfo], None, None]:
-        for name, field in cls.model_fields.items():
-            if get_origin(field.annotation) == ClassVar or name == "to_user":
-                continue
-            else:
-                yield name, field
+    # for Selection only
+    options: dict[str, str | None]
 
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        for name, field in cls.model_fields.items():
-            ann = field.annotation
-            if get_origin(ann) == ClassVar or name == "to_user":
-                continue
-            if field.metadata:
-                ann = Annotated[ann, *field.metadata]
-            cls._validate_type(ann)
 
-    @classmethod
-    def _validate_type(cls, ann):
-        org = get_origin(ann)
-        if org == Annotated:
-            cls._validate_type(get_args(ann)[0])
-        if org is None:
-            if ann is None:
-                raise ValueError(
-                    f"Does not support standalone None like 'list[None]', should be 'list[int|None]' for example."
-                )
-            if ann not in cls.Supported_T:
-                raise ValueError(
-                    f"Only accept types {cls.Supported_T} or composition of them. Got '{ann}'."
-                )
-        elif org in (list, UnionType, Literal, tuple, dict):
-            new_anns = list(get_args(ann))
-            if NoneType in new_anns:
-                assert len(new_anns) > 1
-                new_anns.remove(NoneType)
-            for new_ann in new_anns:
-                new_ann = type(new_ann) if org == Literal else new_ann
-                cls._validate_type(new_ann)
+class CreationForm(TypedDict):
+    data: dict[str, DataForm]
+    """Dict with keys as attribute names and values as AssistantDataType Field parameters. """
+
+    doc: str | None = None
+    model_name: str | None = None
 
 
 # noinspection PyTypeChecker
@@ -489,28 +551,6 @@ class AssistantData(StreamData, DisplayMessage):
                 continue
             else:
                 yield name, field_info
-
-    @classmethod
-    def create_model(
-        cls, model_schema: dict[str, Any], doc: str | None = None
-    ) -> Type["AssistantData"]:
-        """
-        todo: is this method necessary? or just directly inherit ? NO IT IS USED TO DYNAMICALLY GEN BY LLM.
-        Create a data model dynamically.
-        Args:
-                model_schema: dictionary with keys as name and
-                doc
-        Returns:
-                Instance of a subclass of AssistantData
-        """
-        cls._validate_model(model_schema)
-        return create_model(
-            cls._get_model_name(),
-            __base__=cls,
-            __module__=cls._get_module_name(),
-            __doc__=doc,
-            **model_schema,
-        )
 
     @classmethod
     def __pydantic_init_subclass__(cls):
@@ -572,26 +612,53 @@ class AssistantData(StreamData, DisplayMessage):
             ann = schema[name][0]  # extract annotation, ignore default value
             cls._validate_schema(name, ann)
 
+    def _parse_assistant_datatype_ann(self, typehint: str) -> type[Any]:
+        """from "Text|Video" ... ->"""
+        pass
+
     @classmethod
-    def _create_request(
-        cls, schema: dict[str, Any], doc: str | None = None
-    ) -> "RequestInput":
+    def create_model(
+        cls, model_schema: dict[str, Any], doc: str | None = None
+    ) -> Type["AssistantData"]:
         """
+        todo: is this method necessary? or just directly inherit ? NO IT IS USED TO DYNAMICALLY GEN BY LLM.
+        Create a data model dynamically.
         Args:
-                schema:
-                doc:
+                model_schema: dictionary with keys as name and
+                doc
         Returns:
-                RequestInput instance.
+                Instance of a subclass of AssistantData
         """
-        request_model = cls.create_model(schema, doc=doc)
-        uid = UUID(request_model.__name__.replace(super().__class__.__name__, "-"))
-        return RequestInput(id=uid, data_type=request_model)
+        cls._validate_model(model_schema)
+        return create_model(
+            cls._get_model_name(),
+            __base__=cls,
+            __module__=cls._get_module_name(),
+            __doc__=doc,
+            **model_schema,
+        )
 
+    @classmethod
+    def from_json_schema(cls, schema: str):
+        """
+                Request some input object from the user with specified object name, object type, and description.
+            Args:
+                schema: a dictionary with keys as a string type represent the short name of the request object, for example "math_document", "cat_picture".
+                 Values of a dict, according to the keys, is tuple of length 3, both are strings.
+                  - The first value of the tuple is type of requested object, it must be in this list: {assistant_datatype_strings}.
+                  - The second is the text represent description or hint to show to user. If description is not given, it must be the blank string "".
+                  - The third must be "optional" or "require", user has only two options, give all the object marked as "require" or refuse to give any information.
 
-class ContextCollector:
-    """ """
+                **field_definitions: Field definitions of the new model. Either:
 
-    # todo
+                - a single element, representing the type annotation of the field.
+                - a two-tuple, the first element being the type and the second element the assigned value
+                  (either a default or the [`Field()`][pydantic.Field] function).
+
+        Returns:
+                AssistantData object containing all user inputs, or None if user refuse to give.
+        """
+        d = json.loads(schema)
 
 
 class AssistantInputData(AssistantData):
@@ -651,35 +718,6 @@ class AssistantOutputData(AssistantData):
         return self._chunk_order
 
 
-class RequestInput(StreamData):
-    """This class is used for request input from user. User also send this class instance as response.
-    Note: This class is used when assistant request input from user while running.
-    """
-
-    request_prompt: str  # todo: formatted type string like md or html
-
-    request_schema: ClassVar[type[AssistantInputData]] = None
-
-    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
-
-    id: UUID = Field(frozen=True, default_factory=uuid7)
-    """The receiver will check for this id to know if it is a response for the request"""
-
-    _data: AssistantInputData | None = None
-
-    @property
-    def data(self):
-        assert isinstance(self._data, AssistantInputData)
-        return self._data
-
-    def set_response_data(self, data_response: Any):
-        self._data = self.request_schema.model_validate(data_response)
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        assert issubclass(cls.request_schema, AssistantInputData)
-
-
 class AssistantStreamContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     stream_pair: StreamPair
@@ -687,26 +725,70 @@ class AssistantStreamContext(BaseModel):
     cs_id: UUID
     userdata: UserData
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self._lock = UniversalLock() # for pickable
+    _lock: UniversalLock = PrivateAttr(default_factory=UniversalLock)
+
+    # def __init__(self, **kwargs):
+    #     super().__init__(**kwargs)
+    #     self._lock = UniversalLock()  # set after super().__init__ for pickable
 
 
-assistant_stream_context: ContextVar[AssistantStreamContext] = ContextVar(
+_assistant_stream_context: ContextVar[AssistantStreamContext] = ContextVar(
     "assistant_stream_context"
 )
 
 
 @contextmanager
 def _stream_cm(context: AssistantStreamContext):
-    token = assistant_stream_context.set(context)
-    logger.debug(f"Context:\n" f"{repr(context)}")
+    token = _assistant_stream_context.set(context)
     yield token
-    assistant_stream_context.reset(token)
+    _assistant_stream_context.reset(token)
 
 
-# Note: request_user_input is tool call, so it should have nice docstring, also argument should be serialized as
-# type string for LLM can init them.
+class RequestedInput(StreamData):
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
+
+    request_schema: type[AssistantInputData]
+
+    id: UUID = Field(frozen=True, default_factory=uuid7)
+    """The receiver will check for this id to know if it is a response for the request"""
+
+    _data: AssistantInputData | None = None
+
+    _is_response: bool = False
+
+    def is_response_of(self, uid: UUID | None = None) -> bool:
+        if uid:
+            return self._is_response and self.id == uid
+        return self._is_response
+
+    @property
+    def data(self):
+        assert self.is_response and isinstance(self._data, AssistantInputData)
+        return self._data
+
+    def set_response_data(self, response_data: Any) -> None:
+        self._data = self.request_schema.model_validate(response_data)
+        self._is_response = True
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        assert issubclass(cls.request_schema, AssistantInputData)
+
+
+async def create_input_data_model():
+    pass
+
+
+async def create_output_data_model():
+    pass
+
+
+async def create_input_request():
+    pass
+
+
+async def send_input_request(request: RequestedInput):
+    pass
 
 
 def format_doc(func):
@@ -719,10 +801,11 @@ def format_doc(func):
 @format_doc
 async def request_user_input(
     request_schema: dict[str, tuple[str, str, Literal["optional", "required"]]],
+    prompt: str,
+    timeout: int | None = None,
 ) -> AssistantData | None:
     """
     Request some input object from the user with specified object name, object type, and description.
-
     Args:
             request_schema: a dictionary with keys as a string type represent the short name of the request object, for example "math_document", "cat_picture".
              Values of a dict, according to the keys, is tuple of length 3, both are strings.
@@ -751,11 +834,11 @@ async def request_user_input(
             request_schema[k] = (dtype, field)
 
     schema = await asyncio.to_thread(_make_field)
-    request_input: RequestInput = await asyncio.to_thread(
+    request_input: RequestedInput = await asyncio.to_thread(
         AssistantData._create_request, schema
     )
 
-    write_stream, read_stream = assistant_stream_context.get()
+    write_stream, read_stream = _assistant_stream_context.get()
     logger.info(
         f"Sending input request to user through stream with key '{write_stream.key}'..."
     )
@@ -769,7 +852,7 @@ async def request_user_input(
         try:
             async for data in read_stream.bind("$"):
                 for d in data:
-                    if isinstance(data, RequestInput):
+                    if isinstance(data, RequestedInput):
                         if data.id == request_input.id:
                             # Note: return only the first reach valid data came after the time of waiting, it's enough I thought. =))
                             return data.data
@@ -810,9 +893,9 @@ async def capture_chat_context(
         All data that have the same chat_context_id must be next to each others.
     """
 
-    read_stream = assistant_stream_context.get().stream_pair.read_stream
+    read_stream = _assistant_stream_context.get().stream_pair.read_stream
     all_data = await read_stream.capture(from_latest, count)
-    logger.debug(f"All data captured: \n" f"{all_data}")
+    logger.debug(f"All data captured len {len(all_data)}")
 
     chat_context_list: list[list[AssistantData]] = []
     context_dict: dict[UUID, list[AssistantData] | None] = {}
@@ -854,12 +937,12 @@ async def capture_chat_context(
             logger.debug("Saved last context.")
 
     await asyncio.to_thread(_do)
-    logger.debug(f"returned chat_context_list: \n{chat_context_list}")
+    logger.debug(f"returned chat_context_list len {len(chat_context_list)}")
     return chat_context_list
 
 
 async def get_data_segments() -> list[DataSegment]:
-    context = assistant_stream_context.get()
+    context = _assistant_stream_context.get()
     cs = (await context.userdata.get_chat_sessions([context.cs_id]))[context.cs_id]
     data_segments = []
     for encoded in cs.data_segments:
@@ -870,7 +953,7 @@ async def get_data_segments() -> list[DataSegment]:
 
 
 async def save_data_segments(data_segments: list[DataSegment], *, persist: bool = True):
-    context = assistant_stream_context.get()
+    context = _assistant_stream_context.get()
     encoded_segs: list[str] = []
     async with context._lock:
         cs = (await context.userdata.get_chat_sessions([context.cs_id]))[context.cs_id]
@@ -885,12 +968,12 @@ async def save_data_segments(data_segments: list[DataSegment], *, persist: bool 
 
 
 async def get_user_facts() -> list[str]:
-    context = assistant_stream_context.get()
+    context = _assistant_stream_context.get()
     return context.userdata.summaries
 
 
 async def save_user_facts(facts: list[str], *, persist: bool = True):
-    context = assistant_stream_context.get()
+    context = _assistant_stream_context.get()
     async with context._lock:
         await context.userdata.append("summaries", facts)
     if persist:
@@ -975,7 +1058,6 @@ class BaseAssistant(BaseModel):
         self, data: AssistantInputData
     ) -> AsyncIterator[AssistantOutputData]:
         logger.debug(f"{self.__class__.__name__} start stream with data {repr(data)}.")
-
         chunk_index: dict[int, int] = {}
         async for chunk in self.streamer(data):
             if not isinstance(chunk, AssistantOutputData):
@@ -1062,7 +1144,7 @@ class BaseAssistant(BaseModel):
         code: AssistantStatusCode,
         detail: str | None = None,
     ):
-        context = assistant_stream_context.get()
+        context = _assistant_stream_context.get()
         write_stream = context.stream_pair.write_stream
         context_id = context.chat_context_id
 
@@ -1144,6 +1226,9 @@ class AssistantInterface:
                     logger.exception(e)
                     raise e
                 logger.debug("Ray call cancelled successfully.")
+        except Exception as e:
+            logger.exception(e)
+            raise
 
     @staticmethod
     def _get_assistant_app_handle(assistant_name: str) -> DeploymentHandle:
@@ -1179,3 +1264,8 @@ class AssistantInterface:
                         f"Detected assistant app '{name}' but it's not healthy."
                     )
         return assistants
+
+
+logger.debug(
+    f"assistant_interface module initialized after {time.time()-start} seconds."
+)

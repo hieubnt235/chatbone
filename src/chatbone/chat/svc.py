@@ -13,7 +13,7 @@ from chatbone.assistant_interface import (
     AssistantInterface,
     AssistantInputData,
     AssistantOutputData,
-    RequestInput,
+    RequestedInput,
     UserInputData,
 )
 from chatbone.broker import (
@@ -251,7 +251,7 @@ class AssistantApp(BaseModel):
         return cls(app_name=assistant_app_name, input_schema=schema)
 
 
-AssistantOutputStreamType = AssistantOutputData | RequestInput
+AssistantOutputStreamType = AssistantOutputData | RequestedInput
 
 
 class ChatHandle(BaseModel):
@@ -378,7 +378,7 @@ class ChatAssistantSVC(_DataSVC):
                     raise_on_write_streams_acquire_fail=True,
                 )
             )
-
+            
             logger.debug(f"Redis stream got: {streams}")
 
             # todo: handle read stream only case.
@@ -406,6 +406,7 @@ class ChatAssistantSVC(_DataSVC):
                             )
                             for datum in data:
                                 if isinstance(datum, AssistantInputData):
+                                    logger.debug("PONG INPUT")
                                     continue # This is the first input data sent for stream, use to ping and save input.
                                 
                                 assert isinstance(datum, AssistantOutputStreamType)
@@ -417,6 +418,7 @@ class ChatAssistantSVC(_DataSVC):
                 except asyncio.CancelledError:
                     pass
 
+            # No need for now. Just for reserve only.
             async def _handle_input_data_task():
                 try:
                     async with cs2as_reader:

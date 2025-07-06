@@ -765,7 +765,7 @@ class ChatApp:
     async def get_chat_session_messages(self, session_id: UUID) -> list[DisplayMessage]:
         session_data = await self.chat_assistant_svc.get_chat_session(session_id)
         messages: list[DisplayMessage] = []
-        for m in session_data.data_segments:
+        for m in await session_data.get_data_segment():
             messages.extend(m.messages)
         return messages
 
@@ -805,7 +805,7 @@ class ChatApp:
                     logger.debug(f"Chat app got data {repr(data)}")
                     if isinstance(data, AssistantOutputData):
                         yield data  # This can be raise Exception
-                    elif isinstance(data, RequestInput):
+                    elif isinstance(data, RequestedInput):
                         yield await self._make_request_input_field(data, sender)
                 logger.debug("End stream successfully")
             except Exception as e:
@@ -815,7 +815,7 @@ class ChatApp:
                     raise
 
     async def _make_request_input_field(
-        self, data: RequestInput, sender: MemoryObjectSendStream
+        self, data: RequestedInput, sender: MemoryObjectSendStream
     ) -> RequestInputField:
         raise NotImplementedError
 

@@ -728,12 +728,10 @@ class StreamPair(BaseModel):
 
 
 class ChatStreams(BaseModel):
+    """# For now one stream is enough, as2cs. The cs2as is just for reserve only."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
     as2cs: StreamPair = Field(default_factory=StreamPair)
     cs2as: StreamPair = Field(default_factory=StreamPair)
-
-
-# Cache Data Model
 
 
 class DisplayableMessage(BaseModel):
@@ -820,11 +818,10 @@ class DataSegment(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     messages: list[DisplayMessage] = Field(default_factory=list)
     """List of message to display to chat dialog in the order."""
-
     def encode(self) -> str:
         b =cloudpickle.dumps(self)
         return base64.b64encode(b).decode()
-
+    
     @classmethod
     def decode(cls, v: str) -> Self:
         assert isinstance(v,str)
@@ -844,6 +841,15 @@ class ChatSessionData(ChatboneData):
     embedding = True
     data_segments: list[str] = Field(default_factory=list)
 
+    async def get_data_segment(self)->list[DataSegment]:
+        data_segments = []
+        for encoded in self.data_segments:
+            ds = await asyncio.to_thread(DataSegment.decode, encoded)
+            assert isinstance(ds, DataSegment)
+            data_segments.append(ds)
+        return data_segments
+    
+    
     # noinspection PyTypeChecker
     @asynccontextmanager
     async def get_streams(
