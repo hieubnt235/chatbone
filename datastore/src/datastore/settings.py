@@ -1,16 +1,15 @@
-import os
-from pathlib import Path
-
 from dotenv import find_dotenv
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import AsyncSQLDBSettings, Settings, Config
-from utilities import logger
+
 
 class DatastoreConfig(Config):
     pass
 
+
 env_file = find_dotenv(".env.datastore")
+
 
 class DatastoreSettings(Settings):
     """
@@ -25,4 +24,4 @@ class DatastoreSettings(Settings):
     config: DatastoreConfig
 
 
-datastore_settings = DatastoreSettings(env_file = env_file)
+datastore_settings = DatastoreSettings(env_file=env_file)

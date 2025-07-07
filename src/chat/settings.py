@@ -1,7 +1,14 @@
 __all__ = ["DATASTORE", "CONFIG"]
 
 from dotenv import find_dotenv
-from pydantic import (BaseModel, PositiveInt, model_validator, ConfigDict, Field, field_validator, )
+from pydantic import (
+    BaseModel,
+    PositiveInt,
+    model_validator,
+    ConfigDict,
+    Field,
+    field_validator,
+)
 from pydantic_settings import SettingsConfigDict
 
 from utilities.settings import Config, Settings
@@ -53,7 +60,7 @@ class Views(BaseModel):
     home: ViewParams = ViewParams(route="/")
     login: ViewParams = ViewParams(route="/login")
     signup: ViewParams = ViewParams(route="/signup")
-    app: ViewParams = ViewParams(route='/app')
+    app: ViewParams = ViewParams(route="/app")
 
 
 class ChatConfig(Config):
@@ -69,15 +76,16 @@ class ChatConfig(Config):
     """For expire userdata cache."""
 
     write_streams_acquire_timeout: PositiveInt = 5
-    """Time for accquire write stream lock."""
+    """Time for acquire write stream lock."""
 
     views: Views = Views()
 
 
+env_file = find_dotenv(".env.chat")
+
+
 class ChatSettings(Settings):
-    model_config = SettingsConfigDict(
-        env_prefix="chat_", env_file=find_dotenv(".env.chat")
-    )
+    model_config = SettingsConfigDict(env_prefix="chat_", env_file=env_file)
     service_name = "chatbone.chat"
 
     config: ChatConfig
@@ -86,7 +94,7 @@ class ChatSettings(Settings):
 
 
 # noinspection Annotator
-chat_settings = ChatSettings()
+chat_settings = ChatSettings(env_file=env_file)
 
 CONFIG = chat_settings.config
 DATASTORE = chat_settings.datastore  # REDIS=DATASTORE.redis

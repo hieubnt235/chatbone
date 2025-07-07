@@ -2,11 +2,13 @@
 import inspect
 import time
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, get_args, Sequence
 from uuid import UUID
 
 from dotenv import load_dotenv, find_dotenv
 from pydantic import model_validator
+from pydantic.fields import FieldInfo, Field
+from pydantic_core import PydanticUndefined
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from uuid_extensions import uuid7
 
@@ -41,9 +43,9 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         frozen=True,
     )
-    
+
     env_file:str
-    
+
     service_name: ClassVar[str]
     """Name to be realizable between service. This will be used in conjunction with service_id."""
     service_id: UUID = uuid7()
@@ -68,23 +70,42 @@ class Settings(BaseSettings):
             else:
                 data["service_root"] = Path(inspect.getfile(cls)).parent.as_posix()
                 logger.debug("Env_file also not found, use settings directory as service root.")
-                
+
         logger.debug(f"Service root: {data["service_root"]}")
         # Resolve relative paths recursively
         solve_relative_paths_recursively(data, Path(data["service_root"]))
 
-        cfg_cls = cls.model_fields["config"].annotation
-        if not issubclass(cfg_cls, type(None)):
-            if issubclass(cfg_cls, Config):
-                try:
-                    file: str = data["config"]["file"]
-                except (KeyError, TypeError):
-                    file: None = None
+        cfg_field: FieldInfo = cls.model_fields["config"]
+        ann = cfg_field.annotation
+        args = get_args(ann)
+        cfg_cls = None
+        
+        load_config = False
+        if args is None and issubclass(ann, Config):
+            load_config = True
+            cfg_cls = ann
+        elif args is not None and isinstance(args,Sequence) :
+            for arg in args:
+                if issubclass(arg, Config):
+                    load_config = True
+                    cfg_cls = arg
+                    break
+            
+        logger.debug(f"ann={ann}, args={args}, load_config={load_config}, cfg_cls={cfg_cls}")
+        if load_config:
+            try:
+                file: str = data["config"]["file"]
                 data["config"] = cfg_cls(file=file)
-            else:
-                raise ValueError(
-                    f"Config attribute must be declare as subclass of BaseConfig. Got {cfg_cls.__name__}."
-                )
+            except (KeyError, TypeError):
+                logger.warning("Settings has Config type attributes but does not find any config file. Let it be default value.")
+                # If not have default, load Config default with file = None.
+                if cfg_field.default == PydanticUndefined:
+                    file: None = None
+                    data["config"] = cfg_cls(file=file)
+        else:
+            raise ValueError(
+                f"Config attribute must be declare as subclass of BaseConfig. Got {cfg_cls.__name__}."
+            )
         return data
 
     @handle_exception(SettingsException)
@@ -92,7 +113,7 @@ class Settings(BaseSettings):
         start = time.time()
         load_dotenv(self.model_config.get("env_file"))
         super().__init__(*args, **kwargs)
-        
+
         logger.info(
             f"'{self.service_name}' service settings created in {time.time()-start} seconds:\n"
             f"{self.model_dump_json(indent=4)}"

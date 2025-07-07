@@ -22,6 +22,7 @@ from utilities.settings.redis_wrapper import RedisWrapperClient
 # 	password: str | None = None
 # 	config: RedisConfig
 
+env_file = find_dotenv('.env.chatbone')
 class ChatboneConfig(Config):
 	redis_lock_timeout: PositiveInt|None=10
 	redis_acquire_lock_timeout:PositiveInt|None = 10
@@ -30,17 +31,17 @@ class ChatboneConfig(Config):
 	request_user_input_timeout: int=100 # <=0 for wait forever.
 
 class ChatboneSettings(Settings):
-	model_config = SettingsConfigDict(env_prefix='chatbone_', env_file=find_dotenv('.env.chatbone'),
+	model_config = SettingsConfigDict(env_prefix='chatbone_', env_file=env_file,
                                       arbitrary_types_allowed=True)
 	service_name = 'chatbone'
 
 	# redis: RedisSettings
-	redis: RedisWrapperClient
-	object_storage: ObjectStorageSettings
-	config: ChatboneConfig
+	redis: RedisWrapperClient |None = None
+	object_storage: ObjectStorageSettings|None=None
+	config: ChatboneConfig|None = None
 
 
-chatbone_settings = ChatboneSettings()
+chatbone_settings = ChatboneSettings(env_file=env_file)
 get_redis: Callable[...,Redis] = chatbone_settings.redis.new
 REDIS: Redis = get_redis()
 CONFIG = chatbone_settings.config

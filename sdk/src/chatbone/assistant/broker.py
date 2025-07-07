@@ -27,7 +27,7 @@ from redis.asyncio.client import Pipeline
 from redis.exceptions import LockError
 from redis.typing import FieldT, EncodableT
 
-from settings import REDIS, CONFIG, get_redis
+from .settings import REDIS, CONFIG, get_redis
 from utilities.func import encrypt, decrypt, dump_if_base_model
 from utilities.logger import logger
 
