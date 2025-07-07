@@ -1,0 +1,24 @@
+[project]
+name = "datastore"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "hieu", email = "hieu.buinguyen2352001@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.16.2",
+    "asyncpg>=0.30.0",
+    "utilities",
+]
+
+[project.scripts]
+datastore = "main:main"
+
+[tool.uv.sources]
+utilities = {workspace = true}
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

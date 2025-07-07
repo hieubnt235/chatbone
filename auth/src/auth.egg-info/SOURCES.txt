@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/main.py
+src/auth/__init__.py
+src/auth/app.py
+src/auth/auth_svc.py
+src/auth/cli_parser.py
+src/auth/settings.py
+src/auth.egg-info/PKG-INFO
+src/auth.egg-info/SOURCES.txt
+src/auth.egg-info/dependency_links.txt
+src/auth.egg-info/entry_points.txt
+src/auth.egg-info/requires.txt
+src/auth.egg-info/top_level.txt

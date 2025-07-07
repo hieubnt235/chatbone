@@ -1,0 +1,11 @@
+datastore/env.datastore
+/auth/.env.auth
+/docs/
+/tests/
+/chatbone.egg-info/
+/.ropeproject/
+/.todo/
+/.gitignore
+/datastore/.env.datastore
+/.venv/
+!/assistants/src/assistants.egg-info/

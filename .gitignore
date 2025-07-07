@@ -1,4 +1,4 @@
-/src/tools/.env.tools
+/chatbone/src/tools/.env.tools
 /drafts/
 /src/chatbone.egg-info/
 __pycache__
@@ -8,4 +8,6 @@ __pycache__
 /.todo/
 /.ropeproject/
 
-/.*
+/.*!/.venv/
+!/chatbone.egg-info/
+!/assistants/src/assistants.egg-info/

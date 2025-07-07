@@ -1,0 +1,4 @@
+fastapi>=0.115.12
+pyjwt>=2.10.1
+setuptools>=80.9.0
+utilities

@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: sdk
+Version: 0.1.0
+Summary: Add your description here
+Author-email: hieu <hieu.buinguyen2352001@gmail.com>
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: cloudpickle>=3.1.1
+Requires-Dist: filetype>=1.2.0
+Requires-Dist: langchain-core>=0.3.68
+Requires-Dist: langchain-tavily>=0.2.6
+Requires-Dist: ray[serve]>=2.47.1
+Requires-Dist: redis>=6.2.0
+Requires-Dist: setuptools>=80.9.0
+Requires-Dist: utilities

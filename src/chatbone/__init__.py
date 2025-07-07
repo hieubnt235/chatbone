@@ -1,1 +1,0 @@
-from .chat.app import app

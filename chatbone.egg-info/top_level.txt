@@ -3,6 +3,5 @@ auth
 chatbone
 datastore
 dummy
-fake_app
 tools
 utilities

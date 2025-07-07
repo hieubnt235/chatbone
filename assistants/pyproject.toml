@@ -1,0 +1,26 @@
+[project]
+name = "assistants"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "hieu", email = "hieu.buinguyen2352001@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.5.1",
+    "sdk",
+    "utilities",
+]
+
+[project.scripts]
+assistants = "assistants:main"
+
+[tool.uv.sources]
+utilities = { workspace = true }
+sdk = { workspace = true }
+
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

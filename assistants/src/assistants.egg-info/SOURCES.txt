@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+src/assistants.egg-info/PKG-INFO
+src/assistants.egg-info/SOURCES.txt
+src/assistants.egg-info/dependency_links.txt
+src/assistants.egg-info/entry_points.txt
+src/assistants.egg-info/requires.txt
+src/assistants.egg-info/top_level.txt
+src/dummy/__init__.py
+src/dummy/dummy.py

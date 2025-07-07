@@ -1,0 +1,30 @@
+[project]
+name = "sdk"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "hieu", email = "hieu.buinguyen2352001@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cloudpickle>=3.1.1",
+    "filetype>=1.2.0",
+    "langchain-core>=0.3.68",
+    "langchain-tavily>=0.2.6",
+    "ray[serve]>=2.47.1",
+    "redis>=6.2.0",
+    "setuptools>=80.9.0",
+    "utilities",
+]
+
+[project.scripts]
+sdk = "sdk:main"
+
+[tool.uv.sources]
+utilities = { workspace = true }
+
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
