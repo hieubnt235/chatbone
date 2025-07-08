@@ -45,8 +45,9 @@ def is_debug_logger(name: str):
             return True
     return False
 
+__setup__=False
 
-def setup_loguru_logging(level):
+def setup_loguru_logging(level=None):
     # for handler in logging.root.handlers[:]:
     #     logging.root.removeHandler(handler)
     # logging.root.addHandler(InterceptHandler())
@@ -64,7 +65,13 @@ def setup_loguru_logging(level):
     #         current_logger.propagate = True
     #         # Set their minimum level to NOTSET so they don't filter out messages too early
     #         current_logger.setLevel(logging.NOTSET)
-
+    global __setup__
+    if __setup__:
+        return
+    
+    if not (level:=os.getenv("CHATBONE_LOG_LEVEL")):
+        return
+    
     logging.basicConfig(handlers=[InterceptHandler()], level=logging.NOTSET, force=True)
     logger.remove()
 
@@ -83,8 +90,8 @@ def setup_loguru_logging(level):
 
         return level_no >= logger.level("WARNING").no
 
-    logger.add(sys.stderr, level="DEBUG", filter=log_filter)
+    logger.add(sys.stderr, level=level, filter=log_filter)
+    # print(f"Log level={level}")
+    __setup__ = True
 
-
-level = os.getenv("CHATBONE_LOG_LEVEL") or "DEBUG"
-setup_loguru_logging(level)
+setup_loguru_logging()

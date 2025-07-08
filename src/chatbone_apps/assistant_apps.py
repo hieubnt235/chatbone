@@ -144,8 +144,9 @@ class AssistantAppFactory:
                 await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
                 # raise e # Not expected error, hot fix by logger.exception() for now.
             finally:
+                logger.debug(f"{self.name} __call__ reach finally")
                 await self._write_status(AssistantStatusCode.DONE)
-
+    
     # noinspection PyMethodMayBeStatic
     async def _write_status(
         self,

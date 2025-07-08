@@ -176,13 +176,20 @@ def build(args):
         "applications": app_configs,
     }
     ServeDeploySchema.parse_obj(deploy_config)  # pydantic v1
-    with open(output_file, "w") as f:
+    with open(path:=Path(output_file).resolve(), "w") as f:
         yaml.dump(deploy_config, f, sort_keys=False)
+        
+    print("Built serve config successfully\n"
+          f"Run command:\n"
+          f"serve run {path.as_posix()}\n\n"
+          f"*Note: Export necessary environment variables, or clean the Ray cluster before run ('ray stop -f').")
 
 
 def config_parser(parser: ArgumentParser):
 
-    parser.add_argument("--host", "-H", type=str, default="localhost",help="default='localhost'")
+    parser.add_argument(
+        "--host", "-H", type=str, default="localhost", help="default='localhost'"
+    )
 
     parser.add_argument("--port", "-P", type=int, default=9999, help="default=9999")
 

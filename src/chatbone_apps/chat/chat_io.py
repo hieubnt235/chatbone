@@ -70,7 +70,9 @@ from chatbone.assistant import (
     Text,
     Selection,
     AssistantOutputData,
-    AssistantStatusCode, DisplayMessage, DisplayableMessage
+    AssistantStatusCode,
+    DisplayMessage,
+    DisplayableMessage,
 )
 from .svc import AssistantApp
 from utilities.func import utc_now
@@ -223,7 +225,8 @@ class BaseInputField(ABC, ft.Container):
     async def save(self):
         """Call when input are valid"""
         pass
-        
+
+
 class _FilePicker(ft.FilePicker):
     """File picker for one media type."""
 
@@ -454,7 +457,6 @@ class MediaInputField(BaseInputField):
                 else None
             )
             if data:
-                # await self.save()
                 return data
             else:
                 return None
@@ -470,7 +472,6 @@ class MediaInputField(BaseInputField):
                     and f.media_object is not None
                 ]
                 if data:
-                    # await self.save()
                     return data
                 else:
                     return None
@@ -565,7 +566,9 @@ class MediaInputField(BaseInputField):
         if cancel:
             await self._file_picker.cancel(filename)
         await self.remove_file_review_row(filename, should_lock)
-        logger.debug(f"Unselect file with cancel={cancel}, num files now: {self._file_names}.")
+        logger.debug(
+            f"Unselect file with cancel={cancel}, num files now: {self._file_names}."
+        )
         if update:
             self.page.update()
 
@@ -704,9 +707,9 @@ class TextInputField(BaseInputField):
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return []
-    
+
     async def save(self):
-        self.value= None
+        self.value = None
         self._textfield.value = None
         self.page.update(self._textfield, self._notice_text)
 
@@ -723,12 +726,14 @@ class SelectionInputField(BaseInputField):
         """
         assert selection_type.options is not None
         self._selection_type = selection_type
-        
+
         self._dd = ft.Dropdown(
             options=[ft.DropdownOption(key=k) for k in selection_type.options.keys()]
         )
 
-        self._desc = ft.Text(f"Hint:{pformat(selection_type.options)}:{selection_type.__doc__}")
+        self._desc = ft.Text(
+            f"Hint:{pformat(selection_type.options)}:{selection_type.__doc__}"
+        )
 
         content = ft.Column([self._dd, self._desc])
 
@@ -818,7 +823,11 @@ class MultiOptionsInputField(BaseInputField):
     @property
     def sub_input_fields(self) -> list[BaseInputField]:
         return self._stack.controls
-
+    
+    async def save(self):
+        for input_field in self.sub_input_fields:
+            await input_field.save()
+    
     async def get_assistant_data(
         self, return_meta: bool = False, c: AssistantDataType_U = None
     ) -> (
@@ -1136,8 +1145,15 @@ class ListInputField(BaseInputField):
 
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
-        return []
-
+        def _r():
+            for saved_field in self._saved_field_list:
+                yield saved_field.input_field
+        return _r()
+    
+    async def save(self):
+        for field in self.sub_input_fields:
+            await field.save()
+    
 
 # Defined outside for TypeAdapter convenient
 class _DictInputFieldSavedField(ListInputField._SavedField):
@@ -1229,6 +1245,14 @@ class DictInputField(ListInputField):
         if isinstance(key, str) and key != "":
             return True
         return False
+    
+    @property
+    def sub_input_fields(self) -> Iterable["BaseInputField"]:
+        def _r():
+            for f in self._saved_field_list.get_list("saved_fields"):
+                assert isinstance(f, _DictInputFieldSavedField)
+                yield f.input_field
+        return _r()
 
     async def get_assistant_data(
         self, **kwargs
@@ -1411,7 +1435,10 @@ class TupleInputField(BaseInputField):
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return self.input_fields
-
+    
+    async def save(self):
+        for field in self.sub_input_fields:
+            await field.save()
 
 class InputFieldInfo(BaseModel):
     model_config = arbitrary_types_allowed_config
@@ -1500,11 +1527,12 @@ class SchemaInputField(BaseInputField):
             r[field_name] = data
 
         return r
-    
+
     async def save(self):
-        for field_name, input_field in self.iter_input_fields:
+        for  input_field in self.sub_input_fields:
+            logger.debug(f"Save input field {input_field.__class__.__name__}")
             await input_field.save()
-    
+
     async def _refresh(self):
         pass
 
@@ -1612,7 +1640,7 @@ class ChatInputField(ft.Container):
         *,
         username: str,
         user_id: UUID,
-        buttons: ft.Stack ,
+        buttons: ft.Stack,
         **kwargs: Unpack[ContainerArgs],
     ):
         """Parse assistant input to input field.
@@ -1625,7 +1653,7 @@ class ChatInputField(ft.Container):
         self._apps = assistant_apps
         self._username = username
         self._user_id = user_id
-        self._buttons = buttons # (Send, suspense buttons)
+        self._buttons = buttons  # (Send, suspense buttons)
         self._dropdown = ft.Dropdown(
             label="Assistant options",
             options=[],
@@ -1655,19 +1683,19 @@ class ChatInputField(ft.Container):
                 ft.Row(
                     [self._dropdown, self._buttons],
                     alignment=ft.MainAxisAlignment.END,
-                )
+                ),
             ],
         )
-    
-    def chatting_mode(self, v:bool=True):
+
+    def chatting_mode(self, v: bool = True):
         if v:
-            self._stack.disabled=True
-            self._dropdown.disabled=True
+            self._stack.disabled = True
+            self._dropdown.disabled = True
         else:
             self._stack.disabled = False
-            self._dropdown.disabled=False
+            self._dropdown.disabled = False
         self.page.update()
-        
+
     def build(self):
         self._dropdown.width = self.page.width * 0.2
 
@@ -1689,14 +1717,15 @@ class ChatInputField(ft.Container):
                 logger.debug(f"get_input_data got: {repr(data)}")
                 data = self._apps[name].input_schema.model_validate(data)
                 data._username = self._username
-                
+
                 await input_field.save()
+                logger.debug("Chat input field saved.")
                 return UserInputData(
                     assistant_name=name,
                     data=data,
                 )
             except ValidationError as e:
-                
+
                 logger.info(f"Error when get_input_data: {e}")
                 if raise_if_validate_fail:
                     raise

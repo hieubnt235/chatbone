@@ -1,5 +1,6 @@
 import os
-os.environ["CHATBONE_LOG_LEVEL"] = "INFO"
+os.environ["CHATBONE_LOG_LEVEL"] = "WARNING"
+
 import argparse
 import sys
 

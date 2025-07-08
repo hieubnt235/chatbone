@@ -11,11 +11,11 @@ applications:
     ray_actor_options:
       num_cpus: 1.0
       num_gpus: 0.0
-- name: assistants_dummy2_assistant
+- name: assistants.orange_orange_assistant
   route_prefix: null
-  import_path: chatbone_apps.assistant_apps:YXNzaXN0YW50czpkdW1teTJfYXNzaXN0YW50
+  import_path: chatbone_apps.assistant_apps:YXNzaXN0YW50cy5vcmFuZ2U6b3JhbmdlX2Fzc2lzdGFudA==
   deployments:
-  - name: <Chatbone_Assistant>assistants:dummy2_assistant<Chatbone_Assistant>
+  - name: <Chatbone_Assistant>assistants.orange:orange_assistant<Chatbone_Assistant>
     ray_actor_options:
       num_cpus: 1.0
       num_gpus: 0.0

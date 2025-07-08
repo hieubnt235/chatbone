@@ -883,12 +883,17 @@ async def request_user_input(
 
 
 async def capture_chat_context(
-    from_latest: bool = True, count: int | None = None, data_only: bool = True
+    from_latest: bool = True,
+    count: int | None = None,
+    drop_if_input_only: bool = True,
+    data_only: bool = True,
 ) -> list[list[AssistantData]]:
     """Retrieve latest data,
     Args:
-        from_latest: The latest group of data which has the same chat_context_id will be in the first list.
+        from_latest: The latest group of data which has the same chat_context_id will be in the first list index.
         count: The number of data retrieved from stream ( Not the data after filter by status code.)
+        drop_if_input_only: Whether to drop the context if there is only AssistantInput init. It's useful to drop
+         in the case that you just want to collect the complete contexts, which including both input and output.
         data_only: If false, return both data input and status code.
 
     Returns: a list as matrix with row is list of all data that has the same chat_context_id.
@@ -899,7 +904,7 @@ async def capture_chat_context(
 
     read_stream = _assistant_stream_context.get().stream_pair.read_stream
     all_data = await read_stream.capture(from_latest, count)
-    logger.debug(f"All data captured len {len(all_data)}")
+    logger.debug(f"All data captured (len={len(all_data)}): {all_data}"[:100])
 
     chat_context_list: list[list[AssistantData]] = []
     context_dict: dict[UUID, list[AssistantData] | None] = {}
@@ -940,16 +945,38 @@ async def capture_chat_context(
             chat_context_list.append(context_dict[current_id])
             logger.debug("Saved last context.")
 
+        if drop_if_input_only:
+            for context in chat_context_list:
+                if len(context) == 1:
+                    if isinstance(context[0], AssistantInputData):
+                        chat_context_list.remove(context)
+                    else:
+                        logger.error(
+                            f"Unbehavior, capture only one chunk but it's not the AssistantInputData instance."
+                        )
+
     await asyncio.to_thread(_do)
     logger.debug(f"returned chat_context_list len {len(chat_context_list)}")
     return chat_context_list
 
 
-async def get_data_segments() -> list[DataSegment]:
+async def get_data_segments(n_latest: int = -1) -> list[DataSegment]:
+    """
+    Get n latest data segments.
+    Args:
+        n_latest: If <=0, get all segments.
+
+    Returns:
+        list of DataSegment in the earliest to latest order.
+    """
     context = _assistant_stream_context.get()
     cs = (await context.userdata.get_chat_sessions([context.cs_id]))[context.cs_id]
     data_segments = []
-    for encoded in cs.data_segments:
+    if n_latest <= 0:
+        filter_ds = cs.data_segments
+    else:
+        filter_ds = cs.data_segments[-n_latest:]
+    for encoded in filter_ds:
         ds = await asyncio.to_thread(DataSegment.decode, encoded)
         assert isinstance(ds, DataSegment)
         data_segments.append(ds)
