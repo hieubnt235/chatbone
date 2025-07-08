@@ -1,2 +1,2 @@
 [console_scripts]
-auth = main:main
+auth = auth.main:main

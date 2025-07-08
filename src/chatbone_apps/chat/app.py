@@ -1,3 +1,4 @@
+from asyncio import CancelledError
 from asyncio.tasks import Task
 from contextlib import ExitStack
 from copy import deepcopy
@@ -10,17 +11,12 @@ import flet as ft
 from pydantic import Field
 from ray import serve
 
-from chatbone.assistant.assistant_interface import UserInputData, AssistantOutputData, RequestedInput
-from chatbone.assistant.broker import UserData, EncryptedTokenError, UserNotFoundError, ReadStream
-from chat_io import (ChatInputField, ChatOutputField, ContainerArgs, RequestInputField, )
-from svc import *
+from chatbone.assistant import (UserData, EncryptedTokenError, UserNotFoundError, ReadStream, )
 from utilities.func import uuid_to_base64, base64_to_uuid
-from utilities.logger import logger
 from utilities.misc import UniversalLock
-from settings import CONFIG
 from utilities.schemas.auth import *
-from utilities.schemas.datastore import *
-from utilities.settings._base_http import ClientRequestSchema
+from .chat_io import (ChatInputField, ChatOutputField, ContainerArgs, RequestInputField, )
+from .svc import *
 
 view_config_dict = CONFIG.views.model_dump(mode="json")
 views_params_dict = {}
@@ -452,14 +448,10 @@ class AppView(BaseView):
         self._suspend_button = ft.IconButton(
             ft.Icons.STOP_CIRCLE,
             on_click=self._kill_chat_task,
-            disabled=True,
-            visible=True,
         )
         self._send_button = ft.IconButton(ft.Icons.SEND, on_click=self._on_chat)
 
-        self._button_stack = ft.Stack(
-            [self._suspend_button, self._send_button], disabled=True, visible=True
-        )
+        self._button_stack = ft.Stack([self._send_button, self._suspend_button])
 
         # io_fields should be init first to add to controls GUI. So that I init the unique input fields later.
         self._io_fields = _IOFields(
@@ -512,14 +504,14 @@ class AppView(BaseView):
             )  # For not create or update new cs
             await stack.enter_async_context(self._send_lock)  # for not send
             try:
-                self._input_field.disabled = True
+                self._input_field.chatting_mode(True)
                 self._cs_browser.disabled = True
                 self._enable_send(False, lock=False)  # already update
                 self.page.update()
                 logger.debug("Chatting mode entered successfully")
                 yield
             finally:
-                self._input_field.disabled = False
+                self._input_field.chatting_mode(False)
                 self._cs_browser.disabled = False
                 self._enable_send(lock=False)
                 self.page.update()
@@ -573,7 +565,7 @@ class AppView(BaseView):
             self.chat_app.assistant_apps,
             username=self.chat_app.userdata.username,
             user_id=self.chat_app.userdata.id,
-            send_button=self._button_stack,
+            buttons=self._button_stack,
             border=ft.border.all(1, ft.Colors.BLUE),
             border_radius=10,
             padding=5,
@@ -644,6 +636,7 @@ class AppView(BaseView):
                 m = f"'chat task' was not added to _io_fields after {t} seconds. This is not expected to happened."
                 logger.critical(m)
                 raise RuntimeError(m)
+            logger.debug(f"Chat task was added to _io_fields successfully.")
 
             async with AsyncExitStack() as stack:
                 await stack.enter_async_context(self.chatting())
@@ -660,21 +653,30 @@ class AppView(BaseView):
                             logger.error(
                                 f"Invalid type: {type(data)}. Type must be 'AssistantOutputData' or 'RequestInputField'. "
                             )
+                except CancelledError as e:
+                    io_task = self._io_fields.task
+                    logger.debug(
+                        f"io_task={io_task}\n"
+                        f"End CancelledError handler of chat task={asyncio.current_task()}."
+                    )
                 finally:
-                    assert self._io_fields.task == asyncio.current_task()
                     await self._kill_chat_task()
 
         self._io_fields.task = asyncio.create_task(chat_task())
 
     async def _kill_chat_task(self, e=None):
+        logger.debug("Killing chat task")
         task = None
         try:
             task = self._io_fields.cancel_task()
+            logger.debug(
+                f"Task {task} was cancelled and remove from io_fields. Now {self._io_fields.task}"
+            )
             if task:
                 await task
                 logger.debug(
-                    f"Chat task killed. Username={self._output_field._username}."
-                    f" cs_id{self._output_field._cs_uid}."
+                    f"Chat task was killed. Username={self._output_field._username}."
+                    f" cs_id={self._output_field._cs_uid}."
                 )
             else:
                 logger.debug("No task to kill")

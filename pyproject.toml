@@ -13,7 +13,6 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.10.2",
-    "pydantic>=1.10.22",
     "redis>=6.2.0",
     #    "aiofiles>=24.1.0",
     #    "aiohttp>=3.12.13",
@@ -52,12 +51,16 @@ dependencies = [
     #    "wheel>=0.45.1",
     "setuptools>=80.9.0",
     "wheel>=0.45.1",
+    "flet[all]>=0.28.3",
+    "black>=25.1.0",
     "datastore",
     "auth",
     "utilities",
     "sdk",
-    "flet[all]>=0.28.3",
-    "black>=25.1.0",
+    "assistants",
+    "langchain-google-genai>=2.1.6",
+    "pydantic>=2.11.7",
+    "langchain-mcp-adapters>=0.1.8",
 ]
 
 
@@ -99,6 +102,7 @@ utilities = {workspace = true}
 datastore = {workspace = true}
 auth = {workspace = true}
 sdk = {workspace=true}
+assistants = {workspace=true}
 
 [project.scripts]
-chatbonectl = "cli.main:main"
+chatbonectl = "chatbone_apps.main:main"

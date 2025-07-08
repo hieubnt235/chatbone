@@ -12,16 +12,8 @@ def run_app(args):
     uvicorn.run(app, host=host, port=port, workers=workers)
 
 
-def config_parser(parser_or_subparser):
-    if isinstance(parser_or_subparser, ArgumentParser):
-        auth_parser = parser_or_subparser
-    else:
-        auth_parser: ArgumentParser = parser_or_subparser.add_parser(
-            "auth",
-            help="Commands for managing the auth app.",
-            description="A tool run auth app.",
-        )
-    auth_subparser = auth_parser.add_subparsers(
+def config_parser(parser: ArgumentParser):
+    auth_subparser = parser.add_subparsers(
         dest="auth_command", required=True, help="Available auth subcommands"
     )
 

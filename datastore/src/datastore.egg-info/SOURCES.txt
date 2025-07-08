@@ -1,10 +1,10 @@
 README.md
 pyproject.toml
-src/main.py
 src/datastore/__init__.py
 src/datastore/app.py
 src/datastore/cli_parser.py
 src/datastore/entities.py
+src/datastore/main.py
 src/datastore/settings.py
 src/datastore.egg-info/PKG-INFO
 src/datastore.egg-info/SOURCES.txt

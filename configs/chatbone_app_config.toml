@@ -1,0 +1,2 @@
+[chatbone]
+import_path="chatbone_apps.chat:app"

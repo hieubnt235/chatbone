@@ -9,15 +9,23 @@ from anyio.streams.memory import MemoryObjectSendStream, MemoryObjectReceiveStre
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict
 
-from chatbone.assistant.assistant_interface import (AssistantInterface, AssistantInputData, AssistantOutputData,
-                                                    RequestedInput, UserInputData, )
-from chatbone.assistant.broker import (UserData as UserDataCache, UserToken, ChatSessionData, DisplayMessage, )
-from settings import DATASTORE, CONFIG, AUTH
+from chatbone.assistant import (
+    AssistantInterface,
+    AssistantInputData,
+    AssistantOutputData,
+    RequestedInput,
+    UserInputData,
+    UserData as UserDataCache,
+    UserToken,
+    ChatSessionData,
+    DisplayMessage,
+)
 from utilities.exception import handle_http_exception
 from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.schemas.auth import TokenJWT, UserAuthenticate
 from utilities.settings.datastore import *
+from .settings import DATASTORE, CONFIG, AUTH
 
 ServerError = HTTPException(
     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -367,7 +375,7 @@ class ChatAssistantSVC(_DataSVC):
                     raise_on_write_streams_acquire_fail=True,
                 )
             )
-            
+
             logger.debug(f"Redis stream got: {streams}")
 
             # todo: handle read stream only case.
@@ -396,8 +404,8 @@ class ChatAssistantSVC(_DataSVC):
                             for datum in data:
                                 if isinstance(datum, AssistantInputData):
                                     logger.debug("PONG INPUT")
-                                    continue # This is the first input data sent for stream, use to ping and save input.
-                                
+                                    continue  # This is the first input data sent for stream, use to ping and save input.
+
                                 assert isinstance(datum, AssistantOutputStreamType)
                                 assert (
                                     datum.chat_context_id
@@ -413,7 +421,7 @@ class ChatAssistantSVC(_DataSVC):
                     async with cs2as_reader:
                         async for data in cs2as_reader:
                             assert isinstance(data, AssistantInputData)
-                            
+
                             streams.cs2as.write_stream.write(data)
                 except asyncio.CancelledError:
                     pass
@@ -426,7 +434,7 @@ class ChatAssistantSVC(_DataSVC):
                             user_input,
                             streams.as2cs,
                             self.userdata,
-                            chat_session_id
+                            chat_session_id,
                         )
                     ),
                     asyncio.create_task(
@@ -452,7 +460,7 @@ class ChatAssistantSVC(_DataSVC):
                     for task in tasks:
                         task.cancel()
                         await task
-                    
+
             chat_handle = ChatHandle(
                 stream_sender=cs2as_sender,
                 stream_reader=as2cs_reader,

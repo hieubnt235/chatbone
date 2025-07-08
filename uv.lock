@@ -212,6 +212,7 @@ name = "assistants"
 version = "0.1.0"
 source = { editable = "assistants" }
 dependencies = [
+    { name = "langchain-google-genai" },
     { name = "langgraph" },
     { name = "sdk" },
     { name = "utilities" },
@@ -219,6 +220,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "langchain-google-genai", specifier = ">=2.1.6" },
     { name = "langgraph", specifier = ">=0.5.1" },
     { name = "sdk", editable = "sdk" },
     { name = "utilities", editable = "utilities" },
@@ -438,11 +440,14 @@ name = "chatbone"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "assistants" },
     { name = "auth" },
     { name = "black" },
     { name = "datastore" },
     { name = "fastmcp" },
     { name = "flet", extra = ["all"] },
+    { name = "langchain-google-genai" },
+    { name = "langchain-mcp-adapters" },
     { name = "pydantic" },
     { name = "redis" },
     { name = "sdk" },
@@ -453,12 +458,15 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "assistants", editable = "assistants" },
     { name = "auth", editable = "auth" },
     { name = "black", specifier = ">=25.1.0" },
     { name = "datastore", editable = "datastore" },
     { name = "fastmcp", specifier = ">=2.10.2" },
     { name = "flet", extras = ["all"], specifier = ">=0.28.3" },
-    { name = "pydantic", specifier = ">=1.10.22" },
+    { name = "langchain-google-genai", specifier = ">=2.1.6" },
+    { name = "langchain-mcp-adapters", specifier = ">=0.1.8" },
+    { name = "pydantic", specifier = ">=2.11.7" },
     { name = "redis", specifier = ">=6.2.0" },
     { name = "sdk", editable = "sdk" },
     { name = "setuptools", specifier = ">=80.9.0" },
@@ -843,6 +851,21 @@ wheels = [
 ]
 
 [[package]]
+name = "google-ai-generativelanguage"
+version = "0.6.18"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "google-api-core", extra = ["grpc"] },
+    { name = "google-auth" },
+    { name = "proto-plus" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/77/3e89a4c4200135eac74eca2f6c9153127e3719a825681ad55f5a4a58b422/google_ai_generativelanguage-0.6.18.tar.gz", hash = "sha256:274ba9fcf69466ff64e971d565884434388e523300afd468fc8e3033cd8e606e", size = 1444757 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/77/ca2889903a2d93b3072a49056d48b3f55410219743e338a1d7f94dc6455e/google_ai_generativelanguage-0.6.18-py3-none-any.whl", hash = "sha256:13d8174fea90b633f520789d32df7b422058fd5883b022989c349f1017db7fcf", size = 1372256 },
+]
+
+[[package]]
 name = "google-api-core"
 version = "2.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -856,6 +879,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/dc/21/e9d043e88222317afdbdb567165fdbc3b0aad90064c7e0c9eb0ad9955ad8/google_api_core-2.25.1.tar.gz", hash = "sha256:d2aaa0b13c78c61cb3f4282c464c046e45fbd75755683c9c525e6e8f7ed0a5e8", size = 165443 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/14/4b/ead00905132820b623732b175d66354e9d3e69fcf2a5dcdab780664e7896/google_api_core-2.25.1-py3-none-any.whl", hash = "sha256:8a2a56c1fef82987a524371f99f3bd0143702fecc670c72e600c1cda6bf8dbb7", size = 160807 },
+]
+
+[package.optional-dependencies]
+grpc = [
+    { name = "grpcio" },
+    { name = "grpcio-status" },
 ]
 
 [[package]]
@@ -943,6 +972,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1f/29/efbd4ac837c23bc48e34bbaf32bd429f0dc9ad7f80721cdb4622144c118c/grpcio-1.73.1-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:686231cdd03a8a8055f798b2b54b19428cdf18fa1549bee92249b43607c42668", size = 6287288 },
     { url = "https://files.pythonhosted.org/packages/d8/61/c6045d2ce16624bbe18b5d169c1a5ce4d6c3a47bc9d0e5c4fa6a50ed1239/grpcio-1.73.1-cp313-cp313-win32.whl", hash = "sha256:89018866a096e2ce21e05eabed1567479713ebe57b1db7cbb0f1e3b896793ba4", size = 3668151 },
     { url = "https://files.pythonhosted.org/packages/c2/d7/77ac689216daee10de318db5aa1b88d159432dc76a130948a56b3aa671a2/grpcio-1.73.1-cp313-cp313-win_amd64.whl", hash = "sha256:4a68f8c9966b94dff693670a5cf2b54888a48a5011c5d9ce2295a1a1465ee84f", size = 4335747 },
+]
+
+[[package]]
+name = "grpcio-status"
+version = "1.71.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "googleapis-common-protos" },
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fd/d1/b6e9877fedae3add1afdeae1f89d1927d296da9cf977eca0eb08fb8a460e/grpcio_status-1.71.2.tar.gz", hash = "sha256:c7a97e176df71cdc2c179cd1847d7fc86cca5832ad12e9798d7fed6b7a1aab50", size = 13677 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/58/317b0134129b556a93a3b0afe00ee675b5657f0155509e22fcb853bafe2d/grpcio_status-1.71.2-py3-none-any.whl", hash = "sha256:803c98cb6a8b7dc6dbb785b1111aed739f241ab5e9da0bba96888aa74704cfd3", size = 14424 },
 ]
 
 [[package]]
@@ -1131,8 +1174,37 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-google-genai"
+version = "2.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filetype" },
+    { name = "google-ai-generativelanguage" },
+    { name = "langchain-core" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/e4/9a955f0c0d550811708f47fa71752c81c9871725c40d5d0d3ba29ed76294/langchain_google_genai-2.1.6.tar.gz", hash = "sha256:d95dc098f14b9e0e5f9990b3a1533d6e7cc77520bd26855f917ddf79d41b2f73", size = 43864 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fa/b9/0ae7d6f8e38c426ba52b658ce41483ab26ee8bc838fd2c151dc9567c809a/langchain_google_genai-2.1.6-py3-none-any.whl", hash = "sha256:2fba640cb4e86c2f2111deb6964e0918d0c4f4f1cedc1a28c4221ca3c1ec9bea", size = 47368 },
+]
+
+[[package]]
+name = "langchain-mcp-adapters"
+version = "0.1.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "mcp" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/f2/f61eef5dc4b7e2bbb65ea904d59b96bd36c7017265c8e4a99c23688771cd/langchain_mcp_adapters-0.1.8.tar.gz", hash = "sha256:5fc6a596b73be96198135a11707102e3a7e9470b4d149bbbb1c9f9d902e0fa42", size = 20750 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/25/28/86e7abd8ca1ba9057556d1b3c562f61fa068eb59ca7f74aea0dbc1c58115/langchain_mcp_adapters-0.1.8-py3-none-any.whl", hash = "sha256:037323b772f3214986b127fe89d2e7e721ca5e852a618cdbbf00cc955154cc90", size = 13795 },
+]
+
+[[package]]
 name = "langchain-tavily"
-version = "0.2.6"
+version = "0.2.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1140,9 +1212,9 @@ dependencies = [
     { name = "langchain-core" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/85/de/50542a9b11dc7f2ac9a0f4d89cc895dddac2361ad852cb684ebdfd33fa5d/langchain_tavily-0.2.6.tar.gz", hash = "sha256:52c93182abf6ae1eb6a11c32627087ae66edffe4e318299e00a184c7bb81f07c", size = 21020 }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/1b/c2d918b47a8e69aeb8e2587a309313282af535262bc7039976afaedde1bf/langchain_tavily-0.2.7.tar.gz", hash = "sha256:94426779de155ee3edcce71444ed31b2723abb0092351a517ffdd07134415fd5", size = 21191 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/86/4c8983e19fc7007a7ce6c27b1634f07f30183a1495008cc4ee99ffa3e42f/langchain_tavily-0.2.6-py3-none-any.whl", hash = "sha256:21f07c3ca05eb8bc239bc51f0c3918871e633ce64eb97721ea8747fddb30f4c6", size = 24874 },
+    { url = "https://files.pythonhosted.org/packages/c9/7e/5292296d860ba0d9f7ffa25fa29f3f751245057223aa73610a84e441e25d/langchain_tavily-0.2.7-py3-none-any.whl", hash = "sha256:14b6c3be3f11c318b498570dbfe642997008f7b1a5f6dffbcd9b501db1ee1950", size = 25081 },
 ]
 
 [[package]]
@@ -2369,14 +2441,14 @@ asyncio = [
 
 [[package]]
 name = "sse-starlette"
-version = "2.3.6"
+version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8c/f4/989bc70cb8091eda43a9034ef969b25145291f3601703b82766e5172dfed/sse_starlette-2.3.6.tar.gz", hash = "sha256:0382336f7d4ec30160cf9ca0518962905e1b69b72d6c1c995131e0a703b436e3", size = 18284 }
+sdist = { url = "https://files.pythonhosted.org/packages/07/3e/eae74d8d33e3262bae0a7e023bb43d8bdd27980aa3557333f4632611151f/sse_starlette-2.4.1.tar.gz", hash = "sha256:7c8a800a1ca343e9165fc06bbda45c78e4c6166320707ae30b416c42da070926", size = 18635 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/05/78850ac6e79af5b9508f8841b0f26aa9fd329a1ba00bf65453c2d312bcc8/sse_starlette-2.3.6-py3-none-any.whl", hash = "sha256:d49a8285b182f6e2228e2609c350398b2ca2c36216c2675d875f81e93548f760", size = 10606 },
+    { url = "https://files.pythonhosted.org/packages/e4/f1/6c7eaa8187ba789a6dd6d74430307478d2a91c23a5452ab339b6fbe15a08/sse_starlette-2.4.1-py3-none-any.whl", hash = "sha256:08b77ea898ab1a13a428b2b6f73cfe6d0e607a7b4e15b9bb23e4a37b087fd39a", size = 10824 },
 ]
 
 [[package]]

@@ -1,10 +1,10 @@
 README.md
 pyproject.toml
-src/main.py
 src/auth/__init__.py
 src/auth/app.py
 src/auth/auth_svc.py
 src/auth/cli_parser.py
+src/auth/main.py
 src/auth/settings.py
 src/auth.egg-info/PKG-INFO
 src/auth.egg-info/SOURCES.txt

@@ -60,7 +60,7 @@ from pydantic import (
     ValidationError,
 )
 
-from chatbone.src.assistant_interface import (
+from chatbone.assistant import (
     AssistantDataType_U,
     AnyMediaObject,
     MediaObject,
@@ -70,13 +70,12 @@ from chatbone.src.assistant_interface import (
     Text,
     Selection,
     AssistantOutputData,
-    AssistantStatusCode,
+    AssistantStatusCode, DisplayMessage, DisplayableMessage
 )
-from chatbone.src.broker import DisplayMessage, DisplayableMessage
-from chatbone.src.chat.svc import AssistantApp
-from utilities.src.utilities.func import utc_now
-from utilities.src.utilities.logger import logger
-from utilities.src.utilities.misc import UniversalLock, SyncList, SyncListObject
+from .svc import AssistantApp
+from utilities.func import utc_now
+from utilities.logger import logger
+from utilities.misc import UniversalLock, SyncList, SyncListObject
 
 arbitrary_types_allowed_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -221,7 +220,10 @@ class BaseInputField(ABC, ft.Container):
         # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=10)
         # flet_toast.warning(self.page,text,position=Position.BOTTOM_RIGHT,duration=15)
 
-
+    async def save(self):
+        """Call when input are valid"""
+        pass
+        
 class _FilePicker(ft.FilePicker):
     """File picker for one media type."""
 
@@ -452,7 +454,7 @@ class MediaInputField(BaseInputField):
                 else None
             )
             if data:
-                await self.save()
+                # await self.save()
                 return data
             else:
                 return None
@@ -468,7 +470,7 @@ class MediaInputField(BaseInputField):
                     and f.media_object is not None
                 ]
                 if data:
-                    await self.save()
+                    # await self.save()
                     return data
                 else:
                     return None
@@ -691,9 +693,6 @@ class TextInputField(BaseInputField):
         self, **kwargs
     ) -> AssistantDataType_U | List[AssistantDataType_U] | None:
         r = self._text_type(role="user", content=self.value) if self.value else None
-        if r:
-            self.value= None
-            self._textfield.value = None
         return r
 
     async def _refresh(self) -> None:
@@ -705,6 +704,11 @@ class TextInputField(BaseInputField):
     @property
     def sub_input_fields(self) -> Iterable["BaseInputField"]:
         return []
+    
+    async def save(self):
+        self.value= None
+        self._textfield.value = None
+        self.page.update(self._textfield, self._notice_text)
 
 
 class SelectionInputField(BaseInputField):
@@ -1496,7 +1500,11 @@ class SchemaInputField(BaseInputField):
             r[field_name] = data
 
         return r
-
+    
+    async def save(self):
+        for field_name, input_field in self.iter_input_fields:
+            await input_field.save()
+    
     async def _refresh(self):
         pass
 
@@ -1604,7 +1612,7 @@ class ChatInputField(ft.Container):
         *,
         username: str,
         user_id: UUID,
-        send_button: ft.Control | None = None,
+        buttons: ft.Stack ,
         **kwargs: Unpack[ContainerArgs],
     ):
         """Parse assistant input to input field.
@@ -1617,7 +1625,7 @@ class ChatInputField(ft.Container):
         self._apps = assistant_apps
         self._username = username
         self._user_id = user_id
-        self._send_button = send_button
+        self._buttons = buttons # (Send, suspense buttons)
         self._dropdown = ft.Dropdown(
             label="Assistant options",
             options=[],
@@ -1644,17 +1652,22 @@ class ChatInputField(ft.Container):
             [
                 ft.ListView([self._stack], expand=True),
                 ft.Divider(height=1, color=ft.Colors.BLUE, thickness=1),
-                (
-                    ft.Row(
-                        [self._dropdown, self._send_button],
-                        alignment=ft.MainAxisAlignment.END,
-                    )
-                    if self._send_button
-                    else self._dropdown
-                ),
+                ft.Row(
+                    [self._dropdown, self._buttons],
+                    alignment=ft.MainAxisAlignment.END,
+                )
             ],
         )
-
+    
+    def chatting_mode(self, v:bool=True):
+        if v:
+            self._stack.disabled=True
+            self._dropdown.disabled=True
+        else:
+            self._stack.disabled = False
+            self._dropdown.disabled=False
+        self.page.update()
+        
     def build(self):
         self._dropdown.width = self.page.width * 0.2
 
@@ -1671,11 +1684,13 @@ class ChatInputField(ft.Container):
             if (name := self._current_assistant) is None:
                 return UserInputData()
             try:
-                data = await self._get_input_field(name).get_assistant_data()
+                input_field = self._get_input_field(name)
+                data = await input_field.get_assistant_data()
                 logger.debug(f"get_input_data got: {repr(data)}")
                 data = self._apps[name].input_schema.model_validate(data)
                 data._username = self._username
-
+                
+                await input_field.save()
                 return UserInputData(
                     assistant_name=name,
                     data=data,

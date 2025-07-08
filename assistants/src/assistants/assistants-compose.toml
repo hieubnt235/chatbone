@@ -1,0 +1,6 @@
+[[assistants]]
+import_path="assistants:dummy_assistant"
+
+[[assistants]]
+import_path="assistants:dummy2_assistant"
+

@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from utilities import logger
 
-
 class RepoMixin:
 
     def __init__(self, session: AsyncSession):

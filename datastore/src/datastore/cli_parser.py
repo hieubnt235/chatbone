@@ -70,17 +70,8 @@ def run_app(args):
     uvicorn.run(app, host=host, port=port, workers=workers)
 
 
-def config_parser(parser_or_subparser):
-    if  isinstance(parser_or_subparser, ArgumentParser):
-        datastore_parser = parser_or_subparser
-    else:
-        datastore_parser: ArgumentParser = parser_or_subparser.add_parser(
-            "datastore",
-            help="Commands for managing the datastore.",
-            description="A tool to set up and run the datastore service.",
-        )
-
-    datastore_subparsers = datastore_parser.add_subparsers(
+def config_parser(parser: ArgumentParser):
+    datastore_subparsers = parser.add_subparsers(
         dest="datastore_command", required=True, help="Available datastore subcommands"
     )
 

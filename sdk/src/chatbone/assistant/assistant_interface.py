@@ -1,11 +1,14 @@
 import time
 
+from chatbone_apps.commons import (
+    CHATBONE_ASSISTANT_APP_POSTFIX,
+    CHATBONE_ASSISTANT_APP_PREFIX,
+)
+
 start = time.time()
 import asyncio
 import dataclasses
 import json
-import os
-import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import timedelta, datetime
@@ -23,11 +26,9 @@ from typing import (
     Sequence,
     Literal,
     Annotated,
-    get_type_hints,
     get_origin,
     Generator,
     Awaitable,
-    AsyncIterator,
 )
 from uuid import UUID
 
@@ -66,9 +67,6 @@ from utilities.func import utc_now
 from utilities.logger import logger
 from utilities.misc import UniversalLock
 from utilities.settings.objest_storage import ObjectStorageSettings
-
-CHATBONE_ASSISTANT_APP_PREFIX = "<Chatbone_Assistant>"
-CHATBONE_ASSISTANT_APP_POSTFIX = "<Chatbone_Assistant>"
 
 
 class Only(str, Enum):
@@ -373,6 +371,7 @@ class Text(BaseAssistantType):
 # TODO: Dynamical model creation not work, error fail when assistant receive object from chat app, use it, pickle and save it
 #  then cannot reload anymore. Already sent issue: https://github.com/pydantic/pydantic/issues/12040
 
+
 @assistant_datatype
 class Selection(BaseAssistantType):
     model_config = ConfigDict(from_attributes=True)
@@ -400,13 +399,14 @@ class Selection(BaseAssistantType):
     #         return _selection_reconstruct, (args, self.model_dump())
     #     else:
     #         For not dynamic creation.
-            # logger.debug("Selection.__reduce__ call super().__reduce__()")
-            # return super().__reduce__()
-    
+    # logger.debug("Selection.__reduce__ call super().__reduce__()")
+    # return super().__reduce__()
+
     # noinspection PyIncorrectDocstring
     @classmethod
     def create_from_options(
-        cls,**kwargs
+        cls,
+        **kwargs,
         # options: dict[str, str | None],
         # __doc__: str | None = None,
     ) -> type[Self]:
@@ -431,8 +431,8 @@ class Selection(BaseAssistantType):
         Returns:
             New subclass of Selection.
         """
-        doc = kwargs.pop("__doc__",None)
-        module = kwargs.pop("__module__",cls.__module__)
+        doc = kwargs.pop("__doc__", None)
+        module = kwargs.pop("__module__", cls.__module__)
         sorted_keys = sorted(kwargs.keys())
         model_name = f"{cls.__name__}_options_{'_'.join(sorted_keys)}"
         # if model := cls.__cache_classes.get(model_name, None):
@@ -456,11 +456,11 @@ class Selection(BaseAssistantType):
             ),
         )
 
-            # cls.__cache_classes[model_name] = model
-            # logger.debug(
-            #     f"Dynamically created new model {model.__name__}, id={id(model)}\n"
-            #     f"All Selection cache subclasses: {cls.__cache_classes}"
-            # )
+        # cls.__cache_classes[model_name] = model
+        # logger.debug(
+        #     f"Dynamically created new model {model.__name__}, id={id(model)}\n"
+        #     f"All Selection cache subclasses: {cls.__cache_classes}"
+        # )
         logger.debug(f"Dynamically create {model.__name__}, {model.__module__}")
         return model
 
@@ -505,8 +505,8 @@ class CreationForm(BaseModel):
     data: dict[str, DataForm]
     """Dict with keys as attribute names and values as AssistantDataType Field parameters. """
 
-    doc: str | None =None
-    model_name: str | None =None
+    doc: str | None = None
+    model_name: str | None = None
 
 
 # noinspection PyTypeChecker
@@ -697,6 +697,7 @@ class Status(BaseModel):
 class AssistantOutputData(AssistantData):
     _exclude_attrs = ["stream_place"]
     stream_place: int = 0
+    """The stream drain place in display message."""
 
     # These are set by app.
     _assistant_name: str | None = PrivateAttr(None)
@@ -817,7 +818,7 @@ async def request_user_input(
     Returns:
             AssistantData object containing all user inputs, or None if user refuse to give.
     """
-    
+
     # noinspection PyTypeChecker
     def _make_field():
         for k, v in request_schema.items():
@@ -990,173 +991,204 @@ AssistantStreamer = Callable[
 
 
 # noinspection PyTypeChecker
-class BaseAssistant(BaseModel):
-    """This class is the base class of assistant app."""
+# class BaseAssistant(BaseModel):
+#     """This class is the base class of assistant app."""
+#
+#     model_config = ConfigDict(
+#         arbitrary_types_allowed=True, validate_default=True, frozen=True
+#     )
+#     streamer: AssistantStreamer
+#     input_schema: Type[AssistantInputData]
+#
+#     name: str | None = None
+#     """assistant name that will be shown to user frontend."""
+#
+#     assistant_classes: ClassVar[list["BaseAssistant"]] = []
+#
+#     @classmethod
+#     def __pydantic_init_subclass__(cls, **kwargs):
+#         type_hints = get_type_hints(cls)
+#         fields = cls.model_fields
+#
+#         if (st := fields["streamer"].annotation) != AssistantStreamer:
+#             m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
+#             raise TypeError(m)
+#         # Strict for not allow re define typehint
+#         if (it := fields["input_schema"].annotation) not in (
+#             type[AssistantInputData],
+#             Type[AssistantInputData],
+#         ):
+#             m = f"Typehint of 'input_schema' must be 'Type[AssistantInputData]'. Got '{it}'."
+#             raise TypeError(m)
+#
+#         cls.assistant_classes.append(cls)
+#
+#     def __init__(self):
+#         """
+#         Because type hint compare of callable in init_subclass does not check for internal, now check it.
+#         Does not accept any arguments, so all arguments must initialize as default.
+#         """
+#         super().__init__()
+#         if not isinstance(sr := self.streamer(None), AsyncGenerator):
+#             m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
+#             raise ValueError(m)
+#
+#         from utilities.logger import logger
+#
+#         logger.info(
+#             f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): '{self.__class__.__name__}' was initialized."
+#         )
+#
+#     def get_schema(self):
+#         return self.input_schema
+#
+#     def get_name(self) -> str:
+#         return str(self.name)
+#
+#     @classmethod
+#     def get_app(cls) -> serve.Application:
+#         return serve.deployment(
+#             name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}"
+#         )(cls).bind()
+#
+#     async def handle_cancellation(self):
+#         """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
+#         pass
+#
+#     async def get_context(self):
+#         pass
+#
+#     async def _stream(
+#         self, data: AssistantInputData
+#     ) -> AsyncIterator[AssistantOutputData]:
+#         logger.debug(f"{self.__class__.__name__} start stream with data {repr(data)}.")
+#         chunk_index: dict[int, int] = {}
+#         async for chunk in self.streamer(data):
+#             if not isinstance(chunk, AssistantOutputData):
+#                 raise ValueError(
+#                     "The returned of graph is not the instance of 'AssistantOutputData'."
+#                 )
+#
+#             if chunk.stream_place in chunk_index:
+#                 chunk_index[chunk.stream_place] += 1
+#             else:
+#                 chunk_index[chunk.stream_place] = 0
+#
+#             chunk._chunk_order = chunk_index[chunk.stream_place]
+#
+#             logger.debug(
+#                 f"Assistant yield chunk {repr(chunk)}, chunk_order={chunk.chunk_order}"
+#             )
+#             yield chunk
+#
+#         logger.info("Done stream BaseAssistant")
+#
+#     async def __call__(
+#         self,
+#         data_input: AssistantInputData,
+#         stream_pair: StreamPair,
+#         userdata: UserData,
+#         cs_id: UUID,
+#     ):
+#         logger.info(f"{self.name} called with {repr(data_input)}.")
+#
+#         # Interface or app must handle all of these assertions, it's app role, not user or dev role.
+#         assert isinstance(data_input, self.input_schema)
+#
+#         chat_context_id = data_input.chat_context_id
+#         logger.debug(f"chat_context_id={data_input.chat_context_id}")
+#
+#         context = AssistantStreamContext(
+#             stream_pair=stream_pair,
+#             chat_context_id=chat_context_id,
+#             userdata=userdata,
+#             cs_id=cs_id,
+#         )
+#
+#         with _stream_cm(context) as token:
+#             try:
+#                 await stream_pair.write_stream.write(data_input)  # Ping
+#                 await self._write_status(code=AssistantStatusCode.START)
+#
+#                 async for data in self._stream(data_input):
+#                     assert isinstance(data, AssistantOutputData)
+#
+#                     data._assistant_name = self.name
+#                     data._chat_context_id = chat_context_id
+#                     data._status = Status(code=AssistantStatusCode.PROCESSING)
+#
+#                     await stream_pair.write_stream.write(data)
+#                     logger.debug(
+#                         f"Wrote data {repr(data)}, chat_context_id: {data.chat_context_id}, status: {data.status}"
+#                     )
+#
+#                 await self._write_status(code=AssistantStatusCode.SUCCESS)
+#
+#             except asyncio.CancelledError as e:
+#                 try:
+#                     await self._write_status(code=AssistantStatusCode.CANCELING)
+#                     await self.handle_cancellation()
+#                 except Exception as e:
+#                     await self._write_status(
+#                         code=AssistantStatusCode.ERROR, detail=str(e)
+#                     )
+#                 finally:
+#                     await self._write_status(code=AssistantStatusCode.CANCELED)
+#
+#             except Exception as e:
+#                 logger.exception(e)
+#                 await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
+#                 # raise e # Not expected error, hot fix by logger.exception() for now.
+#             finally:
+#                 await self._write_status(AssistantStatusCode.DONE)
+#
+#     # noinspection PyMethodMayBeStatic
+#     async def _write_status(
+#         self,
+#         code: AssistantStatusCode,
+#         detail: str | None = None,
+#     ):
+#         context = _assistant_stream_context.get()
+#         write_stream = context.stream_pair.write_stream
+#         context_id = context.chat_context_id
+#
+#         status_data = AssistantOutputData()
+#         status_data._chat_context_id = context_id
+#         status_data._status = Status(code=code, detail=detail)
+#         status_data._assistant_name = self.name
+#
+#         await write_stream.write(status_data)
+#
 
+
+class BaseAssistant(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True, validate_default=True, frozen=True
     )
     streamer: AssistantStreamer
+
     input_schema: Type[AssistantInputData]
-
-    name: str | None = None
+    name: str
     """assistant name that will be shown to user frontend."""
-
-    assistant_classes: ClassVar[list["BaseAssistant"]] = []
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs):
-        type_hints = get_type_hints(cls)
+        # Strict for not allow re define typehint
         fields = cls.model_fields
-
         if (st := fields["streamer"].annotation) != AssistantStreamer:
             m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
             raise TypeError(m)
-        # Strict for not allow re define typehint
+
         if (it := fields["input_schema"].annotation) not in (
             type[AssistantInputData],
             Type[AssistantInputData],
         ):
             m = f"Typehint of 'input_schema' must be 'Type[AssistantInputData]'. Got '{it}'."
             raise TypeError(m)
-
-        cls.assistant_classes.append(cls)
-
-    def __init__(self):
-        """
-        Because type hint compare of callable in init_subclass does not check for internal, now check it.
-        Does not accept any arguments, so all arguments must initialize as default.
-        """
-        super().__init__()
-        if not isinstance(sr := self.streamer(None), AsyncGenerator):
-            m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
-            raise ValueError(m)
-
-        from utilities.logger import logger
-
-        logger.info(
-            f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): '{self.__class__.__name__}' was initialized."
-        )
-
-    def get_schema(self):
-        return self.input_schema
-
-    def get_name(self) -> str:
-        return str(self.name)
-
-    @classmethod
-    def get_app(cls) -> serve.Application:
-        return serve.deployment(
-            name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}"
-        )(cls).bind()
+        assert fields["name"].annotation == str
 
     async def handle_cancellation(self):
-        """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
         pass
-
-    async def get_context(self):
-        pass
-
-    async def _stream(
-        self, data: AssistantInputData
-    ) -> AsyncIterator[AssistantOutputData]:
-        logger.debug(f"{self.__class__.__name__} start stream with data {repr(data)}.")
-        chunk_index: dict[int, int] = {}
-        async for chunk in self.streamer(data):
-            if not isinstance(chunk, AssistantOutputData):
-                raise ValueError(
-                    "The returned of graph is not the instance of 'AssistantOutputData'."
-                )
-
-            if chunk.stream_place in chunk_index:
-                chunk_index[chunk.stream_place] += 1
-            else:
-                chunk_index[chunk.stream_place] = 0
-
-            chunk._chunk_order = chunk_index[chunk.stream_place]
-
-            logger.debug(
-                f"Assistant yield chunk {repr(chunk)}, chunk_order={chunk.chunk_order}"
-            )
-            yield chunk
-
-        logger.info("Done stream BaseAssistant")
-
-    async def __call__(
-        self,
-        data_input: AssistantInputData,
-        stream_pair: StreamPair,
-        userdata: UserData,
-        cs_id: UUID,
-    ):
-        logger.info(f"{self.name} called with {repr(data_input)}.")
-
-        # Interface or app must handle all of these assertions, it's app role, not user or dev role.
-        assert isinstance(data_input, self.input_schema)
-
-        chat_context_id = data_input.chat_context_id
-        logger.debug(f"chat_context_id={data_input.chat_context_id}")
-
-        context = AssistantStreamContext(
-            stream_pair=stream_pair,
-            chat_context_id=chat_context_id,
-            userdata=userdata,
-            cs_id=cs_id,
-        )
-
-        with _stream_cm(context) as token:
-            try:
-                await stream_pair.write_stream.write(data_input)  # Ping
-                await self._write_status(code=AssistantStatusCode.START)
-
-                async for data in self._stream(data_input):
-                    assert isinstance(data, AssistantOutputData)
-
-                    data._assistant_name = self.name
-                    data._chat_context_id = chat_context_id
-                    data._status = Status(code=AssistantStatusCode.PROCESSING)
-
-                    await stream_pair.write_stream.write(data)
-                    logger.debug(
-                        f"Wrote data {repr(data)}, chat_context_id: {data.chat_context_id}, status: {data.status}"
-                    )
-
-                await self._write_status(code=AssistantStatusCode.SUCCESS)
-
-            except asyncio.CancelledError as e:
-                try:
-                    await self._write_status(code=AssistantStatusCode.CANCELING)
-                    await self.handle_cancellation()
-                except Exception as e:
-                    await self._write_status(
-                        code=AssistantStatusCode.ERROR, detail=str(e)
-                    )
-                finally:
-                    await self._write_status(code=AssistantStatusCode.CANCELED)
-
-            except Exception as e:
-                logger.exception(e)
-                await self._write_status(code=AssistantStatusCode.ERROR, detail=str(e))
-                # raise e # Not expected error, hot fix by logger.exception() for now.
-            finally:
-                await self._write_status(AssistantStatusCode.DONE)
-
-    # noinspection PyMethodMayBeStatic
-    async def _write_status(
-        self,
-        code: AssistantStatusCode,
-        detail: str | None = None,
-    ):
-        context = _assistant_stream_context.get()
-        write_stream = context.stream_pair.write_stream
-        context_id = context.chat_context_id
-
-        status_data = AssistantOutputData()
-        status_data._chat_context_id = context_id
-        status_data._status = Status(code=code, detail=detail)
-        status_data._assistant_name = self.name
-
-        await write_stream.write(status_data)
 
 
 class UserInputData(BaseModel):

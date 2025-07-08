@@ -308,7 +308,7 @@ class ChatboneData(BaseModel, ABC):
         if self.embedding:
             raise ValueError("Embedding model cannot do this operation .")
         _ = await self.redis.json().set(
-            self.rkey, "../../../../src", self.model_dump(mode="json"), nx=True
+            self.rkey, ".", self.model_dump(mode="json"), nx=True
         )
         obj = (await self.refresh()) if refresh else self
         if expire_seconds is not None:

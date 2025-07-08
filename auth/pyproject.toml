@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-auth = "main:main"
+auth = "auth.main:main"
 
 [tool.uv.sources]
 utilities = {workspace = true}

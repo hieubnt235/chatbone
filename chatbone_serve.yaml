@@ -1,0 +1,29 @@
+proxy_location: EveryNode
+http_options:
+  host: localhost
+  port: 9999
+applications:
+- name: assistants_dummy_assistant
+  route_prefix: null
+  import_path: chatbone_apps.assistant_apps:YXNzaXN0YW50czpkdW1teV9hc3Npc3RhbnQ=
+  deployments:
+  - name: <Chatbone_Assistant>assistants:dummy_assistant<Chatbone_Assistant>
+    ray_actor_options:
+      num_cpus: 1.0
+      num_gpus: 0.0
+- name: assistants_dummy2_assistant
+  route_prefix: null
+  import_path: chatbone_apps.assistant_apps:YXNzaXN0YW50czpkdW1teTJfYXNzaXN0YW50
+  deployments:
+  - name: <Chatbone_Assistant>assistants:dummy2_assistant<Chatbone_Assistant>
+    ray_actor_options:
+      num_cpus: 1.0
+      num_gpus: 0.0
+- name: chatbone_app
+  route_prefix: /
+  import_path: chatbone_apps.chat:app
+  deployments:
+  - name: Chatbone
+    ray_actor_options:
+      num_cpus: 1.0
+      num_gpus: 0.0

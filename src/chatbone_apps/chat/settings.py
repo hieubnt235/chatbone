@@ -81,12 +81,12 @@ class ChatConfig(Config):
     views: Views = Views()
 
 
-env_file = find_dotenv(".env.chat")
+env_file = find_dotenv(".env.chatbone")
 
 
 class ChatSettings(Settings):
-    model_config = SettingsConfigDict(env_prefix="chat_", env_file=env_file)
-    service_name = "chatbone.chat"
+    model_config = SettingsConfigDict(env_prefix="chatbone_app_", env_file=env_file)
+    service_name = "chatbone_app"
 
     config: ChatConfig
     datastore: DatastoreClient

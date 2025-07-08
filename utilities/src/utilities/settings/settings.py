@@ -1,5 +1,6 @@
 # from dotenv import find_dotenv
 import inspect
+import os
 import time
 from pathlib import Path
 from typing import ClassVar, get_args, Sequence
@@ -81,10 +82,10 @@ class Settings(BaseSettings):
         cfg_cls = None
         
         load_config = False
-        if args is None and issubclass(ann, Config):
+        if len(args)==0 and issubclass(ann, Config):
             load_config = True
             cfg_cls = ann
-        elif args is not None and isinstance(args,Sequence) :
+        elif len(args)>0  :
             for arg in args:
                 if issubclass(arg, Config):
                     load_config = True
@@ -97,7 +98,7 @@ class Settings(BaseSettings):
                 file: str = data["config"]["file"]
                 data["config"] = cfg_cls(file=file)
             except (KeyError, TypeError):
-                logger.warning("Settings has Config type attributes but does not find any config file. Let it be default value.")
+                logger.debug(f"Settings {cls.__name__} has Config type attributes but does not find any config file. Let it be default value.")
                 # If not have default, load Config default with file = None.
                 if cfg_field.default == PydanticUndefined:
                     file: None = None
@@ -114,7 +115,7 @@ class Settings(BaseSettings):
         load_dotenv(self.model_config.get("env_file"))
         super().__init__(*args, **kwargs)
 
-        logger.info(
+        logger.debug(
             f"'{self.service_name}' service settings created in {time.time()-start} seconds:\n"
             f"{self.model_dump_json(indent=4)}"
         )

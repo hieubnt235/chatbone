@@ -130,6 +130,15 @@ def base64_to_uuid(base64_str: str) -> UUID:
     padded_str = base64_str + '=' * (4 - len(base64_str) % 4)
     decoded_bytes = base64.urlsafe_b64decode(padded_str.encode('ascii'))
     return UUID(bytes=decoded_bytes)
+
+def base64_encode(original: str) -> str:
+    return base64.b64encode(original.encode()).decode()
+
+
+def base64_decode(encoded_str: str) -> str:
+    return base64.b64decode(encoded_str).decode()
+
+
 # todo measure time function
 # async def get_tasks(pid:int|None=None):
 # 	ts = [t.get_coro().__qualname__ for t in asyncio.all_tasks()]

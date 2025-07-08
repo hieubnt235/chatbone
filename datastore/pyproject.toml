@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-datastore = "main:main"
+datastore = "datastore.main:main"
 
 [tool.uv.sources]
 utilities = {workspace = true}

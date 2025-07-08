@@ -1,83 +1,73 @@
-from types import ModuleType
+from typing import AsyncIterator
 
 from chatbone.assistant.assistant_interface import *
-from chatbone.assistant.assistant_interface import _assistant_stream_context, _stream_cm
+from chatbone_apps.commons import _make_deployment_name_from_real_import_path
+from utilities import logger
+from utilities.func import base64_decode
 
 
 # noinspection PyTypeChecker
-class AssistantAppFactory(BaseModel):
-    """This class is the base class of assistant app."""
+class AssistantAppFactory:
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True, validate_default=True, frozen=True
-    )
-    streamer: AssistantStreamer
-    input_schema: Type[AssistantInputData]
-
-    name: str | None = None
-    """assistant name that will be shown to user frontend."""
-
-    assistant_classes: ClassVar[list["BaseAssistant"]] = []
-
-    @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs):
-        type_hints = get_type_hints(cls)
-        fields = cls.model_fields
-
-        if (st := fields["streamer"].annotation) != AssistantStreamer:
-            m = f"Typehint of 'streamer' must be 'AssistantStreamer'. Got '{st}'."
-            raise TypeError(m)
-        # Strict for not allow re define typehint
-        if (it := fields["input_schema"].annotation) not in (
-            type[AssistantInputData],
-            Type[AssistantInputData],
-        ):
-            m = f"Typehint of 'input_schema' must be 'Type[AssistantInputData]'. Got '{it}'."
-            raise TypeError(m)
-
-        cls.assistant_classes.append(cls)
-
-    def __init__(self):
-        import importlib
-        importlib.import_module()
-        ModuleType
-        
+    def __init__(self, module_name: str, assistant_instance_name: str):
         super().__init__()
-        if not isinstance(sr := self.streamer(None), AsyncGenerator):
-            m = f"streamer return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
-            raise ValueError(m)
-
-        from utilities.logger import logger
-
-        logger.info(
-            f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): '{self.__class__.__name__}' was initialized."
+        import os
+        import threading
+        import importlib
+        from utilities import logger
+        from chatbone.assistant.assistant_interface import (
+            _assistant_stream_context,
+            _stream_cm,
         )
 
+        self._assistant_stream_context = _assistant_stream_context
+        self._stream_cm = _stream_cm
+
+        m = importlib.import_module(module_name)
+        assistant = getattr(m, assistant_instance_name)
+        assert isinstance(assistant, BaseAssistant)
+
+        if not isinstance(sr := assistant.streamer(None), AsyncGenerator):
+            m = f"Assistant.stream(...) return type must be type AsyncGenerator[AssistantOutputData,None], got {type(sr)}."
+            raise ValueError(m)
+        self.assistant: BaseAssistant = assistant
+
+        logger.info(
+            f"(PID={os.getpid()} ThreadID={threading.get_native_id()}): Assistant named {assistant.name},"
+            f" instance of '{self.assistant.__class__.__name__}' was initialized."
+        )
+        logger.debug(repr(assistant))
+
     def get_schema(self):
-        return self.input_schema
+        return self.assistant.input_schema
 
     def get_name(self) -> str:
-        return str(self.name)
+        return self.assistant.name
+
+    @property
+    def name(self) -> str:
+        return self.get_name()
+
+    @property
+    def input_schema(self) -> Type[AssistantInputData]:
+        return self.get_schema()
 
     @classmethod
-    def get_app(cls) -> serve.Application:
+    def get_app(cls, real_import_path: str) -> serve.Application:
+        path = real_import_path.split(":")
+        assert len(path) == 2 and path[0] and path[1]
+        module_name, assistant_instance_name = path
+
         return serve.deployment(
-            name=f"{CHATBONE_ASSISTANT_APP_PREFIX}{cls.__name__}{CHATBONE_ASSISTANT_APP_POSTFIX}"
-        )(cls).bind()
-
-    async def handle_cancellation(self):
-        """Optional handling after cancellation maybe for shutdown or cancel some task, call some APIs,..."""
-        pass
-
-    async def get_context(self):
-        pass
+            name=_make_deployment_name_from_real_import_path(real_import_path)
+        )(cls).bind(module_name, assistant_instance_name)
 
     async def _stream(
         self, data: AssistantInputData
     ) -> AsyncIterator[AssistantOutputData]:
         logger.debug(f"{self.__class__.__name__} start stream with data {repr(data)}.")
         chunk_index: dict[int, int] = {}
-        async for chunk in self.streamer(data):
+        async for chunk in self.assistant.streamer(data):
             if not isinstance(chunk, AssistantOutputData):
                 raise ValueError(
                     "The returned of graph is not the instance of 'AssistantOutputData'."
@@ -119,7 +109,7 @@ class AssistantAppFactory(BaseModel):
             cs_id=cs_id,
         )
 
-        with _stream_cm(context) as token:
+        with self._stream_cm(context) as token:
             try:
                 await stream_pair.write_stream.write(data_input)  # Ping
                 await self._write_status(code=AssistantStatusCode.START)
@@ -141,7 +131,7 @@ class AssistantAppFactory(BaseModel):
             except asyncio.CancelledError as e:
                 try:
                     await self._write_status(code=AssistantStatusCode.CANCELING)
-                    await self.handle_cancellation()
+                    await self.assistant.handle_cancellation()
                 except Exception as e:
                     await self._write_status(
                         code=AssistantStatusCode.ERROR, detail=str(e)
@@ -162,7 +152,7 @@ class AssistantAppFactory(BaseModel):
         code: AssistantStatusCode,
         detail: str | None = None,
     ):
-        context = _assistant_stream_context.get()
+        context = self._assistant_stream_context.get()
         write_stream = context.stream_pair.write_stream
         context_id = context.chat_context_id
 
@@ -173,5 +163,16 @@ class AssistantAppFactory(BaseModel):
 
         await write_stream.write(status_data)
 
-def __getattr__(name):
 
+def __getattr__(app_name: str):
+    class_import_path = base64_decode(app_name)  # which is encoded by cli.build
+    app = AssistantAppFactory.get_app(class_import_path)
+    logger.debug(f"Created Ray serve application {repr(app)}.")
+    return app
+
+
+# dummy_app = AssistantAppFactory.get_app("assistants:dummy_assistant")
+# dummy2_app = AssistantAppFactory.get_app("assistants:dummy2_assistant")
+# from ray import serve
+# serve.run(dummy_app)
+# serve.deployment

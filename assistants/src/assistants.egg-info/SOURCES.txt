@@ -1,10 +1,13 @@
-README.md
 pyproject.toml
+src/assistants/__init__.py
+src/assistants/assistants-compose.toml
 src/assistants.egg-info/PKG-INFO
 src/assistants.egg-info/SOURCES.txt
 src/assistants.egg-info/dependency_links.txt
 src/assistants.egg-info/entry_points.txt
 src/assistants.egg-info/requires.txt
 src/assistants.egg-info/top_level.txt
-src/dummy/__init__.py
-src/dummy/dummy.py
+src/assistants/dummy/__init__.py
+src/assistants/dummy/dummy.py
+src/assistants/dummy2/__init__.py
+src/assistants/dummy2/dummy2.py

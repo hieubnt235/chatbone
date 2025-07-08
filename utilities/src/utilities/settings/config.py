@@ -34,7 +34,6 @@ class Config(BaseModel):
     @classmethod
     @handle_exception(ConfigException, message="Invalid configuration.")
     def init_config(cls, data: dict) -> dict:
-        print(data)
         config = {}
         if data.get('file') is not None:
             file = valid_config_file(data['file'])
@@ -42,5 +41,4 @@ class Config(BaseModel):
                 config = tomllib.load(f)
                 data['file'] = file
         config.update(data)
-        # logger.debug(config)
         return config

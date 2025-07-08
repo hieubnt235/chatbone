@@ -1,2 +1,2 @@
 [console_scripts]
-datastore = main:main
+datastore = datastore.main:main

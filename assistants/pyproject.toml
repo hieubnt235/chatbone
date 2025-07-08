@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "langchain-google-genai>=2.1.6",
     "langgraph>=0.5.1",
     "sdk",
     "utilities",
@@ -20,6 +21,8 @@ assistants = "assistants:main"
 utilities = { workspace = true }
 sdk = { workspace = true }
 
+[tool.setuptools.package-data]
+assistants=["assistants-compose.toml"]
 
 [build-system]
 requires = ["setuptools>=61"]
