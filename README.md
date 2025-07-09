@@ -24,11 +24,12 @@ Before you begin, ensure you have the following installed on your system:
 
 ```bash
 git clone https://github.com/hieubnt235/chatbone.git
+cd chatbone/
 ```
 
 ### 2. Install dependencies
 
-In the project root path (where contain root `pyproject.toml`), run:
+In the project root path (where contain root `pyproject.toml`, you're already in if you follow `step 1`), run:
 
 ```bash
 uv sync --all-packages
@@ -64,7 +65,7 @@ Make sure all the services running, use your bias docker tools to monitor that, 
 2025-07-09T02:56:59.423242876Z INFO:     Application startup complete.
 2025-07-09T02:56:59.426997678Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
-Note: With all the following commands from now, you can leave out the `uv run` prefix if you are activating.
+**Note**: With all the following commands from now, you can leave out the `uv run` prefix if you are activating.  
 If you are not activating and want to activate the new environment you just created (by `uv sync` before)
 then run this:
 ```bash
@@ -106,7 +107,7 @@ THIS_IS_YOUR_GOOGLE_GEMINI_API_KEY
 ### 6. Build Assistants
 
 All assistants will be defined in `assistants` workspace, and declare `assistants-compose.toml` in `assistants`
-package.  
+package. Note that you must ensure that all API keys used by assistants are already load by environment variables.
 At the root of project, run:
 
 ```bash
@@ -128,8 +129,7 @@ It will create the serve file, by default named `chatbone_serve.yaml` and placed
 
 ### 7. Run
 
-
-Then run apps with command, change the file path to `/your/file/path/to/serve_file.yaml`:
+After build, Run apps with command, change the file path to `/your/file/path/to/serve_file.yaml`:
 
 ```bash
 uv run serve run /home/hieu/Workspace/projects/chatbone/chatbone_serve.yaml
