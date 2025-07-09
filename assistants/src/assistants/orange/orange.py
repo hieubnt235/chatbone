@@ -45,9 +45,9 @@ class DataInput(AssistantInputData):
         content = self.message.content
         if self.images:
             content += f"""
-            You send {len(self.images)} images.
+            You sent {len(self.images)} images.
             """
-        return DisplayableMessage(content=self.message.content)
+        return DisplayableMessage(content=content)
 
 
 class InputSchema(BaseModel):
