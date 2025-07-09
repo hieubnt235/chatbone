@@ -44,7 +44,7 @@ uv sync --all-packages --active
 ### 3. Run all backend services
 
 ```bash
-docker-compose -f deployments/docker-compose.backend.yaml up --build 
+docker compose -f deployments/docker-compose.backend.yaml up --build 
 ```
 
 This will run five services:
@@ -64,46 +64,29 @@ Make sure all the services running, use your bias docker tools to monitor that, 
 2025-07-09T02:56:59.423242876Z INFO:     Application startup complete.
 2025-07-09T02:56:59.426997678Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
+Note: With all the following commands from now, you can leave out the `uv run` prefix if you are activating.
+If you are not activating and want to activate the new environment you just created (by `uv sync` before)
+then run this:
+```bash
+source .venv/bin/activate
+```
+Now you use something like `chatbonectl build` instead of `uv run chatbonectl build`.
 
 ### 4. Migration database (For the first time setup)
 
 You must ensure that database service is running, then run this command at root project:
 
 ```bash
-chatbonectl datastore setup
+uv run chatbonectl datastore setup
 ```
 
-### 5. Build Assistants
-
-All assistants will be defined in `assistants` workspace, and declare `assistants-compose.toml` in `assistants`
-package.  
-At the root of project, run:
-
-```bash
-chatbonectl build
-```
-
-When built successfully, console show like this:
-
-```bash
-Built serve config successfully
-Run command:
-serve run /home/hieu/Workspace/projects/chatbone/chatbone_serve.yaml
-
-*Note: Export necessary environment variables, or clean the Ray cluster before run ('ray stop -f').
-```
-
-It will create the serve file, by default named `chatbone_serve.yaml` and placed at root project.
-
-### 6. Setup assistants environment
+### 5. Setup assistants environment
 
 - Note that assistant is written by the others, we are the one who serve what they are wrote,
   so they need to provide all environment variables, API keys (Or we can make the proxy in the future).
 - But for now (dev phase), we wrote assistant ourselves, we provide everything for them.
 - The `Orange` and `Dummy` example assistants need Gemini API keys, create a free one at
   [this link](https://aistudio.google.com/app/apikey).
-
-### 7. Run
 
 Make sure you exported your environment variables and API keys before run, you should
 embed it in your favorite terminals.
@@ -119,20 +102,47 @@ Console show:
 THIS_IS_YOUR_GOOGLE_GEMINI_API_KEY
 ```
 
+
+### 6. Build Assistants
+
+All assistants will be defined in `assistants` workspace, and declare `assistants-compose.toml` in `assistants`
+package.  
+At the root of project, run:
+
+```bash
+uv run chatbonectl build
+```
+
+When built successfully, console show like this:
+
+```bash
+Built serve config successfully
+Run command:
+serve run /home/hieu/Workspace/projects/chatbone/chatbone_serve.yaml
+
+*Note: Export necessary environment variables, or clean the Ray cluster before run ('ray stop -f').
+```
+
+It will create the serve file, by default named `chatbone_serve.yaml` and placed at root project.
+
+
+### 7. Run
+
+
 Then run apps with command, change the file path to `/your/file/path/to/serve_file.yaml`:
 
 ```bash
-serve run /home/hieu/Workspace/projects/chatbone/chatbone_serve.yaml
+uv run serve run /home/hieu/Workspace/projects/chatbone/chatbone_serve.yaml
 ```
 
 or if you build in the root, just run:
 
 ```bash
-serve run chatbone_serve.yaml
+uv run serve run chatbone_serve.yaml
 ```
 To ensure that everything is clear before you serve, run this:
 ```bash
-ray stop -f && serve run chatbone_serve.yaml
+uv run ray stop -f && uv run serve run chatbone_serve.yaml
 ```
 By default, the app is running at port `9999`. See details in built serve file.
 
