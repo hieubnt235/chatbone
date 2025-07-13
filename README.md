@@ -75,11 +75,21 @@ Now you use something like `chatbonectl build` instead of `uv run chatbonectl bu
 
 ### 4. Migration database (For the first time setup)
 
-You must ensure that database service is running, then run this command at root project:
+You must ensure that database service is running
 
+**Note for reinstall ( Skip for the first time installation)**: 
+- If you reinstall from scratch, you MUST ensure that current database is clean like new (No tables, no pre migrations...).
+It's not just remove and repush `postgres` image, also remove the old disk of the image.  
+If not, it will raise error because if there's migration id in your database, and `alembic` will check for the history depend on that id, and because you're reinstall, there's no history, error is raised.  
+- If you doesn't reinstall from scratch and do migration before, then you clean up database, you have to clean up history also by command:
+   ```bash
+   rm -rf datastore/migrations/datastore_db_version
+   ```
+Run this command at root project:
 ```bash
 uv run chatbonectl datastore setup
 ```
+
 
 ### 5. Setup assistants environment
 
